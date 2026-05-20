@@ -1,0 +1,96 @@
+import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+
+import '../theme/mia_theme.dart';
+import 'mia_avatar.dart';
+
+/// Pill-shaped chat header: avatar + name/status + call & menu actions.
+class MiaChatHeader extends StatelessWidget implements PreferredSizeWidget {
+  const MiaChatHeader({
+    super.key,
+    required this.onCall,
+    required this.onMenu,
+    required this.onProfile,
+    this.statusText = 'online now',
+  });
+
+  final VoidCallback onCall;
+  final VoidCallback onMenu;
+  final VoidCallback onProfile;
+  final String statusText;
+
+  @override
+  Size get preferredSize => const Size.fromHeight(88);
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      bottom: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+        child: Material(
+          color: MiaColors.surface,
+          elevation: 2,
+          shadowColor: Colors.black.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(28),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Row(
+              children: [
+                MiaAvatar(
+                  size: 48,
+                  onTap: onProfile,
+                  showBorder: true,
+                  borderWidth: 1.5,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Mia',
+                        style: GoogleFonts.inter(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w700,
+                          color: MiaColors.miaText,
+                          height: 1.2,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        statusText,
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          color: MiaColors.textMuted,
+                          fontWeight: FontWeight.w400,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.phone_outlined, size: 22),
+                  color: MiaColors.textPrimary,
+                  tooltip: 'voice call',
+                  onPressed: onCall,
+                  visualDensity: VisualDensity.compact,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.more_vert, size: 22),
+                  color: MiaColors.textPrimary,
+                  tooltip: 'menu',
+                  onPressed: onMenu,
+                  visualDensity: VisualDensity.compact,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}

@@ -1,0 +1,66 @@
+import "./load-env.js";
+import cors from "cors";
+import express from "express";
+import { authRouter } from "./routes/auth.js";
+import { messagesRouter } from "./routes/messages.js";
+import { realtimeRouter } from "./routes/realtime.js";
+import { getUploadsDir } from "./db.js";
+import { verifyXaiConnection } from "./xai.js";
+
+function validateEnv(): void {
+  const key = process.env.XAI_API_KEY?.trim().replace(/^['"]|['"]$/g, "");
+  if (!key || key.includes("your_xai") || key === "test") {
+    console.error(
+      "\n❌  XAI_API_KEY missing or placeholder (set in server/.env or Railway variables)",
+      "\n    If your terminal has export XAI_API_KEY=test, run: unset XAI_API_KEY",
+      "\n    Then add your real key from https://console.x.ai/team/default/api-keys\n",
+    );
+    process.exit(1);
+  }
+  if (!process.env.JWT_SECRET?.trim()) {
+    console.error("\n❌  JWT_SECRET missing (set in server/.env or Railway variables)\n");
+    process.exit(1);
+  }
+}
+
+validateEnv();
+
+const app = express();
+const port = Number(process.env.PORT ?? 3000);
+const host = process.env.HOST ?? "0.0.0.0";
+
+app.set("trust proxy", 1);
+
+app.use(cors());
+app.use(express.json());
+app.use("/uploads", express.static(getUploadsDir()));
+
+app.get("/health", (_req, res) => {
+  res.json({ ok: true });
+});
+
+app.get("/health/xai", async (_req, res) => {
+  try {
+    await verifyXaiConnection();
+    res.json({ ok: true, xai: "connected" });
+  } catch (e) {
+    res.status(502).json({
+      ok: false,
+      error: e instanceof Error ? e.message : "xAI check failed",
+    });
+  }
+});
+
+app.use("/auth", authRouter);
+app.use("/messages", messagesRouter);
+app.use("/realtime", realtimeRouter);
+
+app.listen(port, host, async () => {
+  console.log(`Mia server listening on http://${host}:${port}`);
+  try {
+    await verifyXaiConnection();
+    console.log("✓ xAI API key verified");
+  } catch (e) {
+    console.error("✗ xAI API key check failed:", e);
+  }
+});

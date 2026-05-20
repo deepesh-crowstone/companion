@@ -1,0 +1,6 @@
+# Native build for better-sqlite3 on Railway/Linux
+[phases.setup]
+nixPkgs = ["nodejs_20", "python311", "gcc", "pkg-config"]
+
+[variables]
+NIXPACKS_NODE_VERSION = "20"
