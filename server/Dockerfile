@@ -1,3 +1,4 @@
+# Build context is the repo root (see railway.toml). Paths use server/.
 FROM node:20-bookworm-slim
 
 RUN apt-get update \
@@ -6,11 +7,11 @@ RUN apt-get update \
 
 WORKDIR /app
 
-COPY package.json package-lock.json ./
+COPY server/package.json server/package-lock.json ./
 RUN npm ci
 
-COPY tsconfig.json ./
-COPY src ./src
+COPY server/tsconfig.json ./
+COPY server/src ./src
 RUN npm run build
 
 ENV NODE_ENV=production
