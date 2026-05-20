@@ -1,0 +1,9 @@
+# Monorepo: build the Node backend in server/ (repo root deploys).
+[build]
+builder = "dockerfile"
+dockerfilePath = "server/Dockerfile"
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 120
+restartPolicyType = "on_failure"

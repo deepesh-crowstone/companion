@@ -64,9 +64,10 @@ The API lives in `server/`. Railway runs the compiled Node app and exposes HTTPS
 
 ### 1. Create the service
 
-1. [railway.app](https://railway.app) → **New Project** → **Deploy from GitHub** (or upload repo).
-2. Set **Root Directory** to `server`.
-3. Railway reads `server/railway.toml` (build + health check on `/health`).
+1. [railway.app](https://railway.app) → **New Project** → **Deploy from GitHub repo** → `deepesh-crowstone/companion`.
+2. **Root Directory:** leave empty (repo root). The root `railway.toml` builds `server/Dockerfile`.
+   - **Alternative:** set Root Directory to `server` and use Nixpacks via `server/railway.toml` instead.
+3. If a deploy fails with **“railpack process exited”**, the builder was scanning the whole repo (`client/` + `server/`). Use the root `railway.toml` + Dockerfile, or set Root Directory to `server`.
 
 ### 2. Variables (Railway → service → Variables)
 

@@ -1,6 +1,15 @@
-# Native build for better-sqlite3 on Railway/Linux
+# Used only if this service's Root Directory is set to "server" (Nixpacks/Railpack).
 [phases.setup]
-nixPkgs = ["nodejs_20", "python311", "gcc", "pkg-config"]
+nixPkgs = ["nodejs", "python3", "gcc"]
+
+[phases.install]
+cmds = ["npm ci"]
+
+[phases.build]
+cmds = ["npm run build"]
+
+[start]
+cmd = "npm start"
 
 [variables]
 NIXPACKS_NODE_VERSION = "20"
