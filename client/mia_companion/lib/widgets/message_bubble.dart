@@ -14,6 +14,7 @@ class MessageBubble extends StatelessWidget {
     this.showTimestamp = false,
     this.audioDurationSec,
     this.compactTop = false,
+    this.receiptStatus,
   });
 
   final ChatMessage message;
@@ -21,6 +22,7 @@ class MessageBubble extends StatelessWidget {
   final bool isPlaying;
   final bool showTimestamp;
   final int? audioDurationSec;
+  final MessageReceiptStatus? receiptStatus;
 
   /// Tighter gap when the previous message is from the same sender.
   final bool compactTop;
@@ -29,9 +31,9 @@ class MessageBubble extends StatelessWidget {
   static const double gapNewSender = 16;
 
   EdgeInsets get _bubbleMargin => EdgeInsets.only(
-        top: compactTop ? gapSameSender : gapNewSender,
-        bottom: 2,
-      );
+    top: compactTop ? gapSameSender : gapNewSender,
+    bottom: 2,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -46,8 +48,9 @@ class MessageBubble extends StatelessWidget {
     return Padding(
       padding: EdgeInsets.zero,
       child: Column(
-        crossAxisAlignment:
-            isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        crossAxisAlignment: isUser
+            ? CrossAxisAlignment.end
+            : CrossAxisAlignment.start,
         children: [
           Align(
             alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
@@ -68,9 +71,21 @@ class MessageBubble extends StatelessWidget {
                   ),
                 ],
               ),
-              child: Text(
-                _displayText(message.content, isUser: isUser),
-                style: MiaTheme.chatBody(isUser: isUser),
+              child: Column(
+                crossAxisAlignment: isUser
+                    ? CrossAxisAlignment.end
+                    : CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    _displayText(message.content, isUser: isUser),
+                    style: MiaTheme.chatBody(isUser: isUser),
+                  ),
+                  if (isUser && receiptStatus != null) ...[
+                    const SizedBox(height: 4),
+                    _ReceiptTicks(status: receiptStatus!),
+                  ],
+                ],
               ),
             ),
           ),
@@ -92,8 +107,9 @@ class MessageBubble extends StatelessWidget {
     return Padding(
       padding: EdgeInsets.zero,
       child: Column(
-        crossAxisAlignment:
-            isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        crossAxisAlignment: isUser
+            ? CrossAxisAlignment.end
+            : CrossAxisAlignment.start,
         children: [
           Align(
             alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
@@ -133,3 +149,21 @@ class MessageBubble extends StatelessWidget {
   }
 }
 
+class _ReceiptTicks extends StatelessWidget {
+  const _ReceiptTicks({required this.status});
+
+  final MessageReceiptStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final isRead = status == MessageReceiptStatus.read;
+    final color = isRead
+        ? MiaColors.online
+        : Colors.white.withValues(alpha: 0.68);
+    final icon = status == MessageReceiptStatus.sent
+        ? Icons.done
+        : Icons.done_all;
+
+    return Icon(icon, size: 15, color: color);
+  }
+}

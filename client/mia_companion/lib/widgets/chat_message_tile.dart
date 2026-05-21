@@ -13,6 +13,7 @@ class ChatMessageTile extends StatelessWidget {
     required this.compactTop,
     required this.isPlaying,
     this.onPlayAudio,
+    this.receiptStatus,
   });
 
   final ChatMessage message;
@@ -20,6 +21,7 @@ class ChatMessageTile extends StatelessWidget {
   final bool compactTop;
   final bool isPlaying;
   final VoidCallback? onPlayAudio;
+  final MessageReceiptStatus? receiptStatus;
 
   @override
   Widget build(BuildContext context) {
@@ -32,6 +34,7 @@ class ChatMessageTile extends StatelessWidget {
           compactTop: compactTop,
           isPlaying: isPlaying,
           onPlayAudio: onPlayAudio,
+          receiptStatus: receiptStatus,
         ),
       ],
     );

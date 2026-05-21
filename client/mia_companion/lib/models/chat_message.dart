@@ -1,5 +1,7 @@
 import '../utils/chat_dates.dart';
 
+enum MessageReceiptStatus { sent, delivered, read }
+
 class ChatMessage {
   final int id;
   final String role;

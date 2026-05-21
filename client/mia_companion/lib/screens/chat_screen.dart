@@ -36,6 +36,8 @@ enum _MiaActivity { none, typing, recording }
 class _ChatScreenState extends State<ChatScreen> {
   /// Wait this long after the last send (and empty input) before Mia replies.
   static const _replyIdlePause = Duration(milliseconds: 2500);
+  static const _receiptDeliveredDelay = Duration(milliseconds: 450);
+  static const _receiptReadDelay = Duration(milliseconds: 1300);
 
   /// After the user sends, show Mia as online in the header.
   static const _goOnlineDelay = Duration(seconds: 2);
@@ -68,6 +70,8 @@ class _ChatScreenState extends State<ChatScreen> {
   final List<int> _pendingOptimisticIds = [];
   Timer? _replyTimer;
   int _replyGeneration = 0;
+  final Map<int, MessageReceiptStatus> _receiptStatuses = {};
+  final Map<int, DateTime> _receiptSentAt = {};
 
   @override
   void initState() {
@@ -107,7 +111,9 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   bool get _showScrollToBottom =>
-      !_loading && !_pinnedToBottom && (_messages.isNotEmpty || _showMiaActivity);
+      !_loading &&
+      !_pinnedToBottom &&
+      (_messages.isNotEmpty || _showMiaActivity);
 
   void _onInputChanged() {
     if (_input.text.isNotEmpty) {
@@ -229,6 +235,7 @@ class _ChatScreenState extends State<ChatScreen> {
         compactTop: _compactTop(msgIndex),
         isPlaying: _playingId == msg.id,
         onPlayAudio: msg.isAudio ? () => _playAudio(msg) : null,
+        receiptStatus: msg.isUser ? _receiptStatuses[msg.id] : null,
       ),
     );
   }
@@ -309,6 +316,9 @@ class _ChatScreenState extends State<ChatScreen> {
 
     _textOutbox.add(text);
     _pendingOptimisticIds.add(optimisticId);
+    _receiptStatuses[optimisticId] = MessageReceiptStatus.sent;
+    _receiptSentAt[optimisticId] = DateTime.now();
+    unawaited(_runReceiptSequence(optimisticId));
 
     setState(() {
       _messages = [..._messages, optimistic];
@@ -316,7 +326,7 @@ class _ChatScreenState extends State<ChatScreen> {
     });
     _scrollToBottom(force: true);
     _scheduleGoOnlineAfterUserSend();
-    _scheduleMiaReply();
+    unawaited(_flushTextOutbox());
   }
 
   Future<void> _flushTextOutbox() async {
@@ -328,42 +338,53 @@ class _ChatScreenState extends State<ChatScreen> {
     _pendingOptimisticIds.clear();
 
     final generation = ++_replyGeneration;
-    _showMiaTypingIndicator();
-    final typingElapsed = Stopwatch()..start();
 
     try {
       final result = await ApiService.instance.sendTextBatch(texts);
       if (!mounted || generation != _replyGeneration) return;
 
       final assistants = result.assistants;
-      await HumanPresence.waitRemaining(
-        _initialAssistantChunkDelay(assistants),
-        typingElapsed,
-      );
-      if (!mounted || generation != _replyGeneration) return;
-
+      final userIds = <int>[];
       setState(() {
         var updated = List<ChatMessage>.from(_messages);
         for (var i = 0; i < optimisticIds.length; i++) {
           final optId = optimisticIds[i];
           final idx = updated.indexWhere((m) => m.id == optId);
           if (idx >= 0 && i < result.users.length) {
-            updated[idx] = result.users[i];
+            final userMsg = result.users[i];
+            updated[idx] = userMsg;
+            userIds.add(userMsg.id);
+            _transferReceiptStatus(optId, userMsg.id);
           }
         }
         _messages = updated;
       });
+      await _ensureReceiptsRead(userIds);
+      if (!mounted || generation != _replyGeneration) return;
+
+      _showMiaTypingIndicator();
+      final typingElapsed = Stopwatch()..start();
+      await HumanPresence.waitRemaining(
+        _initialAssistantChunkDelay(assistants),
+        typingElapsed,
+      );
+      if (!mounted || generation != _replyGeneration) return;
+
       for (var i = 0; i < assistants.length; i++) {
         if (i > 0) {
-          await Future<void>.delayed(_betweenAssistantChunksDelay(assistants[i]));
+          await Future<void>.delayed(
+            _betweenAssistantChunksDelay(assistants[i]),
+          );
           if (!mounted || generation != _replyGeneration) return;
         }
         setState(() {
           _messages = [..._messages, assistants[i]];
-          _miaActivity =
-              i == assistants.length - 1 ? _MiaActivity.none : _MiaActivity.typing;
-          _statusText =
-              i == assistants.length - 1 ? _statusWhenIdle() : 'typing...';
+          _miaActivity = i == assistants.length - 1
+              ? _MiaActivity.none
+              : _MiaActivity.typing;
+          _statusText = i == assistants.length - 1
+              ? _statusWhenIdle()
+              : 'typing...';
         });
         _scrollToBottom(animate: true);
       }
@@ -375,6 +396,10 @@ class _ChatScreenState extends State<ChatScreen> {
             .toList();
         _miaActivity = _MiaActivity.none;
         _statusText = _statusWhenIdle();
+        for (final id in optimisticIds) {
+          _receiptStatuses.remove(id);
+          _receiptSentAt.remove(id);
+        }
       });
       _textOutbox.insertAll(0, texts);
       _pendingOptimisticIds.insertAll(0, optimisticIds);
@@ -392,7 +417,55 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Duration _betweenAssistantChunksDelay(ChatMessage message) {
     final chars = message.content.trim().length;
-    return Duration(milliseconds: (1100 + chars * 55).clamp(1400, 4200).toInt());
+    return Duration(
+      milliseconds: (1100 + chars * 55).clamp(1400, 4200).toInt(),
+    );
+  }
+
+  Future<void> _runReceiptSequence(int id) async {
+    await Future<void>.delayed(_receiptDeliveredDelay);
+    _setReceiptStatus(id, MessageReceiptStatus.delivered);
+    await Future<void>.delayed(_receiptReadDelay - _receiptDeliveredDelay);
+    _setReceiptStatus(id, MessageReceiptStatus.read);
+  }
+
+  void _setReceiptStatus(int id, MessageReceiptStatus status) {
+    if (!mounted || !_receiptStatuses.containsKey(id)) return;
+    final current = _receiptStatuses[id];
+    if (current != null && current.index >= status.index) return;
+    setState(() => _receiptStatuses[id] = status);
+  }
+
+  void _transferReceiptStatus(int fromId, int toId) {
+    final status = _receiptStatuses.remove(fromId) ?? MessageReceiptStatus.sent;
+    final sentAt = _receiptSentAt.remove(fromId) ?? DateTime.now();
+    _receiptStatuses[toId] = status;
+    _receiptSentAt[toId] = sentAt;
+  }
+
+  Future<void> _ensureReceiptsRead(List<int> ids) async {
+    if (ids.isEmpty) return;
+    while (mounted &&
+        ids.any((id) => _receiptStatuses[id] != MessageReceiptStatus.read)) {
+      final now = DateTime.now();
+      var wait = _receiptReadDelay;
+      for (final id in ids) {
+        final sentAt = _receiptSentAt[id] ?? now;
+        final elapsed = now.difference(sentAt);
+        final remaining = _receiptReadDelay - elapsed;
+        if (remaining <= Duration.zero) {
+          _setReceiptStatus(id, MessageReceiptStatus.read);
+        } else if (remaining < wait) {
+          wait = remaining;
+        }
+      }
+      if (ids.every(
+        (id) => _receiptStatuses[id] == MessageReceiptStatus.read,
+      )) {
+        return;
+      }
+      await Future<void>.delayed(wait);
+    }
   }
 
   Future<void> _startVoiceRecording() async {
@@ -422,7 +495,9 @@ class _ChatScreenState extends State<ChatScreen> {
 
     _recordDurationTimer?.cancel();
     _recordingDuration = Duration.zero;
-    _recordDurationTimer = Timer.periodic(const Duration(milliseconds: 200), (_) {
+    _recordDurationTimer = Timer.periodic(const Duration(milliseconds: 200), (
+      _,
+    ) {
       if (!mounted || !_recording) return;
       setState(() {
         _recordingDuration += const Duration(milliseconds: 200);
@@ -697,14 +772,14 @@ class _ChatScreenState extends State<ChatScreen> {
       appBar: MiaChatHeader(
         statusText: _statusText,
         onProfile: () {
-          Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const MiaProfileScreen()),
-          );
+          Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const MiaProfileScreen()));
         },
         onCall: () {
-          Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const VoiceCallScreen()),
-          );
+          Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const VoiceCallScreen()));
         },
         onMenu: _openMenuSheet,
       ),
@@ -726,25 +801,24 @@ class _ChatScreenState extends State<ChatScreen> {
                           ),
                         )
                       : _messages.isEmpty && !_showMiaActivity
-                          ? const EmptyChat()
-                          : RefreshIndicator(
-                              color: MiaColors.accent,
-                              onRefresh: _load,
-                              child: ListView.builder(
-                                controller: _scroll,
-                                reverse: true,
-                                keyboardDismissBehavior:
-                                    ScrollViewKeyboardDismissBehavior.manual,
-                                physics: const AlwaysScrollableScrollPhysics(
-                                  parent: ClampingScrollPhysics(),
-                                ),
-                                padding:
-                                    const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                                cacheExtent: 800,
-                                itemCount: _listItemCount,
-                                itemBuilder: _buildListItem,
-                              ),
+                      ? const EmptyChat()
+                      : RefreshIndicator(
+                          color: MiaColors.accent,
+                          onRefresh: _load,
+                          child: ListView.builder(
+                            controller: _scroll,
+                            reverse: true,
+                            keyboardDismissBehavior:
+                                ScrollViewKeyboardDismissBehavior.manual,
+                            physics: const AlwaysScrollableScrollPhysics(
+                              parent: ClampingScrollPhysics(),
                             ),
+                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                            cacheExtent: 800,
+                            itemCount: _listItemCount,
+                            itemBuilder: _buildListItem,
+                          ),
+                        ),
                   if (_showScrollToBottom)
                     Padding(
                       padding: const EdgeInsets.only(right: 12, bottom: 10),
