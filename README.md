@@ -14,9 +14,16 @@ Flutter Android app with a Node.js backend, powered by [xAI Grok](https://docs.x
 ```bash
 cd server
 cp .env.example .env
-# Edit .env: set XAI_API_KEY and JWT_SECRET
+# Edit .env: XAI_API_KEY, JWT_SECRET, DATABASE_URL (PostgreSQL)
 npm install
 npm run dev
+```
+
+**PostgreSQL locally** (Docker example):
+
+```bash
+docker run -d --name mia-postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=mia -p 5432:5432 postgres:16
+# DATABASE_URL=postgresql://postgres:postgres@localhost:5432/mia
 ```
 
 Server runs at `http://0.0.0.0:3000`.
@@ -28,16 +35,27 @@ cd client/mia_companion
 flutter pub get
 ```
 
-**Emulator** (default): talks to `http://10.0.2.2:3000`.
+**Install like a user (release APK)** — server URL is already built in (Railway):
 
-**Physical device**: use your Mac's **actual** LAN IP (not a placeholder):
+```bash
+cd client/mia_companion
+./scripts/build_apk.sh
+```
+
+Copy `build/app/outputs/flutter-apk/app-release.apk` to your phone and install. Sign up in the app — no extra setup.
+
+**Local dev on emulator** (Mac server):
+
+```bash
+flutter run --dart-define=API_BASE_URL=http://10.0.2.2:3000
+```
+
+**Local dev on physical device** (same Wi‑Fi as Mac):
 
 ```bash
 ipconfig getifaddr en0
 flutter run --dart-define=API_BASE_URL=http://YOUR_MAC_IP:3000
 ```
-
-On your phone's browser, `http://YOUR_MAC_IP:3000/health` must show `{"ok":true}` before the app will work.
 
 ### 3. Run
 
@@ -52,8 +70,8 @@ On your phone's browser, `http://YOUR_MAC_IP:3000/health` must show `{"ok":true}
 
 | Feature | Implementation |
 |--------|----------------|
-| Auth | SQLite users, bcrypt, JWT |
-| Chat history | One thread per user in SQLite |
+| Auth | PostgreSQL users, bcrypt, JWT |
+| Chat history | One thread per user in PostgreSQL |
 | Text chat | xAI `chat/completions` + Mia system prompt |
 | Voice notes | xAI STT → chat → TTS (`eve`) |
 | Voice call | Ephemeral token + WebSocket Realtime API |
@@ -69,30 +87,35 @@ The API lives in `server/`. Railway runs the compiled Node app and exposes HTTPS
    - **Alternative:** set Root Directory to `server` and use Nixpacks via `server/railway.toml` instead.
 3. If a deploy fails with **“railpack process exited”**, the builder was scanning the whole repo (`client/` + `server/`). Use the root `railway.toml` + Dockerfile, or set Root Directory to `server`.
 
-### 2. Variables (Railway → service → Variables)
+### 2. Add PostgreSQL
+
+1. In your Railway project → **+ New** → **Database** → **PostgreSQL**.
+2. Open your **companion** (API) service → **Variables** → **Add reference** → select Postgres `DATABASE_URL`.
+
+### 3. Other variables (API service)
 
 | Variable | Required | Example |
 |----------|----------|---------|
+| `DATABASE_URL` | Yes | From Railway Postgres (reference) |
 | `XAI_API_KEY` | Yes | `xai-…` from [xAI console](https://console.x.ai/team/default/api-keys) |
 | `JWT_SECRET` | Yes | Long random string (32+ chars) |
 | `NODE_ENV` | Yes | `production` |
 | `DATA_DIR` | Yes* | `/data` |
 | `XAI_CHAT_MODEL` | No | `grok-3-mini` (default) |
 
-\* **Persistent storage:** SQLite and voice files must survive redeploys.
+\* **Voice files** still live on disk (not in Postgres). Mount a volume at `/data` and set `DATA_DIR=/data`, or voice notes are lost on redeploy.
 
-1. Service → **Volumes** → **Add Volume** → mount path `/data`
-2. Set `DATA_DIR=/data`
+### 4. Redeploy
 
-Without a volume, data is wiped on every deploy.
+Push to GitHub or click **Redeploy**. Check `https://YOUR-DOMAIN/health/db` → `{"ok":true,"db":"connected"}`.
 
-### 3. Public URL
+### 5. Public URL
 
 1. Service → **Settings** → **Networking** → **Generate Domain** (e.g. `mia-api-production.up.railway.app`).
 2. Check: `https://YOUR-DOMAIN/health` → `{"ok":true}`.
 3. Optional: `https://YOUR-DOMAIN/health/xai` → confirms xAI key.
 
-### 4. Point the Flutter app at Railway
+### 6. Point the Flutter app at Railway
 
 ```bash
 cd client/mia_companion

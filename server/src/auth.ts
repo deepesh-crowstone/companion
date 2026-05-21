@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import type { Request, Response, NextFunction } from "express";
-import { db, type DbUser } from "./db.js";
+import { pool, type DbUser } from "./db.js";
 
 const JWT_EXPIRY = "30d";
 
@@ -47,10 +47,10 @@ export function authMiddleware(
   }
 }
 
-export function registerUser(
+export async function registerUser(
   username: string,
   password: string,
-): { user: DbUser; token: string } | { error: string } {
+): Promise<{ user: DbUser; token: string } | { error: string }> {
   const trimmed = username.trim();
   if (trimmed.length < 3 || trimmed.length > 32) {
     return { error: "Username must be 3–32 characters" };
@@ -65,35 +65,32 @@ export function registerUser(
   const passwordHash = bcrypt.hashSync(password, 10);
 
   try {
-    const result = db
-      .prepare(
-        "INSERT INTO users (username, password_hash) VALUES (?, ?) RETURNING id, username, password_hash, created_at",
-      )
-      .get(trimmed, passwordHash) as DbUser;
-
-    return { user: result, token: signToken(result) };
+    const { rows } = await pool.query<DbUser>(
+      `INSERT INTO users (username, password_hash)
+       VALUES ($1, $2)
+       RETURNING id, username, password_hash, created_at`,
+      [trimmed, passwordHash],
+    );
+    const user = rows[0];
+    return { user, token: signToken(user) };
   } catch (e: unknown) {
-    if (
-      e &&
-      typeof e === "object" &&
-      "code" in e &&
-      (e as { code: string }).code === "SQLITE_CONSTRAINT_UNIQUE"
-    ) {
+    if (e && typeof e === "object" && "code" in e && (e as { code: string }).code === "23505") {
       return { error: "Username already taken" };
     }
     throw e;
   }
 }
 
-export function loginUser(
+export async function loginUser(
   username: string,
   password: string,
-): { user: DbUser; token: string } | { error: string } {
-  const user = db
-    .prepare(
-      "SELECT id, username, password_hash, created_at FROM users WHERE username = ? COLLATE NOCASE",
-    )
-    .get(username.trim()) as DbUser | undefined;
+): Promise<{ user: DbUser; token: string } | { error: string }> {
+  const { rows } = await pool.query<DbUser>(
+    `SELECT id, username, password_hash, created_at
+     FROM users WHERE LOWER(username) = LOWER($1)`,
+    [username.trim()],
+  );
+  const user = rows[0];
 
   if (!user || !bcrypt.compareSync(password, user.password_hash)) {
     return { error: "Invalid username or password" };

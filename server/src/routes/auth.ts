@@ -9,7 +9,7 @@ authRouter.get("/me", authMiddleware, (req, res) => {
   res.json({ user: { id: auth.userId, username: auth.username } });
 });
 
-authRouter.post("/register", (req, res) => {
+authRouter.post("/register", async (req, res) => {
   const { username, password } = req.body as {
     username?: string;
     password?: string;
@@ -20,19 +20,24 @@ authRouter.post("/register", (req, res) => {
     return;
   }
 
-  const result = registerUser(username, password);
-  if ("error" in result) {
-    res.status(400).json({ error: result.error });
-    return;
-  }
+  try {
+    const result = await registerUser(username, password);
+    if ("error" in result) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
 
-  res.json({
-    token: result.token,
-    user: { id: result.user.id, username: result.user.username },
-  });
+    res.json({
+      token: result.token,
+      user: { id: result.user.id, username: result.user.username },
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Registration failed" });
+  }
 });
 
-authRouter.post("/login", (req, res) => {
+authRouter.post("/login", async (req, res) => {
   const { username, password } = req.body as {
     username?: string;
     password?: string;
@@ -43,14 +48,19 @@ authRouter.post("/login", (req, res) => {
     return;
   }
 
-  const result = loginUser(username, password);
-  if ("error" in result) {
-    res.status(401).json({ error: result.error });
-    return;
-  }
+  try {
+    const result = await loginUser(username, password);
+    if ("error" in result) {
+      res.status(401).json({ error: result.error });
+      return;
+    }
 
-  res.json({
-    token: result.token,
-    user: { id: result.user.id, username: result.user.username },
-  });
+    res.json({
+      token: result.token,
+      user: { id: result.user.id, username: result.user.username },
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Login failed" });
+  }
 });

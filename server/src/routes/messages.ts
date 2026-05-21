@@ -3,7 +3,7 @@ import multer from "multer";
 import path from "path";
 import { v4 as uuidv4 } from "uuid";
 import { authMiddleware, type AuthPayload } from "../auth.js";
-import { db, getUploadsDir, type DbMessage } from "../db.js";
+import { pool, getUploadsDir, type DbMessage } from "../db.js";
 import { chatWithMia, synthesizeSpeech, transcribeAudio } from "../xai.js";
 
 const upload = multer({
@@ -19,39 +19,34 @@ function getAuth(req: Request): AuthPayload {
   return (req as Request & { auth: AuthPayload }).auth;
 }
 
-function listMessages(userId: number): DbMessage[] {
-  return db
-    .prepare(
-      `SELECT id, user_id, role, content, message_type, audio_filename, created_at
-       FROM messages WHERE user_id = ? ORDER BY created_at ASC, id ASC`,
-    )
-    .all(userId) as DbMessage[];
+async function listMessages(userId: number): Promise<DbMessage[]> {
+  const { rows } = await pool.query<DbMessage>(
+    `SELECT id, user_id, role, content, message_type, audio_filename, created_at
+     FROM messages WHERE user_id = $1 ORDER BY created_at ASC, id ASC`,
+    [userId],
+  );
+  return rows;
 }
 
-function insertMessage(
+async function insertMessage(
   userId: number,
   role: "user" | "assistant",
   content: string,
   messageType: "text" | "audio",
   audioFilename: string | null = null,
-): DbMessage {
-  return db
-    .prepare(
-      `INSERT INTO messages (user_id, role, content, message_type, audio_filename)
-       VALUES (?, ?, ?, ?, ?)
-       RETURNING id, user_id, role, content, message_type, audio_filename, created_at`,
-    )
-    .get(userId, role, content, messageType, audioFilename) as DbMessage;
+): Promise<DbMessage> {
+  const { rows } = await pool.query<DbMessage>(
+    `INSERT INTO messages (user_id, role, content, message_type, audio_filename)
+     VALUES ($1, $2, $3, $4, $5)
+     RETURNING id, user_id, role, content, message_type, audio_filename, created_at`,
+    [userId, role, content, messageType, audioFilename],
+  );
+  return rows[0];
 }
 
-/** SQLite datetime('now') is UTC but stored without a timezone suffix. */
-function sqliteUtcToIso(raw: string): string {
-  const trimmed = raw.trim();
-  if (trimmed.includes("T") && /[zZ]|[+-]\d{2}:?\d{2}$/.test(trimmed)) {
-    return new Date(trimmed).toISOString();
-  }
-  const normalized = trimmed.replace(" ", "T");
-  return new Date(`${normalized}Z`).toISOString();
+function toIsoTimestamp(value: Date | string): string {
+  if (value instanceof Date) return value.toISOString();
+  return new Date(value).toISOString();
 }
 
 function toPublicMessage(msg: DbMessage, baseUrl: string) {
@@ -64,17 +59,20 @@ function toPublicMessage(msg: DbMessage, baseUrl: string) {
       msg.audio_filename != null
         ? `${baseUrl}/uploads/${msg.audio_filename}`
         : null,
-    createdAt: sqliteUtcToIso(msg.created_at),
+    createdAt: toIsoTimestamp(msg.created_at),
   };
 }
 
-messagesRouter.get("/", (req, res) => {
+messagesRouter.get("/", async (req, res) => {
   const auth = getAuth(req);
   const baseUrl = `${req.protocol}://${req.get("host")}`;
-  const messages = listMessages(auth.userId).map((m) =>
-    toPublicMessage(m, baseUrl),
-  );
-  res.json({ messages });
+  try {
+    const messages = await listMessages(auth.userId);
+    res.json({ messages: messages.map((m) => toPublicMessage(m, baseUrl)) });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Failed to load messages" });
+  }
 });
 
 messagesRouter.post("/text", async (req, res) => {
@@ -88,11 +86,11 @@ messagesRouter.post("/text", async (req, res) => {
   }
 
   try {
-    const history = listMessages(auth.userId);
-    const userMsg = insertMessage(auth.userId, "user", trimmed, "text");
+    const history = await listMessages(auth.userId);
+    const userMsg = await insertMessage(auth.userId, "user", trimmed, "text");
 
     const reply = await chatWithMia([...history, userMsg]);
-    const assistantMsg = insertMessage(auth.userId, "assistant", reply, "text");
+    const assistantMsg = await insertMessage(auth.userId, "assistant", reply, "text");
 
     const baseUrl = `${req.protocol}://${req.get("host")}`;
     res.json({
@@ -124,14 +122,14 @@ messagesRouter.post("/text/batch", async (req, res) => {
   }
 
   try {
-    const history = listMessages(auth.userId);
+    const history = await listMessages(auth.userId);
     const userMsgs: DbMessage[] = [];
     for (const text of trimmed) {
-      userMsgs.push(insertMessage(auth.userId, "user", text, "text"));
+      userMsgs.push(await insertMessage(auth.userId, "user", text, "text"));
     }
 
     const reply = await chatWithMia([...history, ...userMsgs]);
-    const assistantMsg = insertMessage(auth.userId, "assistant", reply, "text");
+    const assistantMsg = await insertMessage(auth.userId, "assistant", reply, "text");
 
     const baseUrl = `${req.protocol}://${req.get("host")}`;
     res.json({
@@ -171,7 +169,7 @@ messagesRouter.post("/voice", upload.single("audio"), async (req, res) => {
       : "audio/mp4";
 
   try {
-    const history = listMessages(auth.userId);
+    const history = await listMessages(auth.userId);
     const transcript = await transcribeAudio(finalPath, mime);
 
     if (!transcript) {
@@ -179,7 +177,7 @@ messagesRouter.post("/voice", upload.single("audio"), async (req, res) => {
       return;
     }
 
-    const userMsg = insertMessage(
+    const userMsg = await insertMessage(
       auth.userId,
       "user",
       transcript,
@@ -193,7 +191,7 @@ messagesRouter.post("/voice", upload.single("audio"), async (req, res) => {
     const { writeFileSync } = await import("fs");
     writeFileSync(path.join(getUploadsDir(), assistantAudioName), mp3Buffer);
 
-    const assistantMsg = insertMessage(
+    const assistantMsg = await insertMessage(
       auth.userId,
       "assistant",
       reply,

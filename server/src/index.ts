@@ -4,7 +4,7 @@ import express from "express";
 import { authRouter } from "./routes/auth.js";
 import { messagesRouter } from "./routes/messages.js";
 import { realtimeRouter } from "./routes/realtime.js";
-import { getUploadsDir } from "./db.js";
+import { checkDbConnection, getUploadsDir, initDb } from "./db.js";
 import { verifyXaiConnection } from "./xai.js";
 
 function validateEnv(): void {
@@ -19,6 +19,10 @@ function validateEnv(): void {
   }
   if (!process.env.JWT_SECRET?.trim()) {
     console.error("\n❌  JWT_SECRET missing (set in server/.env or Railway variables)\n");
+    process.exit(1);
+  }
+  if (!process.env.DATABASE_URL?.trim()) {
+    console.error("\n❌  DATABASE_URL missing (PostgreSQL connection string)\n");
     process.exit(1);
   }
 }
@@ -39,6 +43,15 @@ app.get("/health", (_req, res) => {
   res.json({ ok: true });
 });
 
+app.get("/health/db", async (_req, res) => {
+  const ok = await checkDbConnection();
+  if (ok) {
+    res.json({ ok: true, db: "connected" });
+  } else {
+    res.status(503).json({ ok: false, db: "disconnected" });
+  }
+});
+
 app.get("/health/xai", async (_req, res) => {
   try {
     await verifyXaiConnection();
@@ -55,12 +68,22 @@ app.use("/auth", authRouter);
 app.use("/messages", messagesRouter);
 app.use("/realtime", realtimeRouter);
 
-app.listen(port, host, async () => {
-  console.log(`Mia server listening on http://${host}:${port}`);
-  try {
-    await verifyXaiConnection();
-    console.log("✓ xAI API key verified");
-  } catch (e) {
-    console.error("✗ xAI API key check failed:", e);
-  }
+async function main(): Promise<void> {
+  await initDb();
+  console.log("✓ PostgreSQL schema ready");
+
+  app.listen(port, host, async () => {
+    console.log(`Mia server listening on http://${host}:${port}`);
+    try {
+      await verifyXaiConnection();
+      console.log("✓ xAI API key verified");
+    } catch (e) {
+      console.error("✗ xAI API key check failed:", e);
+    }
+  });
+}
+
+main().catch((e) => {
+  console.error("Failed to start server:", e);
+  process.exit(1);
 });
