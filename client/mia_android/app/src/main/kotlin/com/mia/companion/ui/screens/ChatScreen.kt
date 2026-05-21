@@ -534,8 +534,7 @@ private suspend fun flushTextOutbox(
         if (currentGeneration() != generation) return
         val assistants = result.assistantMessages?.takeIf { it.isNotEmpty() }
             ?: listOf(result.assistantMessage)
-        val assistantText = assistants.joinToString(" ") { it.content }
-        delay(max(0, max(800L, assistantText.length * 35L) - (System.currentTimeMillis() - t0)))
+        delay(max(0, initialAssistantChunkDelayMs(assistants) - (System.currentTimeMillis() - t0)))
         if (currentGeneration() != generation) return
         optIds.forEachIndexed { i, id ->
             val idx = messages.indexOfFirst { it.id == id }
@@ -543,7 +542,7 @@ private suspend fun flushTextOutbox(
         }
         assistants.forEachIndexed { i, assistant ->
             if (i > 0) {
-                delay((450L + assistant.content.length * 18L).coerceIn(600L, 1400L))
+                delay(betweenAssistantChunksDelayMs(assistant))
                 if (currentGeneration() != generation) return
             }
             messages.add(assistant)
@@ -561,4 +560,15 @@ private suspend fun flushTextOutbox(
         setStatus("offline")
         onError(e)
     }
+}
+
+private fun initialAssistantChunkDelayMs(assistants: List<ChatMessage>): Long {
+    val chars = assistants.firstOrNull()?.content?.trim()?.length ?: 0
+    val natural = (550L + chars * 36L).coerceIn(1100L, 16000L)
+    return (natural * 0.65).toLong().coerceIn(650L, 2500L)
+}
+
+private fun betweenAssistantChunksDelayMs(message: ChatMessage): Long {
+    val chars = message.content.trim().length
+    return (1100L + chars * 55L).coerceIn(1400L, 4200L)
 }

@@ -336,9 +336,8 @@ class _ChatScreenState extends State<ChatScreen> {
       if (!mounted || generation != _replyGeneration) return;
 
       final assistants = result.assistants;
-      final assistantText = assistants.map((m) => m.content).join(' ');
       await HumanPresence.waitRemaining(
-        HumanPresence.typingDuration(assistantText),
+        _initialAssistantChunkDelay(assistants),
         typingElapsed,
       );
       if (!mounted || generation != _replyGeneration) return;
@@ -356,10 +355,7 @@ class _ChatScreenState extends State<ChatScreen> {
       });
       for (var i = 0; i < assistants.length; i++) {
         if (i > 0) {
-          final delayMs = (450 + assistants[i].content.length * 18)
-              .clamp(600, 1400)
-              .toInt();
-          await Future<void>.delayed(Duration(milliseconds: delayMs));
+          await Future<void>.delayed(_betweenAssistantChunksDelay(assistants[i]));
           if (!mounted || generation != _replyGeneration) return;
         }
         setState(() {
@@ -384,6 +380,19 @@ class _ChatScreenState extends State<ChatScreen> {
       _pendingOptimisticIds.insertAll(0, optimisticIds);
       _handleError(e);
     }
+  }
+
+  Duration _initialAssistantChunkDelay(List<ChatMessage> assistants) {
+    final text = assistants.isEmpty ? '' : assistants.first.content;
+    final natural = HumanPresence.typingDuration(text).inMilliseconds;
+    return Duration(
+      milliseconds: (natural * 0.65).round().clamp(650, 2500).toInt(),
+    );
+  }
+
+  Duration _betweenAssistantChunksDelay(ChatMessage message) {
+    final chars = message.content.trim().length;
+    return Duration(milliseconds: (1100 + chars * 55).clamp(1400, 4200).toInt());
   }
 
   Future<void> _startVoiceRecording() async {

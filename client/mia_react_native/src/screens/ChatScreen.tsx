@@ -189,7 +189,11 @@ export function ChatScreen({ navigation }: Props) {
       if (generation !== replyGenerationRef.current) return;
 
       const assistants = result.assistants;
-      await waitRemaining(typingDuration(assistants.map((m) => m.content).join(' ')), startedAt);
+      const firstDelayMs = Math.min(
+        2500,
+        Math.max(650, Math.round(typingDuration(assistants[0]?.content ?? '') * 0.65)),
+      );
+      await waitRemaining(firstDelayMs, startedAt);
       if (generation !== replyGenerationRef.current) return;
 
       setMessages((prev) => {
@@ -202,7 +206,10 @@ export function ChatScreen({ navigation }: Props) {
       });
       for (let i = 0; i < assistants.length; i += 1) {
         if (i > 0) {
-          const delayMs = Math.min(1400, Math.max(600, 450 + assistants[i].content.length * 18));
+          const delayMs = Math.min(
+            4200,
+            Math.max(1400, 1100 + assistants[i].content.trim().length * 55),
+          );
           await new Promise((resolve) => setTimeout(resolve, delayMs));
           if (generation !== replyGenerationRef.current) return;
         }
