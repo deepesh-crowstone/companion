@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../data/mia_profile.dart';
 import '../theme/mia_theme.dart';
 
 class EmptyChat extends StatelessWidget {
@@ -36,7 +37,7 @@ class EmptyChat extends StatelessWidget {
             ),
             const SizedBox(height: 24),
             Text(
-              'say hi to mia',
+              'say hi to ${MiaProfile.name}',
               style: MiaTheme.serifTitle(size: 22),
             ),
             const SizedBox(height: 10),

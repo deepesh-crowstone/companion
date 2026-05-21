@@ -38,8 +38,7 @@ class _ChatScreenState extends State<ChatScreen> {
   static const _replyIdlePause = Duration(milliseconds: 2500);
   static const _receiptDeliveredDelay = Duration(milliseconds: 450);
   static const _receiptReadDelay = Duration(milliseconds: 1300);
-  static const _minFirstReplyTypingDelay = Duration(milliseconds: 1800);
-  static const _maxFirstReplyTypingDelay = Duration(milliseconds: 4200);
+  static const _postReadBeforeTypingDelay = Duration(milliseconds: 1500);
 
   /// After the user sends, show Mia as online in the header.
   static const _goOnlineDelay = Duration(seconds: 2);
@@ -349,6 +348,12 @@ class _ChatScreenState extends State<ChatScreen> {
         return;
       }
 
+      await Future<void>.delayed(_postReadBeforeTypingDelay);
+      if (!mounted || generation != _replyGeneration) {
+        unawaited(replyFuture.then<void>((_) {}, onError: (_) {}));
+        return;
+      }
+
       _showMiaTypingIndicator();
       final typingElapsed = Stopwatch()..start();
       final result = await replyFuture;
@@ -374,7 +379,7 @@ class _ChatScreenState extends State<ChatScreen> {
       if (!mounted || generation != _replyGeneration) return;
 
       await HumanPresence.waitRemaining(
-        _initialAssistantChunkDelay(assistants),
+        _assistantTypingDelay(assistants.isEmpty ? null : assistants.first),
         typingElapsed,
       );
       if (!mounted || generation != _replyGeneration) return;
@@ -382,7 +387,7 @@ class _ChatScreenState extends State<ChatScreen> {
       for (var i = 0; i < assistants.length; i++) {
         if (i > 0) {
           await Future<void>.delayed(
-            _betweenAssistantChunksDelay(assistants[i]),
+            _assistantTypingDelay(assistants[i]),
           );
           if (!mounted || generation != _replyGeneration) return;
         }
@@ -416,26 +421,8 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  Duration _initialAssistantChunkDelay(List<ChatMessage> assistants) {
-    final text = assistants.isEmpty ? '' : assistants.first.content;
-    final natural = HumanPresence.typingDuration(text).inMilliseconds;
-    return Duration(
-      milliseconds: (natural * 0.9)
-          .round()
-          .clamp(
-            _minFirstReplyTypingDelay.inMilliseconds,
-            _maxFirstReplyTypingDelay.inMilliseconds,
-          )
-          .toInt(),
-    );
-  }
-
-  Duration _betweenAssistantChunksDelay(ChatMessage message) {
-    final chars = message.content.trim().length;
-    return Duration(
-      milliseconds: (1100 + chars * 55).clamp(1400, 4200).toInt(),
-    );
-  }
+  Duration _assistantTypingDelay(ChatMessage? message) =>
+      HumanPresence.typingDuration(message?.content ?? '');
 
   Future<void> _runReceiptSequence(int id) async {
     await Future<void>.delayed(_receiptDeliveredDelay);
