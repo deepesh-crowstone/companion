@@ -10,6 +10,7 @@ import { buildClientSecretRequest } from "./realtime-session.js";
 import type { DbMessage } from "./db.js";
 
 const XAI_BASE = "https://api.x.ai/v1";
+const MIA_CHAT_TEMPERATURE = 0.78;
 
 const LATIN_LETTER_RE = /[A-Za-z]/;
 const EMOJI_RE = /[\p{Extended_Pictographic}\uFE0F\u200D]/gu;
@@ -161,8 +162,9 @@ Rules:
 - Output only the rewritten reply, no explanation.
 - All visible words must be in Devanagari script.
 - Transliterate English loanwords phonetically into Devanagari: cute -> क्यूट, phone -> फोन, message -> मैसेज, online -> ऑनलाइन, okay -> ओके, sorry -> सॉरी, drama -> ड्रामा.
-- Keep Mia's warm, playful, close-friend tone and the same meaning.
+- Keep Mia's natural, warm, close-friend tone and the same meaning.
 - Keep it short and conversational.
+- Do not add pet names, extra direct address, or a new follow-up question while rewriting.
 - ${tagRule}`,
         },
         { role: "user", content: text },
@@ -215,7 +217,7 @@ export async function chatWithMia(
     body: JSON.stringify({
       model: XAI_CHAT_MODEL,
       messages,
-      temperature: 0.9,
+      temperature: MIA_CHAT_TEMPERATURE,
     }),
   });
 
