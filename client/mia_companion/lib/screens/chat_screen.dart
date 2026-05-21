@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:record/record.dart';
 
+import '../config.dart';
 import '../models/chat_message.dart';
 import '../utils/chat_dates.dart';
 import '../utils/human_presence.dart';
@@ -223,10 +224,20 @@ class _ChatScreenState extends State<ChatScreen> {
       MiaTheme.showMessage(context, e.message);
       return;
     }
-    MiaTheme.showMessage(
-      context,
-      e.toString().replaceFirst('Exception: ', ''),
-    );
+    final msg = e.toString().replaceFirst('Exception: ', '');
+    if (msg.contains('Session expired') || msg.contains('foreign key')) {
+      MiaTheme.showMessage(context, 'please log in again.');
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const AuthScreen()),
+        (_) => false,
+      );
+      unawaited(ApiService.instance.logout());
+      return;
+    }
+    final short = msg.contains('Cannot reach server')
+        ? 'can\'t reach mia\'s server. open $resolvedApiBaseUrl/health in your phone browser, then reinstall the app with the production API URL.'
+        : msg;
+    MiaTheme.showMessage(context, short);
   }
 
   Future<void> _confirmLogout() async {
@@ -579,6 +590,60 @@ class _ChatScreenState extends State<ChatScreen> {
     return _sameSenderAsPrevious(index);
   }
 
+  void _dismissKeyboard() {
+    _inputFocus.unfocus();
+    FocusManager.instance.primaryFocus?.unfocus();
+  }
+
+  void _openMenuSheet() {
+    _dismissKeyboard();
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: MiaColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: MiaColors.miaBubble,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.refresh_rounded),
+              title: const Text('refresh chat'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _load();
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.logout_rounded, color: MiaColors.accentDeep),
+              title: const Text('log out'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _confirmLogout();
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    ).whenComplete(() {
+      if (!mounted) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _dismissKeyboard();
+      });
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -596,51 +661,10 @@ class _ChatScreenState extends State<ChatScreen> {
             MaterialPageRoute(builder: (_) => const VoiceCallScreen()),
           );
         },
-        onMenu: () {
-          showModalBottomSheet<void>(
-            context: context,
-            backgroundColor: MiaColors.surface,
-            shape: const RoundedRectangleBorder(
-              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-            ),
-            builder: (ctx) => SafeArea(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const SizedBox(height: 8),
-                  Container(
-                    width: 36,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: MiaColors.miaBubble,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.refresh_rounded),
-                    title: const Text('refresh chat'),
-                    onTap: () {
-                      Navigator.pop(ctx);
-                      _load();
-                    },
-                  ),
-                  ListTile(
-                    leading: Icon(Icons.logout_rounded, color: MiaColors.accentDeep),
-                    title: const Text('log out'),
-                    onTap: () {
-                      Navigator.pop(ctx);
-                      _confirmLogout();
-                    },
-                  ),
-                  const SizedBox(height: 8),
-                ],
-              ),
-            ),
-          );
-        },
+        onMenu: _openMenuSheet,
       ),
       body: GestureDetector(
-        onTap: () => FocusScope.of(context).unfocus(),
+        onTap: _dismissKeyboard,
         behavior: HitTestBehavior.translucent,
         child: Column(
           children: [

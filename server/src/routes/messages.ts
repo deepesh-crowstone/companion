@@ -19,6 +19,19 @@ function getAuth(req: Request): AuthPayload {
   return (req as Request & { auth: AuthPayload }).auth;
 }
 
+function apiErrorFromDb(e: unknown): { status: number; message: string } | null {
+  if (e && typeof e === "object" && "code" in e) {
+    const code = (e as { code: string }).code;
+    if (code === "23503") {
+      return {
+        status: 401,
+        message: "Session expired. Please log in again.",
+      };
+    }
+  }
+  return null;
+}
+
 async function listMessages(userId: number): Promise<DbMessage[]> {
   const { rows } = await pool.query<DbMessage>(
     `SELECT id, user_id, role, content, message_type, audio_filename, created_at
@@ -71,6 +84,11 @@ messagesRouter.get("/", async (req, res) => {
     res.json({ messages: messages.map((m) => toPublicMessage(m, baseUrl)) });
   } catch (e) {
     console.error(e);
+    const mapped = apiErrorFromDb(e);
+    if (mapped) {
+      res.status(mapped.status).json({ error: mapped.message });
+      return;
+    }
     res.status(500).json({ error: "Failed to load messages" });
   }
 });
@@ -99,6 +117,11 @@ messagesRouter.post("/text", async (req, res) => {
     });
   } catch (e) {
     console.error(e);
+    const mapped = apiErrorFromDb(e);
+    if (mapped) {
+      res.status(mapped.status).json({ error: mapped.message });
+      return;
+    }
     const msg = e instanceof Error ? e.message : "Failed to send message";
     const isXai = msg.includes("API key") || msg.includes("Chat failed");
     res.status(isXai ? 502 : 500).json({
@@ -138,6 +161,11 @@ messagesRouter.post("/text/batch", async (req, res) => {
     });
   } catch (e) {
     console.error(e);
+    const mapped = apiErrorFromDb(e);
+    if (mapped) {
+      res.status(mapped.status).json({ error: mapped.message });
+      return;
+    }
     const msg = e instanceof Error ? e.message : "Failed to send messages";
     const isXai = msg.includes("API key") || msg.includes("Chat failed");
     res.status(isXai ? 502 : 500).json({
@@ -206,6 +234,11 @@ messagesRouter.post("/voice", upload.single("audio"), async (req, res) => {
     });
   } catch (e) {
     console.error(e);
+    const mapped = apiErrorFromDb(e);
+    if (mapped) {
+      res.status(mapped.status).json({ error: mapped.message });
+      return;
+    }
     const msg = e instanceof Error ? e.message : "Failed to process voice note";
     const isXai = msg.includes("API key") || msg.includes("STT failed") || msg.includes("TTS failed");
     res.status(isXai ? 502 : 500).json({

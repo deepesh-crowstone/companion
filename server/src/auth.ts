@@ -27,11 +27,19 @@ export function verifyToken(token: string): AuthPayload {
   return jwt.verify(token, jwtSecret()) as AuthPayload;
 }
 
-export function authMiddleware(
+export async function findUserById(userId: number): Promise<DbUser | null> {
+  const { rows } = await pool.query<DbUser>(
+    `SELECT id, username, password_hash, created_at FROM users WHERE id = $1`,
+    [userId],
+  );
+  return rows[0] ?? null;
+}
+
+export async function authMiddleware(
   req: Request,
   res: Response,
   next: NextFunction,
-): void {
+): Promise<void> {
   const header = req.headers.authorization;
   if (!header?.startsWith("Bearer ")) {
     res.status(401).json({ error: "Unauthorized" });
@@ -40,7 +48,17 @@ export function authMiddleware(
 
   try {
     const payload = verifyToken(header.slice(7));
-    (req as Request & { auth: AuthPayload }).auth = payload;
+    const user = await findUserById(payload.userId);
+    if (!user) {
+      res.status(401).json({
+        error: "Session expired. Please log in again.",
+      });
+      return;
+    }
+    (req as Request & { auth: AuthPayload }).auth = {
+      userId: user.id,
+      username: user.username,
+    };
     next();
   } catch {
     res.status(401).json({ error: "Invalid or expired token" });
