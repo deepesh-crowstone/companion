@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../data/mia_profile.dart';
 import '../theme/mia_theme.dart';
 import 'mia_avatar.dart';
 
@@ -50,7 +51,7 @@ class MiaChatHeader extends StatelessWidget implements PreferredSizeWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        'Mia',
+                        MiaProfile.name,
                         style: GoogleFonts.inter(
                           fontSize: 17,
                           fontWeight: FontWeight.w700,

@@ -46,6 +46,7 @@ import androidx.compose.ui.platform.LocalViewConfiguration
 import com.mia.companion.ui.util.MiaHaptics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.mia.companion.data.MiaProfile
 import com.mia.companion.ui.theme.MiaColors
 import com.mia.companion.ui.theme.MiaTypography
 import kotlinx.coroutines.coroutineScope
@@ -129,7 +130,7 @@ fun ChatInputBar(
                         Box {
                             if (text.isEmpty()) {
                                 Text(
-                                    "message Mia...",
+                                    "message ${MiaProfile.name}...",
                                     style = MiaTypography.inter(15f, color = IconGrey, lineHeight = 20.25f),
                                 )
                             }

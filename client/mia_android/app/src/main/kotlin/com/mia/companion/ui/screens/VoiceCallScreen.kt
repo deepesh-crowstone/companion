@@ -58,6 +58,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.mia.companion.data.ApiClient
+import com.mia.companion.data.MiaProfile
 import com.mia.companion.ui.components.MiaAvatar
 import com.mia.companion.ui.theme.MiaColors
 import com.mia.companion.ui.theme.MiaTypography
@@ -216,7 +217,7 @@ fun VoiceCallScreen(onEnd: () -> Unit) {
                 }
             }
             Spacer(Modifier.height(28.dp))
-            Text("Mia", style = MiaTypography.serifTitle(38f).copy(color = Color.White), modifier = Modifier.align(Alignment.CenterHorizontally))
+            Text(MiaProfile.name, style = MiaTypography.serifTitle(38f).copy(color = Color.White), modifier = Modifier.align(Alignment.CenterHorizontally))
             Spacer(Modifier.height(12.dp))
             Row(
                 Modifier.align(Alignment.CenterHorizontally),

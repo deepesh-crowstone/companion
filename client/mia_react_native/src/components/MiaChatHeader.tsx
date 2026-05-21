@@ -2,6 +2,7 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { MiaProfile } from '../data/miaProfile';
 import { MiaColors } from '../theme/colors';
 import { Fonts } from '../theme/typography';
 import { MiaAvatar } from './MiaAvatar';
@@ -35,7 +36,7 @@ export function MiaChatHeader({ statusText, onProfile, onCall, onMenu }: Props) 
         <MiaAvatar size={48} onPress={onProfile} showBorder lightBorder borderWidth={1.5} />
         <View style={styles.nameGap} />
         <View style={styles.meta}>
-          <Text style={styles.name}>Mia</Text>
+          <Text style={styles.name}>{MiaProfile.name}</Text>
           <StatusLine text={statusText} />
         </View>
         <Pressable

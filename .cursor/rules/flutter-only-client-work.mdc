@@ -1,0 +1,11 @@
+---
+description: Keep mobile client development focused on Flutter
+alwaysApply: true
+---
+
+# Flutter Client Only
+
+- For mobile app changes, work only in `client/mia_companion/`.
+- Do not modify React Native files in `client/mia_react_native/`.
+- Do not modify native Android files in `client/mia_android/`.
+- Only touch React Native or native Android if the user explicitly asks for those clients in the current request.

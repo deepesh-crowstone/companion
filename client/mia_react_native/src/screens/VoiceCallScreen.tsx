@@ -13,6 +13,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Audio } from 'expo-av';
 import { MiaAvatar } from '../components/MiaAvatar';
+import { MiaProfile } from '../data/miaProfile';
 import { apiService } from '../services/apiService';
 import { RealtimeCallService } from '../services/realtimeCallService';
 import { MiaColors } from '../theme/colors';
@@ -155,7 +156,7 @@ export function VoiceCallScreen({ navigation }: Props) {
         )}
       </Animated.View>
 
-      <Text style={[styles.name, MiaTypography.serifTitle(38)]}>Mia</Text>
+      <Text style={[styles.name, MiaTypography.serifTitle(38)]}>{MiaProfile.name}</Text>
 
       <View style={styles.statusRow}>
         <View style={[styles.dot, { backgroundColor: connected ? MiaColors.online : '#FF9800' }]} />

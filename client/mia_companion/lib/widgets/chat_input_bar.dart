@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../data/mia_profile.dart';
 import '../theme/mia_theme.dart';
 import 'voice_note_mic_button.dart';
 import 'voice_recording_bar.dart';
@@ -123,7 +124,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
                           color: MiaColors.textPrimary,
                         ),
                         decoration: InputDecoration(
-                          hintText: 'message Mia...',
+                          hintText: 'message ${MiaProfile.name}...',
                           hintStyle: GoogleFonts.inter(
                             color: _iconGrey,
                             fontSize: 15,

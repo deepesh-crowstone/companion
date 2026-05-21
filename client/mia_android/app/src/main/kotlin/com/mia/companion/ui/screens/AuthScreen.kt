@@ -44,6 +44,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.mia.companion.data.ApiClient
+import com.mia.companion.data.MiaProfile
 import com.mia.companion.ui.theme.MiaColors
 import com.mia.companion.ui.theme.MiaTypography
 import kotlinx.coroutines.launch
@@ -86,7 +87,7 @@ fun AuthScreen(onLoggedIn: () -> Unit) {
                 .padding(horizontal = 28.dp, vertical = 28.dp),
         ) {
             Spacer(Modifier.height(48.dp))
-            Text("mia", style = MiaTypography.serifTitle(44f))
+            Text("zara", style = MiaTypography.serifTitle(44f))
             Spacer(Modifier.height(8.dp))
             Text(
                 if (isRegister) "create your account" else "welcome back",
@@ -227,7 +228,7 @@ private fun OfflineBanner(onRetry: () -> Unit) {
 private fun friendlyAuthError(e: Exception): String {
     val raw = e.message?.replace("Exception: ", "") ?: "something went wrong"
     if (raw.contains("Cannot reach server", ignoreCase = true)) {
-        return "can't reach mia's server. on your phone open ${ApiClient.apiBaseUrl}/health — if that fails, set private DNS to automatic or dns.google, then try again."
+        return "can't reach ${MiaProfile.name.lowercase()}'s server. on your phone open ${ApiClient.apiBaseUrl}/health — if that fails, set private DNS to automatic or dns.google, then try again."
     }
     if (raw.contains("Username already taken", ignoreCase = true)) return "that username is taken — try another."
     if (raw.contains("Invalid username or password", ignoreCase = true)) return "wrong username or password."

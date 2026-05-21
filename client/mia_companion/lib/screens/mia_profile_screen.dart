@@ -47,7 +47,7 @@ class MiaProfileScreen extends StatelessWidget {
                   children: [
                     const MiaAvatar(size: 108, showBorder: true, borderWidth: 3),
                     const SizedBox(height: 16),
-                    Text('Mia', style: MiaTheme.serifTitle(size: 32)),
+                    Text(MiaProfile.name, style: MiaTheme.serifTitle(size: 32)),
                     const SizedBox(height: 6),
                     Text(
                       MiaProfile.tagline,

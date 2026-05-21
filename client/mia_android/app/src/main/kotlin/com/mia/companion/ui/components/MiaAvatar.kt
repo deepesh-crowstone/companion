@@ -19,6 +19,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.mia.companion.R
+import com.mia.companion.data.MiaProfile
 import com.mia.companion.ui.theme.MiaColors
 import com.mia.companion.ui.theme.MiaTypography
 
@@ -49,7 +50,7 @@ fun MiaAvatar(
     ) {
         Image(
             painter = painterResource(R.drawable.mia_profile),
-            contentDescription = "Mia",
+            contentDescription = MiaProfile.name,
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop,
         )
@@ -67,6 +68,6 @@ fun MiaAvatarFallback(size: Dp, modifier: Modifier = Modifier) {
             ),
         contentAlignment = Alignment.Center,
     ) {
-        Text("M", style = MiaTypography.serifTitle(size.value * 0.42f))
+        Text(MiaProfile.name.first().toString(), style = MiaTypography.serifTitle(size.value * 0.42f))
     }
 }

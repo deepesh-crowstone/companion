@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { isProductionApi, resolvedApiBaseUrl } from '../config';
+import { MiaProfile } from '../data/miaProfile';
 import { apiService } from '../services/apiService';
 import { MiaColors } from '../theme/colors';
 import { Fonts, MiaTypography } from '../theme/typography';
@@ -39,7 +40,7 @@ export function AuthScreen({ navigation, route }: Props) {
     const raw = e instanceof Error ? e.message : String(e);
     if (raw.includes('Cannot reach server')) {
       if (isProductionApi()) {
-        return `can't reach mia's server. on your phone open ${resolvedApiBaseUrl()}/health — if that fails, set private DNS to automatic or dns.google, then try again.`;
+        return `can't reach ${MiaProfile.name.toLowerCase()}'s server. on your phone open ${resolvedApiBaseUrl()}/health — if that fails, set private DNS to automatic or dns.google, then try again.`;
       }
       return "can't reach the server. run npm run dev on your mac, then use EXPO_PUBLIC_API_BASE_URL with your mac's ip.";
     }
@@ -107,7 +108,7 @@ export function AuthScreen({ navigation, route }: Props) {
         ]}
         keyboardShouldPersistTaps="handled"
       >
-        <Text style={[styles.logo, MiaTypography.serifTitle(44)]}>mia</Text>
+        <Text style={[styles.logo, MiaTypography.serifTitle(44)]}>zara</Text>
         <Text style={styles.sub}>{isRegister ? 'create your account' : 'welcome back'}</Text>
 
         <View style={styles.fieldWrap}>

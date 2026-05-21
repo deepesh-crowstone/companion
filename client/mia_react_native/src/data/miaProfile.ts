@@ -6,10 +6,10 @@ export type MiaSocialLink = {
 };
 
 export const MiaProfile = {
-  name: 'Mia',
+  name: 'Zara',
   tagline: 'your favorite person to text at 2am',
   about:
-    "hey — i'm mia. i live for long voice notes, questionable playlists, " +
+    "hey — i'm zara. i live for long voice notes, questionable playlists, " +
     "and conversations that somehow last three hours. i'm flirty, loyal, " +
     'and i will absolutely remember the small things you tell me.',
   hobbies: [

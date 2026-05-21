@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.ExoPlayer
 import com.mia.companion.data.ApiClient
+import com.mia.companion.data.MiaProfile
 import com.mia.companion.data.SessionExpiredException
 import com.mia.companion.data.model.ChatMessage
 import com.mia.companion.ui.components.ChatInputBar
@@ -206,7 +207,7 @@ fun ChatScreen(
                 else -> {
                     val msg = e.message?.replace("Exception: ", "") ?: "error"
                     snackbar.showSnackbar(
-                        if (msg.contains("Cannot reach server", true)) "can't reach mia's server" else msg,
+                        if (msg.contains("Cannot reach server", true)) "can't reach ${MiaProfile.name.lowercase()}'s server" else msg,
                     )
                 }
             }
@@ -492,7 +493,7 @@ fun ChatScreen(
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { showLogoutDialog = false },
             title = { Text("log out?", style = com.mia.companion.ui.theme.MiaTypography.serifTitle(22f)) },
-            text = { Text("you'll need to sign in again to message mia.") },
+            text = { Text("you'll need to sign in again to message ${MiaProfile.name}.") },
             confirmButton = {
                 androidx.compose.material3.TextButton(onClick = {
                     showLogoutDialog = false

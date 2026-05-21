@@ -22,6 +22,7 @@ import { EmptyChat, ScrollToBottomButton } from '../components/EmptyChat';
 import { MiaChatHeader } from '../components/MiaChatHeader';
 import { MiaPresenceKind, MiaPresenceRow } from '../components/MiaPresenceRow';
 import { resolvedApiBaseUrl } from '../config';
+import { MiaProfile } from '../data/miaProfile';
 import { ChatMessage } from '../models/ChatMessage';
 import { apiService } from '../services/apiService';
 import { SessionExpiredException } from '../services/sessionExpired';
@@ -101,7 +102,7 @@ export function ChatScreen({ navigation }: Props) {
         return;
       }
       const short = msg.includes('Cannot reach server')
-        ? `can't reach mia's server. open ${resolvedApiBaseUrl()}/health in your phone browser.`
+        ? `can't reach ${MiaProfile.name.toLowerCase()}'s server. open ${resolvedApiBaseUrl()}/health in your phone browser.`
         : msg;
       showMessage(short);
     },
@@ -408,7 +409,7 @@ export function ChatScreen({ navigation }: Props) {
   };
 
   const confirmLogout = () => {
-    Alert.alert('log out?', "you'll need to sign in again to message mia.", [
+    Alert.alert('log out?', `you'll need to sign in again to message ${MiaProfile.name}.`, [
       { text: 'cancel', style: 'cancel' },
       {
         text: 'log out',

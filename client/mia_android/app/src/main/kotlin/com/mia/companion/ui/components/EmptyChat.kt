@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.mia.companion.data.MiaProfile
 import com.mia.companion.ui.theme.MiaColors
 import com.mia.companion.ui.theme.MiaTypography
 
@@ -43,7 +44,7 @@ fun EmptyChat(modifier: Modifier = Modifier) {
             )
         }
         Spacer(Modifier.height(24.dp))
-        Text("say hi to mia", style = MiaTypography.serifTitle(22f))
+        Text("say hi to ${MiaProfile.name}", style = MiaTypography.serifTitle(22f))
         Spacer(Modifier.height(10.dp))
         Text(
             "text her, send a voice note, or tap the phone icon for a live call.",

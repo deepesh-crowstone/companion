@@ -2,6 +2,7 @@ import React, { useRef } from 'react';
 import { PanResponder, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { MiaProfile } from '../data/miaProfile';
 import { MiaColors } from '../theme/colors';
 import { Fonts } from '../theme/typography';
 import { VoiceNoteMicButton } from './VoiceNoteMicButton';
@@ -97,7 +98,7 @@ export function ChatInputBar({
               value={value}
               onChangeText={onChangeText}
               editable={enabled}
-              placeholder="message Mia..."
+              placeholder={`message ${MiaProfile.name}...`}
               placeholderTextColor="#A89FA3"
               style={styles.input}
               multiline

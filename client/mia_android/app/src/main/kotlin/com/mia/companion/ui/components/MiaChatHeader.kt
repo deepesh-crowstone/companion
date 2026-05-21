@@ -26,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.mia.companion.data.MiaProfile
 import com.mia.companion.ui.theme.MiaColors
 import com.mia.companion.ui.theme.MiaTypography
 
@@ -66,7 +67,7 @@ fun MiaChatHeader(
                 Spacer(Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        "Mia",
+                        MiaProfile.name,
                         style = MiaTypography.inter(17f, FontWeight.Bold, MiaColors.MiaText, 20.4f),
                     )
                     Spacer(Modifier.height(2.dp))

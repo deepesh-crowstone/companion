@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../config.dart';
+import '../data/mia_profile.dart';
 import '../services/api_service.dart';
 import '../theme/mia_theme.dart';
 import 'chat_screen.dart';
@@ -80,7 +81,7 @@ class _AuthScreenState extends State<AuthScreen> {
     final raw = e.toString().replaceFirst('Exception: ', '');
     if (raw.contains('Cannot reach server')) {
       if (isProductionApi) {
-        return 'can\'t reach mia\'s server. on your phone open $resolvedApiBaseUrl/health — if that fails, set private DNS to automatic or dns.google, then try again.';
+        return 'can\'t reach ${MiaProfile.name.toLowerCase()}\'s server. on your phone open $resolvedApiBaseUrl/health — if that fails, set private DNS to automatic or dns.google, then try again.';
       }
       return 'can\'t reach the server. run npm run dev on your mac, then use flutter run with your mac\'s ip.';
     }
@@ -111,7 +112,7 @@ class _AuthScreenState extends State<AuthScreen> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       const SizedBox(height: 48),
-                      Text('mia', style: MiaTheme.serifTitle(size: 44)),
+                      Text('zara', style: MiaTheme.serifTitle(size: 44)),
                       const SizedBox(height: 8),
                       Text(
                         _isRegister

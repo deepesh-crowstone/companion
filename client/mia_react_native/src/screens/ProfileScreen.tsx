@@ -29,7 +29,7 @@ export function ProfileScreen({ navigation }: Props) {
         showsVerticalScrollIndicator={false}
       >
         <MiaAvatar size={108} showBorder lightBorder borderWidth={3} />
-        <Text style={[styles.name, MiaTypography.serifTitle(32)]}>Mia</Text>
+        <Text style={[styles.name, MiaTypography.serifTitle(32)]}>{MiaProfile.name}</Text>
         <Text style={styles.tagline}>{MiaProfile.tagline}</Text>
 
         <SectionCard title="about me">

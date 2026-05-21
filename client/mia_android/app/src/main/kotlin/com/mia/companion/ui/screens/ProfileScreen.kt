@@ -71,7 +71,7 @@ fun ProfileScreen(onBack: () -> Unit) {
         ) {
             MiaAvatar(size = 108.dp, showBorder = true, borderWidth = 3.dp)
             Spacer(Modifier.height(16.dp))
-            Text("Mia", style = MiaTypography.serifTitle(32f))
+            Text(MiaProfile.name, style = MiaTypography.serifTitle(32f))
             Spacer(Modifier.height(6.dp))
             Text(MiaProfile.tagline, style = MiaTypography.inter(14f, FontWeight.Medium, MiaColors.StatusPink))
             Spacer(Modifier.height(24.dp))

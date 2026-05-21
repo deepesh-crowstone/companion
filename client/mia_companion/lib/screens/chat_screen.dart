@@ -8,6 +8,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:record/record.dart';
 
 import '../config.dart';
+import '../data/mia_profile.dart';
 import '../models/chat_message.dart';
 import '../utils/chat_dates.dart';
 import '../utils/human_presence.dart';
@@ -261,7 +262,7 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
     final short = msg.contains('Cannot reach server')
-        ? 'can\'t reach mia\'s server. open $resolvedApiBaseUrl/health in your phone browser, then reinstall the app with the production API URL.'
+        ? 'can\'t reach ${MiaProfile.name.toLowerCase()}\'s server. open $resolvedApiBaseUrl/health in your phone browser, then reinstall the app with the production API URL.'
         : msg;
     MiaTheme.showMessage(context, short);
   }
@@ -274,7 +275,7 @@ class _ChatScreenState extends State<ChatScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text('log out?', style: MiaTheme.serifTitle(size: 22)),
         content: Text(
-          'you\'ll need to sign in again to message mia.',
+          'you\'ll need to sign in again to message ${MiaProfile.name}.',
           style: MiaTheme.chatBody(isUser: false),
         ),
         actions: [
@@ -340,7 +341,16 @@ class _ChatScreenState extends State<ChatScreen> {
     final generation = ++_replyGeneration;
 
     try {
-      final result = await ApiService.instance.sendTextBatch(texts);
+      final replyFuture = ApiService.instance.sendTextBatch(texts);
+      await _ensureReceiptsRead(optimisticIds);
+      if (!mounted || generation != _replyGeneration) {
+        unawaited(replyFuture.then<void>((_) {}, onError: (_) {}));
+        return;
+      }
+
+      _showMiaTypingIndicator();
+      final typingElapsed = Stopwatch()..start();
+      final result = await replyFuture;
       if (!mounted || generation != _replyGeneration) return;
 
       final assistants = result.assistants;
@@ -362,8 +372,6 @@ class _ChatScreenState extends State<ChatScreen> {
       await _ensureReceiptsRead(userIds);
       if (!mounted || generation != _replyGeneration) return;
 
-      _showMiaTypingIndicator();
-      final typingElapsed = Stopwatch()..start();
       await HumanPresence.waitRemaining(
         _initialAssistantChunkDelay(assistants),
         typingElapsed,
