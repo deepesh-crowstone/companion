@@ -10,6 +10,7 @@ import {
   isBucketConfigured,
   uploadVoiceObject,
 } from "../storage.js";
+import { stripSpeechTagsForDisplay } from "../tts-speech.js";
 import { chatWithMia, synthesizeSpeech, transcribeAudio } from "../xai.js";
 
 const upload = multer({
@@ -241,8 +242,11 @@ messagesRouter.post("/voice", upload.single("audio"), async (req, res) => {
       userAudioKey,
     );
 
-    const reply = await chatWithMia([...history, userMsg]);
-    const mp3Buffer = await synthesizeSpeech(reply);
+    const replyForTts = await chatWithMia([...history, userMsg], {
+      expressiveTts: true,
+    });
+    const displayReply = stripSpeechTagsForDisplay(replyForTts);
+    const mp3Buffer = await synthesizeSpeech(replyForTts);
     const assistantLocalName = `${uuidv4()}.mp3`;
     const assistantAudioKey = await uploadVoiceObject(
       assistantLocalName,
@@ -253,7 +257,7 @@ messagesRouter.post("/voice", upload.single("audio"), async (req, res) => {
     const assistantMsg = await insertMessage(
       auth.userId,
       "assistant",
-      reply,
+      displayReply,
       "audio",
       assistantAudioKey,
     );

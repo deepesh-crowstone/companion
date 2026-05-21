@@ -1,4 +1,5 @@
 import { MIA_SYSTEM_PROMPT, MIA_VOICE_ID, XAI_CHAT_MODEL } from "./mia.js";
+import { MIA_VOICE_TTS_INSTRUCTIONS } from "./tts-speech.js";
 import { buildRealtimeSession } from "./realtime-session.js";
 import type { DbMessage } from "./db.js";
 
@@ -109,13 +110,25 @@ export async function synthesizeSpeech(text: string): Promise<Buffer> {
   return Buffer.from(await res.arrayBuffer());
 }
 
-export async function chatWithMia(history: DbMessage[]): Promise<string> {
+export type ChatWithMiaOptions = {
+  /** Voice notes: model may embed xAI TTS speech tags in the reply. */
+  expressiveTts?: boolean;
+};
+
+export async function chatWithMia(
+  history: DbMessage[],
+  options?: ChatWithMiaOptions,
+): Promise<string> {
   if (history.length === 0 || history[history.length - 1]?.role !== "user") {
     throw new Error("Chat history must end with a user message");
   }
 
+  const systemPrompt = options?.expressiveTts
+    ? `${MIA_SYSTEM_PROMPT}\n${MIA_VOICE_TTS_INSTRUCTIONS}`
+    : MIA_SYSTEM_PROMPT;
+
   const messages: { role: string; content: string }[] = [
-    { role: "system", content: MIA_SYSTEM_PROMPT },
+    { role: "system", content: systemPrompt },
   ];
 
   for (const msg of history) {

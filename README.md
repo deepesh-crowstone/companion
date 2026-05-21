@@ -73,7 +73,7 @@ flutter run --dart-define=API_BASE_URL=http://YOUR_MAC_IP:3000
 | Auth | PostgreSQL users, bcrypt, JWT |
 | Chat history | One thread per user in PostgreSQL |
 | Text chat | xAI `chat/completions` + Mia system prompt |
-| Voice notes | xAI STT → chat → TTS (`eve`); audio in Railway Bucket (presigned URLs) |
+| Voice notes | xAI STT → chat (expressive tags) → TTS (`eve`, speech tags); audio in Railway Bucket |
 | Voice call | Ephemeral token + WebSocket Realtime API |
 
 ## Deploy backend on Railway
