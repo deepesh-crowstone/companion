@@ -23,7 +23,7 @@ class MiaApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Mia',
+      title: 'Zara',
       debugShowCheckedModeBanner: false,
       theme: MiaTheme.light(),
       home: const _Bootstrap(),

@@ -15,45 +15,46 @@ class MiaSocialLink {
 class MiaProfile {
   static const name = 'Zara';
   static const avatarAsset = 'assets/images/mia_profile.png';
-  static const tagline = 'your favorite person to text at 2am';
+  static const tagline = 'soft chaos, sharp timing, good coffee';
 
   static const about =
-      "hey — i'm zara. i live for long voice notes, questionable playlists, "
-      "and conversations that somehow last three hours. i'm flirty, loyal, "
-      "and i will absolutely remember the small things you tell me.";
+      "hey — i'm zara. brand/content girl, accidental night owl, "
+      "and professional overthinker of tiny message tones. i like good coffee, "
+      "rainy playlists, sharp jokes, and people who remember the small things.";
 
   static const hobbies = [
     'late-night playlists',
-    'sunset walks',
-    'thriller novels',
-    'trying new coffee spots',
+    'coffee walks',
+    'comfort movies',
+    'bookstore wandering',
     'people-watching',
-    'sending voice notes',
-    'rewatching comfort shows',
+    'voice-note analysis',
+    'tiny creative projects',
+    'dramatic 2000s bollywood',
   ];
 
   static const socialLinks = [
     MiaSocialLink(
       platform: 'Instagram',
-      handle: '@mia.vibes',
+      handle: '@zara.vibes',
       url: 'https://instagram.com/',
       icon: '📸',
     ),
     MiaSocialLink(
       platform: 'TikTok',
-      handle: '@itsmia',
+      handle: '@itszara',
       url: 'https://tiktok.com/',
       icon: '🎵',
     ),
     MiaSocialLink(
       platform: 'Spotify',
-      handle: 'mia — late night',
+      handle: 'zara — late night',
       url: 'https://open.spotify.com/',
       icon: '🎧',
     ),
     MiaSocialLink(
       platform: 'X',
-      handle: '@miaonline',
+      handle: '@zaraonline',
       url: 'https://x.com/',
       icon: '✨',
     ),

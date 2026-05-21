@@ -16,6 +16,46 @@ const MAX_TEXT_REPLY_SEGMENTS = 3;
 
 const LATIN_LETTER_RE = /[A-Za-z]/;
 const EMOJI_RE = /[\p{Extended_Pictographic}\uFE0F\u200D]/gu;
+const INDIA_TIME_ZONE = "Asia/Kolkata";
+
+function currentIndiaTimeContext(): string {
+  const now = new Date();
+  const day = new Intl.DateTimeFormat("en-IN", {
+    weekday: "long",
+    timeZone: INDIA_TIME_ZONE,
+  }).format(now);
+  const date = new Intl.DateTimeFormat("en-IN", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: INDIA_TIME_ZONE,
+  }).format(now);
+  const time = new Intl.DateTimeFormat("en-IN", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: INDIA_TIME_ZONE,
+  }).format(now);
+  const hour = Number(
+    new Intl.DateTimeFormat("en-IN", {
+      hour: "numeric",
+      hour12: false,
+      timeZone: INDIA_TIME_ZONE,
+    }).format(now),
+  );
+  const daypart =
+    hour < 5
+      ? "late night"
+      : hour < 12
+        ? "morning"
+        : hour < 17
+          ? "afternoon"
+          : hour < 21
+            ? "evening"
+            : "night";
+
+  return `current India time context: ${day}, ${date}, ${time} (${daypart}). Use this subtly for time-of-day vibe when relevant; do not overstate it.`;
+}
 
 function stripSpeechMarkupForScriptCheck(text: string): string {
   return text
@@ -291,9 +331,11 @@ export async function chatWithMia(
     throw new Error("Chat history must end with a user message");
   }
 
-  const systemPrompt = options?.expressiveTts
-    ? `${MIA_VOICE_SYSTEM_PROMPT}\n${MIA_VOICE_TTS_INSTRUCTIONS}`
-    : MIA_VOICE_SYSTEM_PROMPT;
+  const systemPrompt = `${
+    options?.expressiveTts
+      ? `${MIA_VOICE_SYSTEM_PROMPT}\n${MIA_VOICE_TTS_INSTRUCTIONS}`
+      : MIA_VOICE_SYSTEM_PROMPT
+  }\n\n${currentIndiaTimeContext()}`;
 
   const messages: { role: string; content: string }[] = [
     { role: "system", content: systemPrompt },
@@ -346,6 +388,8 @@ export async function chatWithMiaText(history: DbMessage[]): Promise<string[]> {
   }
 
   const systemPrompt = `${MIA_TEXT_SYSTEM_PROMPT}
+
+${currentIndiaTimeContext()}
 
 output format:
 - Output only valid JSON.
