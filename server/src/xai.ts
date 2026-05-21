@@ -12,6 +12,7 @@ import type { DbMessage } from "./db.js";
 const XAI_BASE = "https://api.x.ai/v1";
 
 const LATIN_LETTER_RE = /[A-Za-z]/;
+const EMOJI_RE = /[\p{Extended_Pictographic}\uFE0F\u200D]/gu;
 
 function stripSpeechMarkupForScriptCheck(text: string): string {
   return text
@@ -21,6 +22,10 @@ function stripSpeechMarkupForScriptCheck(text: string): string {
 
 function containsLatinOutsideSpeechTags(text: string): boolean {
   return LATIN_LETTER_RE.test(stripSpeechMarkupForScriptCheck(text));
+}
+
+function stripEmojis(text: string): string {
+  return text.replace(EMOJI_RE, "").replace(/\s{2,}/g, " ").trim();
 }
 
 function apiKey(): string {
@@ -231,5 +236,11 @@ export async function chatWithMia(
     throw new Error("Empty response from xAI");
   }
 
-  return rewriteToDevanagariHindi(reply, options?.expressiveTts ?? false);
+  const voiceReply = options?.expressiveTts ? stripEmojis(reply) : reply;
+  const rewritten = await rewriteToDevanagariHindi(
+    voiceReply,
+    options?.expressiveTts ?? false,
+  );
+
+  return options?.expressiveTts ? stripEmojis(rewritten) : rewritten;
 }

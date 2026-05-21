@@ -47,6 +47,7 @@ delivery patterns:
 rules:
 - reply in Devanagari Hindi script so the Hindi TTS voice sounds natural.
 - if you use an English word, write it phonetically in Devanagari (क्यूट, फोन, मैसेज, ओके, सॉरी), not Latin script.
+- do not use emojis in voice-note replies. the audio should carry the emotion through words, timing, and speech tags.
 - keep it short and spoken, usually 1–3 sentences.
 - do not stack tags back-to-back.
 - do not put tags in every sentence.
