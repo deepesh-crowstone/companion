@@ -1,6 +1,6 @@
-# Mia — AI Companion
+# Zara — AI Companion
 
-Flutter Android app with a Node.js backend, powered by [xAI Grok](https://docs.x.ai/) (chat, TTS, STT, and Realtime voice).
+Flutter Android/web app with a Node.js backend, powered by [xAI Grok](https://docs.x.ai/) for chat/STT and ElevenLabs for voice-note TTS.
 
 ## Project layout
 
@@ -44,6 +44,22 @@ cd client/mia_companion
 
 Copy `build/app/outputs/flutter-apk/app-release.apk` to your phone and install. Sign up in the app — no extra setup.
 
+**Run on web**:
+
+```bash
+cd client/mia_companion
+flutter run -d chrome --dart-define=API_BASE_URL=https://companion-production-850d.up.railway.app
+```
+
+**Build web**:
+
+```bash
+cd client/mia_companion
+flutter build web --release --dart-define=API_BASE_URL=https://companion-production-850d.up.railway.app
+```
+
+Deploy `client/mia_companion/build/web` to static hosting such as Vercel, Netlify, Firebase Hosting, or Cloudflare Pages.
+
 **Local dev on emulator** (Mac server):
 
 ```bash
@@ -61,10 +77,10 @@ flutter run --dart-define=API_BASE_URL=http://YOUR_MAC_IP:3000
 
 1. Start the server (`npm run dev`).
 2. `flutter run` from `client/mia_companion`.
-3. Create an account → land on Mia chat.
-4. **Text** → Mia replies in text.
-5. **Mic in input bar** → record voice note → Mia replies with voice + transcript.
-6. **Phone icon** → live xAI Realtime voice call.
+3. Create an account → land on Zara chat.
+4. **Text** → Zara replies in text.
+5. **Mic in input bar** → record voice note → Zara replies with voice + transcript.
+6. **Phone icon** → coming soon.
 
 ## Features
 
@@ -72,8 +88,8 @@ flutter run --dart-define=API_BASE_URL=http://YOUR_MAC_IP:3000
 |--------|----------------|
 | Auth | PostgreSQL users, bcrypt, JWT |
 | Chat history | One thread per user in PostgreSQL |
-| Text chat | xAI `chat/completions` + Mia system prompt |
-| Voice notes | xAI STT/TTS (`hi`, Devanagari Hindi) → chat (speech tags) → `eve` voice; Railway Bucket |
+| Text chat | xAI `chat/completions` + Zara system prompt |
+| Voice notes | xAI STT → Grok reply → ElevenLabs TTS → Railway Bucket |
 | Voice call | Ephemeral token + WebSocket Realtime API |
 
 ## Deploy backend on Railway
@@ -120,6 +136,15 @@ The API returns **presigned URLs** (7-day TTL) for playback. Legacy disk `/uploa
 | `NODE_ENV` | Yes | `production` |
 | `BUCKET`, `ENDPOINT`, `REGION`, `ACCESS_KEY_ID`, `SECRET_ACCESS_KEY` | Yes (voice) | From Railway Bucket (reference) |
 | `XAI_CHAT_MODEL` | No | `grok-4.3` (default) |
+| `MIA_TTS_PROVIDER` | No | `elevenlabs` (default), or `xai` fallback |
+| `ELEVENLABS_API_KEY` | Yes (voice) | From ElevenLabs dashboard |
+| `ELEVENLABS_VOICE_ID` | Yes (voice) | ElevenLabs voice ID |
+| `ELEVENLABS_MODEL_ID` | No | `eleven_v3` |
+| `ELEVENLABS_OUTPUT_FORMAT` | No | `mp3_44100_128` |
+| `ELEVENLABS_STABILITY` | No | `0.45` |
+| `ELEVENLABS_SIMILARITY_BOOST` | No | `0.8` |
+| `ELEVENLABS_STYLE` | No | `0` |
+| `ELEVENLABS_SPEAKER_BOOST` | No | `true` |
 
 ### 5. Redeploy
 
@@ -154,4 +179,4 @@ NODE_ENV=production npm run build && npm start
 
 - Never commit `.env` or API keys.
 - Video call UI is omitted by design.
-- Mia uses a fixed companion persona and voice `eve` (`MIA_VOICE_ID`).
+- Zara uses a fixed companion persona. Voice-note replies use ElevenLabs when `ELEVENLABS_API_KEY` and `ELEVENLABS_VOICE_ID` are set.

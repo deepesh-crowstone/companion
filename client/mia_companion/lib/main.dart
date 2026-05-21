@@ -49,12 +49,20 @@ class _BootstrapState extends State<_Bootstrap> {
   }
 
   Future<void> _init() async {
-    await ApiService.instance.loadSession();
     var loggedIn = false;
-    if (ApiService.instance.isLoggedIn) {
-      final reachable = await ApiService.instance.checkHealth();
-      loggedIn = reachable && await ApiService.instance.validateSession();
+    try {
+      await ApiService.instance.loadSession();
+      if (ApiService.instance.isLoggedIn) {
+        final reachable = await ApiService.instance.checkHealth().timeout(
+          const Duration(seconds: 8),
+          onTimeout: () => false,
+        );
+        loggedIn = reachable && await ApiService.instance.validateSession();
+      }
+    } catch (_) {
+      loggedIn = false;
     }
+    if (!mounted) return;
     setState(() {
       _loggedIn = loggedIn;
       _ready = true;

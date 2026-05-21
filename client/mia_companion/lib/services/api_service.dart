@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -17,11 +18,13 @@ class ApiService {
   static const _tokenKey = 'mia_auth_token';
   static const _usernameKey = 'mia_username';
   static const _timeout = Duration(seconds: 30);
+  static const _voiceTimeout = Duration(seconds: 90);
   static const _healthTimeout = Duration(seconds: 45);
 
   final http.Client _client;
 
   static http.Client _createClient() {
+    if (kIsWeb) return http.Client();
     final httpClient = HttpClient()
       ..connectionTimeout = _timeout
       ..idleTimeout = _timeout;
@@ -215,7 +218,7 @@ class ApiService {
     );
 
     try {
-      final streamed = await request.send().timeout(_timeout);
+      final streamed = await request.send().timeout(_voiceTimeout);
       final res = await http.Response.fromStream(streamed);
       _guardAuth(res);
       if (res.statusCode >= 400) {

@@ -6,11 +6,15 @@ import {
   MIA_VOICE_ID,
   XAI_CHAT_MODEL,
 } from "./mia.js";
-import { MIA_VOICE_TTS_INSTRUCTIONS } from "./tts-speech.js";
+import {
+  ELEVENLABS_VOICE_TTS_INSTRUCTIONS,
+  MIA_VOICE_TTS_INSTRUCTIONS,
+} from "./tts-speech.js";
 import { buildClientSecretRequest } from "./realtime-session.js";
 import type { DbMessage } from "./db.js";
 
 const XAI_BASE = "https://api.x.ai/v1";
+const ELEVENLABS_BASE = "https://api.elevenlabs.io/v1";
 const MIA_CHAT_TEMPERATURE = 0.78;
 const MAX_TEXT_REPLY_SEGMENTS = 3;
 
@@ -59,7 +63,7 @@ function currentIndiaTimeContext(): string {
 
 function stripSpeechMarkupForScriptCheck(text: string): string {
   return text
-    .replace(/\[[a-z-]+\]/gi, "")
+    .replace(/\[[^\]]+\]/g, "")
     .replace(/<\/?[a-z][a-z0-9-]*>/gi, "");
 }
 
@@ -180,12 +184,40 @@ function apiKey(): string {
   return key;
 }
 
+function envValue(name: string): string | null {
+  const value = process.env[name]?.trim().replace(/^['"]|['"]$/g, "");
+  return value && value.length > 0 ? value : null;
+}
+
 function headers(json = true): Record<string, string> {
   const h: Record<string, string> = {
     Authorization: `Bearer ${apiKey()}`,
   };
   if (json) h["Content-Type"] = "application/json";
   return h;
+}
+
+function elevenLabsApiKey(): string {
+  const key = envValue("ELEVENLABS_API_KEY");
+  if (!key) {
+    throw new Error("ELEVENLABS_API_KEY is not set");
+  }
+  return key;
+}
+
+function elevenLabsVoiceId(): string {
+  const voiceId = envValue("ELEVENLABS_VOICE_ID");
+  if (!voiceId) {
+    throw new Error("ELEVENLABS_VOICE_ID is not set");
+  }
+  return voiceId;
+}
+
+function numberEnv(name: string, fallback: number): number {
+  const raw = envValue(name);
+  if (!raw) return fallback;
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : fallback;
 }
 
 export async function verifyXaiConnection(): Promise<void> {
@@ -246,7 +278,7 @@ export async function transcribeAudio(
   return (data.text ?? "").trim();
 }
 
-export async function synthesizeSpeech(text: string): Promise<Buffer> {
+async function synthesizeSpeechWithXai(text: string): Promise<Buffer> {
   const res = await fetch(`${XAI_BASE}/tts`, {
     method: "POST",
     headers: headers(),
@@ -266,10 +298,76 @@ export async function synthesizeSpeech(text: string): Promise<Buffer> {
   return Buffer.from(await res.arrayBuffer());
 }
 
+async function synthesizeSpeechWithElevenLabs(text: string): Promise<Buffer> {
+  const voiceId = elevenLabsVoiceId();
+  const modelId = envValue("ELEVENLABS_MODEL_ID") ?? "eleven_v3";
+  const outputFormat =
+    envValue("ELEVENLABS_OUTPUT_FORMAT") ?? "mp3_44100_128";
+  const cleanText = text.trim();
+
+  if (!cleanText) {
+    throw new Error("ElevenLabs TTS text is empty");
+  }
+
+  const res = await fetch(
+    `${ELEVENLABS_BASE}/text-to-speech/${encodeURIComponent(
+      voiceId,
+    )}?output_format=${encodeURIComponent(outputFormat)}`,
+    {
+      method: "POST",
+      headers: {
+        "xi-api-key": elevenLabsApiKey(),
+        "Content-Type": "application/json",
+        Accept: "audio/mpeg",
+      },
+      body: JSON.stringify({
+        text: cleanText,
+        model_id: modelId,
+        voice_settings: {
+          stability: numberEnv("ELEVENLABS_STABILITY", 0.45),
+          similarity_boost: numberEnv("ELEVENLABS_SIMILARITY_BOOST", 0.8),
+          style: numberEnv("ELEVENLABS_STYLE", 0),
+          use_speaker_boost: envValue("ELEVENLABS_SPEAKER_BOOST") !== "false",
+        },
+      }),
+    },
+  );
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`ElevenLabs TTS failed: ${res.status} ${err}`);
+  }
+
+  return Buffer.from(await res.arrayBuffer());
+}
+
+export async function synthesizeSpeech(text: string): Promise<Buffer> {
+  const provider = ttsProvider();
+  if (provider === "xai") {
+    return synthesizeSpeechWithXai(text);
+  }
+  if (provider !== "elevenlabs") {
+    throw new Error(
+      `Unsupported MIA_TTS_PROVIDER "${provider}". Use "elevenlabs" or "xai".`,
+    );
+  }
+  return synthesizeSpeechWithElevenLabs(text);
+}
+
 export type ChatWithMiaOptions = {
-  /** Voice notes: model may embed xAI TTS speech tags in the reply. */
+  /** Voice notes: model may embed TTS delivery tags in the reply. */
   expressiveTts?: boolean;
 };
+
+function ttsProvider(): string {
+  return (envValue("MIA_TTS_PROVIDER") ?? "elevenlabs").toLowerCase();
+}
+
+function voiceTtsInstructions(): string {
+  return ttsProvider() === "xai"
+    ? MIA_VOICE_TTS_INSTRUCTIONS
+    : ELEVENLABS_VOICE_TTS_INSTRUCTIONS;
+}
 
 async function rewriteToDevanagariHindi(
   text: string,
@@ -278,7 +376,7 @@ async function rewriteToDevanagariHindi(
   if (!containsLatinOutsideSpeechTags(text)) return text;
 
   const tagRule = preserveSpeechTags
-    ? "Preserve any existing xAI TTS speech tags exactly as-is, including [pause], [laugh], [sigh], and <whisper>...</whisper>. Only rewrite the human-readable words around them."
+    ? "Preserve any existing TTS delivery tags exactly as-is, including square-bracket tags like [laughs], [sighs], [teasing], [pauses], [light chuckle], and any <whisper>...</whisper> tags. Only rewrite the human-readable words around them."
     : "Do not add speech tags or markup.";
 
   const res = await fetch(`${XAI_BASE}/chat/completions`, {
@@ -291,13 +389,13 @@ async function rewriteToDevanagariHindi(
       messages: [
         {
           role: "system",
-          content: `Rewrite the given Mia reply into natural Devanagari Hindi only.
+          content: `Rewrite the given Zara reply into natural Devanagari Hindi only.
 
 Rules:
 - Output only the rewritten reply, no explanation.
 - All visible words must be in Devanagari script.
 - Transliterate English loanwords phonetically into Devanagari: cute -> क्यूट, phone -> फोन, message -> मैसेज, online -> ऑनलाइन, okay -> ओके, sorry -> सॉरी, drama -> ड्रामा.
-- Keep Mia's natural, warm, close-friend tone and the same meaning.
+- Keep Zara's natural, warm, close-friend tone and the same meaning.
 - Keep it short and conversational.
 - Do not add pet names, extra direct address, or a new follow-up question while rewriting.
 - ${tagRule}`,
@@ -333,7 +431,7 @@ export async function chatWithMia(
 
   const systemPrompt = `${
     options?.expressiveTts
-      ? `${MIA_VOICE_SYSTEM_PROMPT}\n${MIA_VOICE_TTS_INSTRUCTIONS}`
+      ? `${MIA_VOICE_SYSTEM_PROMPT}\n${voiceTtsInstructions()}`
       : MIA_VOICE_SYSTEM_PROMPT
   }\n\n${currentIndiaTimeContext()}`;
 

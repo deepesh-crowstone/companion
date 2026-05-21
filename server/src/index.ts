@@ -96,7 +96,7 @@ async function main(): Promise<void> {
   }
 
   app.listen(port, host, async () => {
-    console.log(`Mia server listening on http://${host}:${port}`);
+    console.log(`Zara server listening on http://${host}:${port}`);
     try {
       await verifyXaiConnection();
       console.log("✓ xAI API key verified");

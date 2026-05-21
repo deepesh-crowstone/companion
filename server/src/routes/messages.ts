@@ -180,7 +180,7 @@ messagesRouter.post("/text", async (req, res) => {
       msg.includes("Devanagari rewrite failed");
     res.status(isXai ? 502 : 500).json({
       error: isXai
-        ? "Mia could not reach xAI. Check XAI_API_KEY in server/.env and restart npm run dev."
+        ? "Zara could not reach xAI. Check XAI_API_KEY in server/.env and restart npm run dev."
         : msg,
     });
   }
@@ -235,7 +235,7 @@ messagesRouter.post("/text/batch", async (req, res) => {
       msg.includes("Devanagari rewrite failed");
     res.status(isXai ? 502 : 500).json({
       error: isXai
-        ? "Mia could not reach xAI. Check XAI_API_KEY in server/.env and restart npm run dev."
+        ? "Zara could not reach xAI. Check XAI_API_KEY in server/.env and restart npm run dev."
         : msg,
     });
   }
@@ -324,10 +324,11 @@ messagesRouter.post("/voice", upload.single("audio"), async (req, res) => {
       msg.includes("API key") ||
       msg.includes("STT failed") ||
       msg.includes("TTS failed") ||
+      msg.includes("ElevenLabs") ||
       msg.includes("Devanagari rewrite failed");
     res.status(isXai ? 502 : 500).json({
       error: isXai
-        ? "Mia could not reach xAI. Check XAI_API_KEY in server/.env and restart npm run dev."
+        ? "Zara could not process voice. Check XAI_API_KEY, ELEVENLABS_API_KEY, and ELEVENLABS_VOICE_ID in server/.env or Railway variables."
         : msg,
     });
   } finally {

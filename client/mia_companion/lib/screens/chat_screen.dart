@@ -470,8 +470,6 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  // Voice note capture — wire back when the mic ships.
-  // ignore: unused_element
   Future<void> _startVoiceRecording() async {
     if (_recording) return;
 
@@ -517,7 +515,6 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
-  // ignore: unused_element
   void _lockVoiceRecording() {
     if (!_recording || _recordingLocked) return;
     setState(() {
@@ -533,6 +530,12 @@ class _ChatScreenState extends State<ChatScreen> {
       _voiceSlideOffset = offset;
       _slideCancelActive = cancelActive;
     });
+  }
+
+  Future<void> _tapStartAndLockVoiceNote() async {
+    await _startVoiceRecording();
+    if (!mounted || !_recording) return;
+    _lockVoiceRecording();
   }
 
   Future<void> _cancelVoiceRecording() async {
@@ -841,8 +844,8 @@ class _ChatScreenState extends State<ChatScreen> {
               sending: _showMiaActivity,
               enabled: !_loading,
               onSend: _sendText,
-              onTapStartAndLock: () async => _showComingSoonToast(),
-              onHoldStart: () async => _showComingSoonToast(),
+              onTapStartAndLock: _tapStartAndLockVoiceNote,
+              onHoldStart: _startVoiceRecording,
               onHoldSend: () => unawaited(_sendVoiceRecording()),
               onHoldCancel: () => unawaited(_cancelVoiceRecording()),
               onSlideUpdate: _onVoiceSlideUpdate,
