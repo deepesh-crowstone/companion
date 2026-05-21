@@ -119,7 +119,7 @@ The API returns **presigned URLs** (7-day TTL) for playback. Legacy disk `/uploa
 | `JWT_SECRET` | Yes | Long random string (32+ chars) |
 | `NODE_ENV` | Yes | `production` |
 | `BUCKET`, `ENDPOINT`, `REGION`, `ACCESS_KEY_ID`, `SECRET_ACCESS_KEY` | Yes (voice) | From Railway Bucket (reference) |
-| `XAI_CHAT_MODEL` | No | `grok-3-mini` (default) |
+| `XAI_CHAT_MODEL` | No | `grok-4.3` (default) |
 
 ### 5. Redeploy
 

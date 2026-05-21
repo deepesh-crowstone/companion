@@ -232,6 +232,7 @@ async function rewriteToDevanagariHindi(
     headers: headers(),
     body: JSON.stringify({
       model: XAI_CHAT_MODEL,
+      reasoning_effort: "none",
       temperature: 0.2,
       messages: [
         {
@@ -296,6 +297,7 @@ export async function chatWithMia(
     headers: headers(),
     body: JSON.stringify({
       model: XAI_CHAT_MODEL,
+      reasoning_effort: "none",
       messages,
       temperature: MIA_CHAT_TEMPERATURE,
     }),
@@ -354,6 +356,7 @@ output format:
     headers: headers(),
     body: JSON.stringify({
       model: XAI_CHAT_MODEL,
+      reasoning_effort: "none",
       messages,
       temperature: MIA_CHAT_TEMPERATURE,
     }),

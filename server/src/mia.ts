@@ -141,5 +141,5 @@ export const MIA_VOICE_ID = process.env.MIA_VOICE_ID?.trim() || "eve";
 export const MIA_TTS_LANGUAGE = process.env.MIA_TTS_LANGUAGE?.trim() || "hi";
 /** xAI STT language hint for Hindi / Hindi-English voice notes. */
 export const MIA_STT_LANGUAGE = process.env.MIA_STT_LANGUAGE?.trim() || "hi";
-export const XAI_CHAT_MODEL = process.env.XAI_CHAT_MODEL ?? "grok-3-mini";
+export const XAI_CHAT_MODEL = process.env.XAI_CHAT_MODEL ?? "grok-4.3";
 export const XAI_REALTIME_MODEL = "grok-voice-latest";
