@@ -1,33 +1,7 @@
 import "./load-env.js";
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
 import pg from "pg";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
 const { Pool } = pg;
-
-/** Local dev: `server/data/uploads`. Railway: volume at `/data` + `DATA_DIR=/data`. */
-function resolveDataDir(): string {
-  const configured = process.env.DATA_DIR?.trim();
-  if (configured) {
-    return path.isAbsolute(configured)
-      ? configured
-      : path.resolve(process.cwd(), configured);
-  }
-  return path.join(__dirname, "..", "data");
-}
-
-const dataDir = resolveDataDir();
-const uploadsDir = path.join(dataDir, "uploads");
-
-if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true });
-}
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-}
 
 function databaseUrl(): string {
   const url = process.env.DATABASE_URL?.trim();
@@ -59,10 +33,6 @@ export type DbMessage = {
   audio_filename: string | null;
   created_at: Date;
 };
-
-export function getUploadsDir(): string {
-  return uploadsDir;
-}
 
 export async function initDb(): Promise<void> {
   const client = await pool.connect();

@@ -1,9 +1,10 @@
 import { Router, type Request } from "express";
 import multer from "multer";
+import os from "os";
 import path from "path";
 import { v4 as uuidv4 } from "uuid";
 import { authMiddleware, type AuthPayload } from "../auth.js";
-import { pool, getUploadsDir, type DbMessage } from "../db.js";
+import { pool, type DbMessage } from "../db.js";
 import {
   getPresignedVoiceUrl,
   isBucketConfigured,
@@ -12,7 +13,7 @@ import {
 import { chatWithMia, synthesizeSpeech, transcribeAudio } from "../xai.js";
 
 const upload = multer({
-  dest: getUploadsDir(),
+  storage: multer.memoryStorage(),
   limits: { fileSize: 25 * 1024 * 1024 },
 });
 
@@ -67,42 +68,36 @@ function toIsoTimestamp(value: Date | string): string {
   return new Date(value).toISOString();
 }
 
-async function resolveAudioUrl(
-  msg: DbMessage,
-  baseUrl: string,
-): Promise<string | null> {
-  if (msg.audio_filename == null) return null;
-
-  if (isBucketConfigured()) {
-    try {
-      return await getPresignedVoiceUrl(msg.audio_filename);
-    } catch (e) {
-      console.warn("Bucket presign failed, falling back to disk URL:", e);
-    }
+async function resolveAudioUrl(msg: DbMessage): Promise<string | null> {
+  const key = msg.audio_filename;
+  if (key == null || !key.startsWith("voice/") || !isBucketConfigured()) {
+    return null;
   }
-
-  const name = msg.audio_filename.replace(/^voice\//, "");
-  return `${baseUrl}/uploads/${name}`;
+  try {
+    return await getPresignedVoiceUrl(key);
+  } catch (e) {
+    console.warn("Bucket presign failed:", e);
+    return null;
+  }
 }
 
-async function toPublicMessage(msg: DbMessage, baseUrl: string) {
+async function toPublicMessage(msg: DbMessage) {
   return {
     id: msg.id,
     role: msg.role,
     content: msg.content,
     messageType: msg.message_type,
-    audioUrl: await resolveAudioUrl(msg, baseUrl),
+    audioUrl: await resolveAudioUrl(msg),
     createdAt: toIsoTimestamp(msg.created_at),
   };
 }
 
 messagesRouter.get("/", async (req, res) => {
   const auth = getAuth(req);
-  const baseUrl = `${req.protocol}://${req.get("host")}`;
   try {
     const messages = await listMessages(auth.userId);
     const publicMessages = await Promise.all(
-      messages.map((m) => toPublicMessage(m, baseUrl)),
+      messages.map((m) => toPublicMessage(m)),
     );
     res.json({ messages: publicMessages });
   } catch (e) {
@@ -133,10 +128,9 @@ messagesRouter.post("/text", async (req, res) => {
     const reply = await chatWithMia([...history, userMsg]);
     const assistantMsg = await insertMessage(auth.userId, "assistant", reply, "text");
 
-    const baseUrl = `${req.protocol}://${req.get("host")}`;
     res.json({
-      userMessage: await toPublicMessage(userMsg, baseUrl),
-      assistantMessage: await toPublicMessage(assistantMsg, baseUrl),
+      userMessage: await toPublicMessage(userMsg),
+      assistantMessage: await toPublicMessage(assistantMsg),
     });
   } catch (e) {
     console.error(e);
@@ -177,12 +171,11 @@ messagesRouter.post("/text/batch", async (req, res) => {
     const reply = await chatWithMia([...history, ...userMsgs]);
     const assistantMsg = await insertMessage(auth.userId, "assistant", reply, "text");
 
-    const baseUrl = `${req.protocol}://${req.get("host")}`;
     res.json({
       userMessages: await Promise.all(
-        userMsgs.map((m) => toPublicMessage(m, baseUrl)),
+        userMsgs.map((m) => toPublicMessage(m)),
       ),
-      assistantMessage: await toPublicMessage(assistantMsg, baseUrl),
+      assistantMessage: await toPublicMessage(assistantMsg),
     });
   } catch (e) {
     console.error(e);
@@ -205,45 +198,40 @@ messagesRouter.post("/voice", upload.single("audio"), async (req, res) => {
   const auth = getAuth(req);
   const file = req.file;
 
-  if (!file) {
+  if (!isBucketConfigured()) {
+    res.status(503).json({
+      error:
+        "Voice storage is not configured. Add Railway Bucket credentials to the API service.",
+    });
+    return;
+  }
+
+  if (!file?.buffer) {
     res.status(400).json({ error: "Audio file is required" });
     return;
   }
 
   const ext = path.extname(file.originalname) || ".m4a";
   const localName = `${uuidv4()}${ext}`;
-  const { readFileSync, renameSync, unlinkSync, writeFileSync } = await import("fs");
-  const finalPath = path.join(getUploadsDir(), localName);
-  renameSync(file.path, finalPath);
-
   const mime =
     file.mimetype && file.mimetype !== "application/octet-stream"
       ? file.mimetype
       : "audio/mp4";
 
-  const cleanupLocal = () => {
-    try {
-      unlinkSync(finalPath);
-    } catch {
-      /* ignore */
-    }
-  };
+  const { writeFileSync, unlinkSync } = await import("fs");
+  const tmpPath = path.join(os.tmpdir(), `mia-${localName}`);
+  writeFileSync(tmpPath, file.buffer);
 
   try {
     const history = await listMessages(auth.userId);
-    const transcript = await transcribeAudio(finalPath, mime);
+    const transcript = await transcribeAudio(tmpPath, mime);
 
     if (!transcript) {
       res.status(400).json({ error: "Could not transcribe audio" });
       return;
     }
 
-    let userAudioKey = localName;
-    if (isBucketConfigured()) {
-      const userBuffer = readFileSync(finalPath);
-      userAudioKey = await uploadVoiceObject(localName, userBuffer, mime);
-      cleanupLocal();
-    }
+    const userAudioKey = await uploadVoiceObject(localName, file.buffer, mime);
 
     const userMsg = await insertMessage(
       auth.userId,
@@ -256,17 +244,11 @@ messagesRouter.post("/voice", upload.single("audio"), async (req, res) => {
     const reply = await chatWithMia([...history, userMsg]);
     const mp3Buffer = await synthesizeSpeech(reply);
     const assistantLocalName = `${uuidv4()}.mp3`;
-    let assistantAudioKey = assistantLocalName;
-
-    if (isBucketConfigured()) {
-      assistantAudioKey = await uploadVoiceObject(
-        assistantLocalName,
-        mp3Buffer,
-        "audio/mpeg",
-      );
-    } else {
-      writeFileSync(path.join(getUploadsDir(), assistantLocalName), mp3Buffer);
-    }
+    const assistantAudioKey = await uploadVoiceObject(
+      assistantLocalName,
+      mp3Buffer,
+      "audio/mpeg",
+    );
 
     const assistantMsg = await insertMessage(
       auth.userId,
@@ -276,10 +258,9 @@ messagesRouter.post("/voice", upload.single("audio"), async (req, res) => {
       assistantAudioKey,
     );
 
-    const baseUrl = `${req.protocol}://${req.get("host")}`;
     res.json({
-      userMessage: await toPublicMessage(userMsg, baseUrl),
-      assistantMessage: await toPublicMessage(assistantMsg, baseUrl),
+      userMessage: await toPublicMessage(userMsg),
+      assistantMessage: await toPublicMessage(assistantMsg),
     });
   } catch (e) {
     console.error(e);
@@ -295,5 +276,11 @@ messagesRouter.post("/voice", upload.single("audio"), async (req, res) => {
         ? "Mia could not reach xAI. Check XAI_API_KEY in server/.env and restart npm run dev."
         : msg,
     });
+  } finally {
+    try {
+      unlinkSync(tmpPath);
+    } catch {
+      /* ignore */
+    }
   }
 });

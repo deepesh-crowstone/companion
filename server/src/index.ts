@@ -4,7 +4,7 @@ import express from "express";
 import { authRouter } from "./routes/auth.js";
 import { messagesRouter } from "./routes/messages.js";
 import { realtimeRouter } from "./routes/realtime.js";
-import { checkDbConnection, getUploadsDir, initDb } from "./db.js";
+import { checkDbConnection, initDb } from "./db.js";
 import { checkBucketConnection, isBucketConfigured } from "./storage.js";
 import { verifyXaiConnection } from "./xai.js";
 
@@ -26,6 +26,12 @@ function validateEnv(): void {
     console.error("\n❌  DATABASE_URL missing (PostgreSQL connection string)\n");
     process.exit(1);
   }
+  if (process.env.NODE_ENV === "production" && !isBucketConfigured()) {
+    console.error(
+      "\n❌  Voice storage requires a Railway Bucket (BUCKET, ENDPOINT, REGION, ACCESS_KEY_ID, SECRET_ACCESS_KEY)\n",
+    );
+    process.exit(1);
+  }
 }
 
 validateEnv();
@@ -38,8 +44,6 @@ app.set("trust proxy", 1);
 
 app.use(cors());
 app.use(express.json());
-app.use("/uploads", express.static(getUploadsDir()));
-
 app.get("/health", (_req, res) => {
   res.json({ ok: true });
 });
@@ -55,7 +59,7 @@ app.get("/health/db", async (_req, res) => {
 
 app.get("/health/bucket", async (_req, res) => {
   if (!isBucketConfigured()) {
-    res.json({ ok: true, bucket: "not_configured", storage: "disk" });
+    res.status(503).json({ ok: false, bucket: "not_configured" });
     return;
   }
   const ok = await checkBucketConnection();
@@ -86,9 +90,9 @@ async function main(): Promise<void> {
   await initDb();
   console.log("✓ PostgreSQL schema ready");
   if (isBucketConfigured()) {
-    console.log("✓ Voice storage: Railway bucket");
+    console.log("✓ Voice storage: object bucket (presigned URLs)");
   } else {
-    console.log("✓ Voice storage: local disk (server/data/uploads)");
+    console.warn("⚠ Voice notes disabled until bucket env vars are set");
   }
 
   app.listen(port, host, async () => {

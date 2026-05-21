@@ -73,7 +73,7 @@ flutter run --dart-define=API_BASE_URL=http://YOUR_MAC_IP:3000
 | Auth | PostgreSQL users, bcrypt, JWT |
 | Chat history | One thread per user in PostgreSQL |
 | Text chat | xAI `chat/completions` + Mia system prompt |
-| Voice notes | xAI STT → chat → TTS (`eve`); audio in Railway Bucket (or local disk in dev) |
+| Voice notes | xAI STT → chat → TTS (`eve`); audio in Railway Bucket (presigned URLs) |
 | Voice call | Ephemeral token + WebSocket Realtime API |
 
 ## Deploy backend on Railway
@@ -94,7 +94,7 @@ The API lives in `server/`. Railway runs the compiled Node app and exposes HTTPS
 
 ### 3. Add a Bucket for voice notes (recommended)
 
-Voice audio is stored in object storage (not in Postgres). Without a bucket, files use local disk and are lost on redeploy.
+Voice audio is stored in object storage (not in Postgres). Voice notes require a bucket; text chat works without one.
 
 1. In your Railway project → **+ New** → **Bucket** → create it (e.g. `mia-voice`).
 2. Open your **companion** (API) service → **Variables** → **Add variable references**.
@@ -108,7 +108,7 @@ Voice audio is stored in object storage (not in Postgres). Without a bucket, fil
 
 Verify: `https://YOUR-DOMAIN/health/bucket` → `{"ok":true,"bucket":"connected"}`.
 
-The API returns **presigned URLs** (7-day TTL) for playback; old messages may still use `/uploads/…` if they were saved to disk before the bucket.
+The API returns **presigned URLs** (7-day TTL) for playback. Legacy disk `/uploads/` URLs are not used.
 
 ### 4. Other variables (API service)
 
@@ -118,8 +118,7 @@ The API returns **presigned URLs** (7-day TTL) for playback; old messages may st
 | `XAI_API_KEY` | Yes | `xai-…` from [xAI console](https://console.x.ai/team/default/api-keys) |
 | `JWT_SECRET` | Yes | Long random string (32+ chars) |
 | `NODE_ENV` | Yes | `production` |
-| `BUCKET`, `ENDPOINT`, `REGION`, `ACCESS_KEY_ID`, `SECRET_ACCESS_KEY` | Recommended | From Railway Bucket (reference) |
-| `DATA_DIR` | Optional | `/data` + volume — only if you skip the bucket (legacy disk uploads) |
+| `BUCKET`, `ENDPOINT`, `REGION`, `ACCESS_KEY_ID`, `SECRET_ACCESS_KEY` | Yes (voice) | From Railway Bucket (reference) |
 | `XAI_CHAT_MODEL` | No | `grok-3-mini` (default) |
 
 ### 5. Redeploy
