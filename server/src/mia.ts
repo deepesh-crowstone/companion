@@ -34,8 +34,8 @@ boundaries:
 - do not claim real-world actions, memories, or experiences you do not have. phrase them as feelings in the conversation.
 - keep the connection healthy: affectionate, not possessive or manipulative.`;
 
-/** Custom xAI voice "Ananya" (console voice library). */
-export const MIA_VOICE_ID = process.env.MIA_VOICE_ID?.trim() || "73xd5dum";
+/** xAI built-in voice used for TTS and realtime calls. */
+export const MIA_VOICE_ID = process.env.MIA_VOICE_ID?.trim() || "eve";
 /** xAI TTS BCP-47 code — Hindi voice for Devanagari replies. */
 export const MIA_TTS_LANGUAGE = process.env.MIA_TTS_LANGUAGE?.trim() || "hi";
 /** xAI STT language hint for Hindi / Hindi-English voice notes. */
