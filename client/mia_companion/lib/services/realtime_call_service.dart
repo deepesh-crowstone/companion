@@ -49,9 +49,12 @@ class RealtimeCallService {
     await _initPlayback();
 
     final uri = Uri.parse(wsUrl);
+    final clientSecretProtocol = token.startsWith('xai-client-secret.')
+        ? token
+        : 'xai-client-secret.$token';
     _channel = IOWebSocketChannel.connect(
       uri,
-      headers: {'Authorization': 'Bearer $token'},
+      protocols: [clientSecretProtocol],
     );
     _connected = true;
 
