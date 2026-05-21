@@ -5,6 +5,7 @@ import { authRouter } from "./routes/auth.js";
 import { messagesRouter } from "./routes/messages.js";
 import { realtimeRouter } from "./routes/realtime.js";
 import { checkDbConnection, getUploadsDir, initDb } from "./db.js";
+import { checkBucketConnection, isBucketConfigured } from "./storage.js";
 import { verifyXaiConnection } from "./xai.js";
 
 function validateEnv(): void {
@@ -52,6 +53,19 @@ app.get("/health/db", async (_req, res) => {
   }
 });
 
+app.get("/health/bucket", async (_req, res) => {
+  if (!isBucketConfigured()) {
+    res.json({ ok: true, bucket: "not_configured", storage: "disk" });
+    return;
+  }
+  const ok = await checkBucketConnection();
+  if (ok) {
+    res.json({ ok: true, bucket: "connected" });
+  } else {
+    res.status(503).json({ ok: false, bucket: "disconnected" });
+  }
+});
+
 app.get("/health/xai", async (_req, res) => {
   try {
     await verifyXaiConnection();
@@ -71,6 +85,11 @@ app.use("/realtime", realtimeRouter);
 async function main(): Promise<void> {
   await initDb();
   console.log("✓ PostgreSQL schema ready");
+  if (isBucketConfigured()) {
+    console.log("✓ Voice storage: Railway bucket");
+  } else {
+    console.log("✓ Voice storage: local disk (server/data/uploads)");
+  }
 
   app.listen(port, host, async () => {
     console.log(`Mia server listening on http://${host}:${port}`);

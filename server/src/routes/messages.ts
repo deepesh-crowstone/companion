@@ -4,6 +4,11 @@ import path from "path";
 import { v4 as uuidv4 } from "uuid";
 import { authMiddleware, type AuthPayload } from "../auth.js";
 import { pool, getUploadsDir, type DbMessage } from "../db.js";
+import {
+  getPresignedVoiceUrl,
+  isBucketConfigured,
+  uploadVoiceObject,
+} from "../storage.js";
 import { chatWithMia, synthesizeSpeech, transcribeAudio } from "../xai.js";
 
 const upload = multer({
@@ -62,16 +67,31 @@ function toIsoTimestamp(value: Date | string): string {
   return new Date(value).toISOString();
 }
 
-function toPublicMessage(msg: DbMessage, baseUrl: string) {
+async function resolveAudioUrl(
+  msg: DbMessage,
+  baseUrl: string,
+): Promise<string | null> {
+  if (msg.audio_filename == null) return null;
+
+  if (isBucketConfigured()) {
+    try {
+      return await getPresignedVoiceUrl(msg.audio_filename);
+    } catch (e) {
+      console.warn("Bucket presign failed, falling back to disk URL:", e);
+    }
+  }
+
+  const name = msg.audio_filename.replace(/^voice\//, "");
+  return `${baseUrl}/uploads/${name}`;
+}
+
+async function toPublicMessage(msg: DbMessage, baseUrl: string) {
   return {
     id: msg.id,
     role: msg.role,
     content: msg.content,
     messageType: msg.message_type,
-    audioUrl:
-      msg.audio_filename != null
-        ? `${baseUrl}/uploads/${msg.audio_filename}`
-        : null,
+    audioUrl: await resolveAudioUrl(msg, baseUrl),
     createdAt: toIsoTimestamp(msg.created_at),
   };
 }
@@ -81,7 +101,10 @@ messagesRouter.get("/", async (req, res) => {
   const baseUrl = `${req.protocol}://${req.get("host")}`;
   try {
     const messages = await listMessages(auth.userId);
-    res.json({ messages: messages.map((m) => toPublicMessage(m, baseUrl)) });
+    const publicMessages = await Promise.all(
+      messages.map((m) => toPublicMessage(m, baseUrl)),
+    );
+    res.json({ messages: publicMessages });
   } catch (e) {
     console.error(e);
     const mapped = apiErrorFromDb(e);
@@ -112,8 +135,8 @@ messagesRouter.post("/text", async (req, res) => {
 
     const baseUrl = `${req.protocol}://${req.get("host")}`;
     res.json({
-      userMessage: toPublicMessage(userMsg, baseUrl),
-      assistantMessage: toPublicMessage(assistantMsg, baseUrl),
+      userMessage: await toPublicMessage(userMsg, baseUrl),
+      assistantMessage: await toPublicMessage(assistantMsg, baseUrl),
     });
   } catch (e) {
     console.error(e);
@@ -156,8 +179,10 @@ messagesRouter.post("/text/batch", async (req, res) => {
 
     const baseUrl = `${req.protocol}://${req.get("host")}`;
     res.json({
-      userMessages: userMsgs.map((m) => toPublicMessage(m, baseUrl)),
-      assistantMessage: toPublicMessage(assistantMsg, baseUrl),
+      userMessages: await Promise.all(
+        userMsgs.map((m) => toPublicMessage(m, baseUrl)),
+      ),
+      assistantMessage: await toPublicMessage(assistantMsg, baseUrl),
     });
   } catch (e) {
     console.error(e);
@@ -186,15 +211,23 @@ messagesRouter.post("/voice", upload.single("audio"), async (req, res) => {
   }
 
   const ext = path.extname(file.originalname) || ".m4a";
-  const savedName = `${uuidv4()}${ext}`;
-  const { renameSync } = await import("fs");
-  const finalPath = path.join(getUploadsDir(), savedName);
+  const localName = `${uuidv4()}${ext}`;
+  const { readFileSync, renameSync, unlinkSync, writeFileSync } = await import("fs");
+  const finalPath = path.join(getUploadsDir(), localName);
   renameSync(file.path, finalPath);
 
   const mime =
     file.mimetype && file.mimetype !== "application/octet-stream"
       ? file.mimetype
       : "audio/mp4";
+
+  const cleanupLocal = () => {
+    try {
+      unlinkSync(finalPath);
+    } catch {
+      /* ignore */
+    }
+  };
 
   try {
     const history = await listMessages(auth.userId);
@@ -205,32 +238,48 @@ messagesRouter.post("/voice", upload.single("audio"), async (req, res) => {
       return;
     }
 
+    let userAudioKey = localName;
+    if (isBucketConfigured()) {
+      const userBuffer = readFileSync(finalPath);
+      userAudioKey = await uploadVoiceObject(localName, userBuffer, mime);
+      cleanupLocal();
+    }
+
     const userMsg = await insertMessage(
       auth.userId,
       "user",
       transcript,
       "audio",
-      savedName,
+      userAudioKey,
     );
 
     const reply = await chatWithMia([...history, userMsg]);
     const mp3Buffer = await synthesizeSpeech(reply);
-    const assistantAudioName = `${uuidv4()}.mp3`;
-    const { writeFileSync } = await import("fs");
-    writeFileSync(path.join(getUploadsDir(), assistantAudioName), mp3Buffer);
+    const assistantLocalName = `${uuidv4()}.mp3`;
+    let assistantAudioKey = assistantLocalName;
+
+    if (isBucketConfigured()) {
+      assistantAudioKey = await uploadVoiceObject(
+        assistantLocalName,
+        mp3Buffer,
+        "audio/mpeg",
+      );
+    } else {
+      writeFileSync(path.join(getUploadsDir(), assistantLocalName), mp3Buffer);
+    }
 
     const assistantMsg = await insertMessage(
       auth.userId,
       "assistant",
       reply,
       "audio",
-      assistantAudioName,
+      assistantAudioKey,
     );
 
     const baseUrl = `${req.protocol}://${req.get("host")}`;
     res.json({
-      userMessage: toPublicMessage(userMsg, baseUrl),
-      assistantMessage: toPublicMessage(assistantMsg, baseUrl),
+      userMessage: await toPublicMessage(userMsg, baseUrl),
+      assistantMessage: await toPublicMessage(assistantMsg, baseUrl),
     });
   } catch (e) {
     console.error(e);
