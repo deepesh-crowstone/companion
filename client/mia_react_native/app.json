@@ -1,0 +1,52 @@
+{
+  "expo": {
+    "name": "Mia",
+    "slug": "mia-companion",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FFF0F3"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.mia.companion",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Mia needs microphone access for voice notes and live calls."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#FFF0F3"
+      },
+      "edgeToEdgeEnabled": false,
+      "softwareKeyboardLayoutMode": "pan",
+      "package": "com.mia.companion",
+      "permissions": [
+        "INTERNET",
+        "RECORD_AUDIO",
+        "MODIFY_AUDIO_SETTINGS"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-font",
+      [
+        "expo-av",
+        {
+          "microphonePermission": "Mia needs microphone access for voice notes and live calls."
+        }
+      ]
+    ],
+    "extra": {
+      "apiBaseUrl": "https://companion-production-850d.up.railway.app"
+    }
+  }
+}

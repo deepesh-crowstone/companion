@@ -59,16 +59,7 @@ class MiaChatHeader extends StatelessWidget implements PreferredSizeWidget {
                         ),
                       ),
                       const SizedBox(height: 2),
-                      Text(
-                        statusText,
-                        style: GoogleFonts.inter(
-                          fontSize: 12,
-                          color: MiaColors.textMuted,
-                          fontWeight: FontWeight.w400,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                      _StatusLine(text: statusText),
                     ],
                   ),
                 ),
@@ -91,6 +82,55 @@ class MiaChatHeader extends StatelessWidget implements PreferredSizeWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _StatusLine extends StatelessWidget {
+  const _StatusLine({required this.text});
+
+  final String text;
+
+  static const _onlineLabel = 'online now';
+
+  @override
+  Widget build(BuildContext context) {
+    final style = GoogleFonts.inter(
+      fontSize: 12,
+      color: MiaColors.textMuted,
+      fontWeight: FontWeight.w400,
+    );
+
+    if (text != _onlineLabel) {
+      return Text(
+        text,
+        style: style,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      );
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 8,
+          height: 8,
+          decoration: const BoxDecoration(
+            color: MiaColors.online,
+            shape: BoxShape.circle,
+          ),
+        ),
+        const SizedBox(width: 6),
+        Flexible(
+          child: Text(
+            text,
+            style: style,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
     );
   }
 }

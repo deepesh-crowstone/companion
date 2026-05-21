@@ -37,6 +37,9 @@ class _ChatScreenState extends State<ChatScreen> {
   /// Wait this long after the last send (and empty input) before Mia replies.
   static const _replyIdlePause = Duration(milliseconds: 2500);
 
+  /// After the user sends, show Mia as online in the header.
+  static const _goOnlineDelay = Duration(seconds: 2);
+
   final _input = TextEditingController();
   final _inputFocus = FocusNode();
   final _scroll = ScrollController();
@@ -57,7 +60,9 @@ class _ChatScreenState extends State<ChatScreen> {
   Timer? _recordDurationTimer;
   int? _playingId;
   StreamSubscription<PlayerState>? _playerSub;
-  String _statusText = 'online now';
+  String _statusText = 'offline';
+  bool _miaIsOnline = false;
+  Timer? _goOnlineTimer;
 
   final List<String> _textOutbox = [];
   final List<int> _pendingOptimisticIds = [];
@@ -75,6 +80,7 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void dispose() {
     _replyTimer?.cancel();
+    _goOnlineTimer?.cancel();
     _recordDurationTimer?.cancel();
     _input.removeListener(_onInputChanged);
     _scroll.removeListener(_onScroll);
@@ -111,13 +117,26 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  String _statusWhenIdle() => _miaIsOnline ? 'online now' : 'offline';
+
+  void _scheduleGoOnlineAfterUserSend() {
+    _goOnlineTimer?.cancel();
+    _goOnlineTimer = Timer(_goOnlineDelay, () {
+      if (!mounted) return;
+      _miaIsOnline = true;
+      if (_miaActivity == _MiaActivity.none) {
+        setState(() => _statusText = 'online now');
+      }
+    });
+  }
+
   void _abortMiaReply() {
     _replyGeneration++;
     _replyTimer?.cancel();
     if (_showMiaActivity && mounted) {
       setState(() {
         _miaActivity = _MiaActivity.none;
-        _statusText = 'online now';
+        _statusText = _statusWhenIdle();
       });
     }
   }
@@ -296,6 +315,7 @@ class _ChatScreenState extends State<ChatScreen> {
       _pinnedToBottom = true;
     });
     _scrollToBottom(force: true);
+    _scheduleGoOnlineAfterUserSend();
     _scheduleMiaReply();
   }
 
@@ -332,7 +352,7 @@ class _ChatScreenState extends State<ChatScreen> {
         }
         _messages = [...updated, result.assistant];
         _miaActivity = _MiaActivity.none;
-        _statusText = 'online now';
+        _statusText = _statusWhenIdle();
       });
       _scrollToBottom(animate: true);
     } catch (e) {
@@ -342,7 +362,7 @@ class _ChatScreenState extends State<ChatScreen> {
             .where((m) => !optimisticIds.contains(m.id))
             .toList();
         _miaActivity = _MiaActivity.none;
-        _statusText = 'online now';
+        _statusText = _statusWhenIdle();
       });
       _textOutbox.insertAll(0, texts);
       _pendingOptimisticIds.insertAll(0, optimisticIds);
@@ -438,7 +458,7 @@ class _ChatScreenState extends State<ChatScreen> {
     setState(() {
       _recording = false;
       _recordingLocked = false;
-      _statusText = 'online now';
+      _statusText = _statusWhenIdle();
       _slideCancelActive = false;
       _voiceSlideOffset = 0;
       _recordingDuration = Duration.zero;
@@ -473,7 +493,7 @@ class _ChatScreenState extends State<ChatScreen> {
       if (mounted) {
         MiaTheme.showMessage(context, 'hold longer to record a voice note');
       }
-      setState(() => _statusText = 'online now');
+      setState(() => _statusText = _statusWhenIdle());
       return;
     }
 
@@ -500,9 +520,9 @@ class _ChatScreenState extends State<ChatScreen> {
     setState(() {
       _messages = [..._messages, optimistic];
       _miaActivity = _MiaActivity.none;
-      _statusText = 'online now';
       _pinnedToBottom = true;
     });
+    _scheduleGoOnlineAfterUserSend();
     _scrollToBottom(force: true);
 
     // 2) Then Mia's recording state (voice reply).
@@ -531,7 +551,7 @@ class _ChatScreenState extends State<ChatScreen> {
           result.assistant,
         ];
         _miaActivity = _MiaActivity.none;
-        _statusText = 'online now';
+        _statusText = _statusWhenIdle();
       });
       _scrollToBottom(force: true, animate: true);
     } catch (e) {
@@ -539,7 +559,7 @@ class _ChatScreenState extends State<ChatScreen> {
       setState(() {
         _messages = _messages.where((m) => m.id != optimisticId).toList();
         _miaActivity = _MiaActivity.none;
-        _statusText = 'online now';
+        _statusText = _statusWhenIdle();
       });
       _handleError(e);
     }

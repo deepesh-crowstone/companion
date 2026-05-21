@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config.dart';
@@ -10,14 +11,22 @@ import '../models/chat_message.dart';
 import 'session_expired.dart';
 
 class ApiService {
-  ApiService._();
+  ApiService._() : _client = _createClient();
   static final ApiService instance = ApiService._();
 
   static const _tokenKey = 'mia_auth_token';
   static const _usernameKey = 'mia_username';
-  static const _timeout = Duration(seconds: 20);
+  static const _timeout = Duration(seconds: 30);
+  static const _healthTimeout = Duration(seconds: 45);
 
-  final http.Client _client = http.Client();
+  final http.Client _client;
+
+  static http.Client _createClient() {
+    final httpClient = HttpClient()
+      ..connectionTimeout = _timeout
+      ..idleTimeout = _timeout;
+    return IOClient(httpClient);
+  }
 
   String? _token;
   String? _username;
@@ -53,7 +62,7 @@ class ApiService {
     if (_token == null) return false;
     try {
       final res = await _get(
-        Uri.parse('$apiBaseUrl/auth/me'),
+        Uri.parse('$resolvedApiBaseUrl/auth/me'),
         headers: _authHeaders,
       );
       if (res.statusCode == 401) {
@@ -64,19 +73,26 @@ class ApiService {
     } on SessionExpiredException {
       return false;
     } catch (_) {
-      // Network blip — keep session; send will surface connection errors.
-      return true;
+      // Don't skip to chat when the server is unreachable.
+      return await checkHealth();
     }
   }
 
   /// Quick check that the phone can reach the backend.
   Future<bool> checkHealth() async {
-    try {
-      final res = await _get(Uri.parse('$apiBaseUrl/health'));
-      return res.statusCode == 200;
-    } catch (_) {
-      return false;
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        final res = await _client
+            .get(Uri.parse('$resolvedApiBaseUrl/health'))
+            .timeout(_healthTimeout);
+        if (res.statusCode == 200) return true;
+      } catch (_) {
+        if (attempt == 0) {
+          await Future<void>.delayed(const Duration(milliseconds: 800));
+        }
+      }
     }
+    return false;
   }
 
   Map<String, String> get _authHeaders => {
@@ -86,7 +102,7 @@ class ApiService {
 
   Future<Map<String, dynamic>> register(String username, String password) async {
     final res = await _post(
-      Uri.parse('$apiBaseUrl/auth/register'),
+      Uri.parse('$resolvedApiBaseUrl/auth/register'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'username': username, 'password': password}),
     );
@@ -95,7 +111,7 @@ class ApiService {
 
   Future<Map<String, dynamic>> login(String username, String password) async {
     final res = await _post(
-      Uri.parse('$apiBaseUrl/auth/login'),
+      Uri.parse('$resolvedApiBaseUrl/auth/login'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'username': username, 'password': password}),
     );
@@ -116,7 +132,7 @@ class ApiService {
 
   Future<List<ChatMessage>> fetchMessages() async {
     final res = await _get(
-      Uri.parse('$apiBaseUrl/messages'),
+      Uri.parse('$resolvedApiBaseUrl/messages'),
       headers: _authHeaders,
     );
     _guardAuth(res);
@@ -141,7 +157,7 @@ class ApiService {
     List<String> texts,
   ) async {
     final res = await _post(
-      Uri.parse('$apiBaseUrl/messages/text/batch'),
+      Uri.parse('$resolvedApiBaseUrl/messages/text/batch'),
       headers: _authHeaders,
       body: jsonEncode({'texts': texts}),
     );
@@ -166,7 +182,7 @@ class ApiService {
   ) async {
     final request = http.MultipartRequest(
       'POST',
-      Uri.parse('$apiBaseUrl/messages/voice'),
+      Uri.parse('$resolvedApiBaseUrl/messages/voice'),
     );
     request.headers['Authorization'] = 'Bearer $_token';
     request.files.add(
@@ -196,7 +212,7 @@ class ApiService {
 
   Future<Map<String, dynamic>> createRealtimeSession() async {
     final res = await _post(
-      Uri.parse('$apiBaseUrl/realtime/session'),
+      Uri.parse('$resolvedApiBaseUrl/realtime/session'),
       headers: _authHeaders,
     );
     _guardAuth(res);
@@ -236,15 +252,27 @@ class ApiService {
       throw Exception(_connectionError());
     } on http.ClientException catch (e) {
       throw Exception(_connectionError(detail: e.message));
+    } on HandshakeException catch (e) {
+      throw Exception(_connectionError(detail: e.message));
+    } on TlsException catch (e) {
+      throw Exception(_connectionError(detail: e.message));
     }
   }
 
   String _connectionError({String? detail}) {
     final extra = detail != null ? '\n$detail' : '';
-    return 'Cannot reach server at $apiBaseUrl.$extra\n'
+    final url = resolvedApiBaseUrl;
+    if (isProductionApi) {
+      return 'Cannot reach server at $url.$extra\n'
+          '1. On your phone browser open: $url/health (should show {"ok":true})\n'
+          '2. Stop the app, then run:\n'
+          '   flutter run --dart-define=API_BASE_URL=$url\n'
+          '3. Hot reload does not change API_BASE_URL — full restart required.';
+    }
+    return 'Cannot reach server at $url.$extra\n'
         '1. Run: cd server && npm run dev\n'
         '2. On Mac run: ipconfig getifaddr en0\n'
-        '3. Re-run app with: flutter run --dart-define=API_BASE_URL=http://YOUR_MAC_IP:3000\n'
+        '3. Re-run: flutter run --dart-define=API_BASE_URL=http://YOUR_MAC_IP:3000\n'
         '4. Phone browser should open http://YOUR_MAC_IP:3000/health';
   }
 

@@ -79,7 +79,10 @@ class _AuthScreenState extends State<AuthScreen> {
   String _friendlyError(Object e) {
     final raw = e.toString().replaceFirst('Exception: ', '');
     if (raw.contains('Cannot reach server')) {
-      return 'can\'t reach the server. make sure npm run dev is running on your mac, then try again.';
+      if (isProductionApi) {
+        return 'can\'t reach mia\'s server. on your phone open $resolvedApiBaseUrl/health — if that fails, set private DNS to automatic or dns.google, then try again.';
+      }
+      return 'can\'t reach the server. run npm run dev on your mac, then use flutter run with your mac\'s ip.';
     }
     if (raw.contains('Username already taken')) {
       return 'that username is taken — try another.';
@@ -249,7 +252,7 @@ class _OfflineBanner extends StatelessWidget {
             const SizedBox(width: 10),
             Expanded(
               child: Text(
-                'can\'t reach server at $apiBaseUrl',
+                'can\'t reach server at $resolvedApiBaseUrl',
                 style: GoogleFonts.inter(
                   fontSize: 12,
                   color: MiaColors.accentDeep,

@@ -1,17 +1,35 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show Platform;
 import 'dart:math' as math;
 import 'dart:typed_data' show ByteData, Uint8List;
 
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter_pcm_sound/flutter_pcm_sound.dart';
-import 'package:record/record.dart';
+import 'package:record/record.dart' hide IosAudioCategory;
 import 'package:web_socket_channel/io.dart';
+
+import 'debug_log.dart';
 
 enum CallConnectionState { connecting, ready, error, ended }
 
-/// xAI Realtime voice call — PCM 24kHz mono over WebSocket.
+/// xAI Realtime voice call — PCM 24 kHz mono over WebSocket.
+///
+/// This is deliberately half-duplex on mobile: while Mia is speaking, the
+/// recorder is stopped. That prevents loudspeaker audio from being sent back
+/// to xAI as user speech, which was causing echo loops and stalled turns.
 class RealtimeCallService {
+  static const Duration _wsPingInterval = Duration(seconds: 20);
+  static const int _sampleRate = 24000;
+  static const int _pcmBytesPerSecond = _sampleRate * 2; // mono PCM16
+  /// Extra padding (ms) added to the computed audio duration so the speaker
+  /// fully drains before the mic resumes.
+  static const int _playbackDrainPaddingMs = 900;
+  /// Used only if no audio delta ever arrives for a "response" — should not
+  /// normally fire because every delta reschedules the finish timer based on
+  /// actual queued audio duration.
+  static const Duration _emergencyFallback = Duration(seconds: 12);
+
   IOWebSocketChannel? _channel;
   StreamSubscription<dynamic>? _wsSub;
   StreamSubscription<Uint8List>? _micSub;
@@ -28,16 +46,19 @@ class RealtimeCallService {
   bool _sessionReady = false;
   bool _muted = false;
   bool _speakerOn = false;
-  bool _miaSpeaking = false;
-  bool _playbackStarted = false;
+  bool _assistantSpeaking = false;
+  bool _micRunning = false;
+  bool _wantMicRunning = false;
   bool _fatalError = false;
-  Timer? _resumeMicTimer;
+  int _micChunkCount = 0;
+  int _micCycleId = 0;
+  int _assistantAudioBytes = 0;
+  DateTime? _assistantStartedAt;
+  Timer? _assistantFinishTimer;
+  Future<void> _micQueue = Future<void>.value();
   Completer<void>? _sessionReadyCompleter;
 
   bool get isConnected => _connected && _sessionReady;
-
-  bool get _shouldStreamMic =>
-      _connected && _sessionReady && !_muted && !_miaSpeaking;
 
   Future<void> connect({
     required String wsUrl,
@@ -47,25 +68,49 @@ class RealtimeCallService {
   }) async {
     _fatalError = false;
     _sessionReady = false;
+    _assistantSpeaking = false;
+    _assistantAudioBytes = 0;
+    _assistantStartedAt = null;
     _sessionReadyCompleter = Completer<void>();
     connectionController.add(CallConnectionState.connecting);
 
-    await _configureVoiceAudio(speakerOn: _speakerOn);
+    await _configureAudioSession();
     await _initPlayback();
 
-    final uri = Uri.parse(wsUrl);
     _channel = IOWebSocketChannel.connect(
-      uri,
+      Uri.parse(wsUrl),
       headers: {'Authorization': 'Bearer $token'},
+      pingInterval: _wsPingInterval,
     );
     _connected = true;
 
     _wsSub = _channel!.stream.listen(
       _onEvent,
       onError: (e) {
+        // #region agent log
+        DebugLog.send(
+          location: 'realtime_call_service.dart:wsOnError',
+          message: 'WebSocket onError fired',
+          hypothesisId: 'H-A,H-E',
+          data: {'error': e.toString()},
+        );
+        // #endregion
         _emitError('connection lost: $e');
       },
       onDone: () {
+        // #region agent log
+        DebugLog.send(
+          location: 'realtime_call_service.dart:wsOnDone',
+          message: 'WebSocket onDone fired',
+          hypothesisId: 'H-A,H-E',
+          data: {
+            'wasConnected': _connected,
+            'fatalError': _fatalError,
+            'closeCode': _channel?.closeCode,
+            'closeReason': _channel?.closeReason,
+          },
+        );
+        // #endregion
         if (_connected && !_fatalError) {
           _emitError('call disconnected');
         }
@@ -74,18 +119,17 @@ class RealtimeCallService {
     );
 
     if (!sessionPreconfigured) {
-      await Future<void>.delayed(const Duration(milliseconds: 350));
-      _send({
-        'type': 'session.update',
-        'session': _sessionPayload(sessionConfig),
-      });
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      final session = Map<String, dynamic>.from(sessionConfig)
+        ..remove('model');
+      _send({'type': 'session.update', 'session': session});
     }
 
     await _sessionReadyCompleter!.future.timeout(
       const Duration(seconds: 12),
       onTimeout: () {
         if (!_sessionReady && !_fatalError) {
-          _emitError('timed out waiting for voice session');
+          _emitError('voice session timed out');
         }
       },
     );
@@ -96,33 +140,29 @@ class RealtimeCallService {
       );
     }
 
-    await _startMic();
+    _wantMicRunning = !_muted;
+    await _applyMicState();
     connectionController.add(CallConnectionState.ready);
-  }
-
-  Map<String, dynamic> _sessionPayload(Map<String, dynamic> sessionConfig) {
-    final copy = Map<String, dynamic>.from(sessionConfig);
-    copy.remove('model');
-    return copy;
   }
 
   Future<void> _initPlayback() async {
     await FlutterPcmSound.setLogLevel(LogLevel.error);
-    await FlutterPcmSound.setup(sampleRate: 24000, channelCount: 1);
+    await FlutterPcmSound.setup(
+      sampleRate: _sampleRate,
+      channelCount: 1,
+      iosAudioCategory: IosAudioCategory.playAndRecord,
+    );
     await FlutterPcmSound.setFeedThreshold(2400);
     FlutterPcmSound.setFeedCallback((_) {});
-    _playbackStarted = FlutterPcmSound.start();
-    if (!_playbackStarted) {
-      await FlutterPcmSound.feed(PcmArrayInt16.zeros(count: 240));
-    }
+    FlutterPcmSound.start();
   }
 
-  Future<void> _configureVoiceAudio({required bool speakerOn}) async {
+  Future<void> _configureAudioSession() async {
     _audioSession = await AudioSession.instance;
     await _audioSession!.configure(
       AudioSessionConfiguration(
         avAudioSessionCategory: AVAudioSessionCategory.playAndRecord,
-        avAudioSessionCategoryOptions: speakerOn
+        avAudioSessionCategoryOptions: _speakerOn
             ? AVAudioSessionCategoryOptions.defaultToSpeaker |
                 AVAudioSessionCategoryOptions.allowBluetooth
             : AVAudioSessionCategoryOptions.allowBluetooth,
@@ -136,89 +176,291 @@ class RealtimeCallService {
       ),
     );
     await _audioSession!.setActive(true);
+    if (Platform.isAndroid) {
+      await AndroidAudioManager().setSpeakerphoneOn(_speakerOn);
+    }
   }
 
   Future<void> setMuted(bool muted) async {
     _muted = muted;
+    _wantMicRunning =
+        _connected && _sessionReady && !_muted && !_assistantSpeaking;
+    _queueMicStateSync();
     if (muted && _connected) {
       _send({'type': 'input_audio_buffer.clear'});
     }
   }
 
-  Future<void> setSpeaker(bool speakerOn) async {
-    _speakerOn = speakerOn;
-    await _configureVoiceAudio(speakerOn: speakerOn);
+  Future<void> setSpeaker(bool on) async {
+    _speakerOn = on;
+    await _configureAudioSession();
   }
 
   void _send(Map<String, dynamic> payload) {
-    if (_channel == null) return;
-    _channel!.sink.add(jsonEncode(payload));
+    final ch = _channel;
+    if (ch == null) {
+      // #region agent log
+      DebugLog.send(
+        location: 'realtime_call_service.dart:_send',
+        message: 'Tried to send but channel is null',
+        hypothesisId: 'H-A,H-E',
+        data: {'type': payload['type']},
+      );
+      // #endregion
+      return;
+    }
+    try {
+      ch.sink.add(jsonEncode(payload));
+    } catch (e) {
+      // #region agent log
+      DebugLog.send(
+        location: 'realtime_call_service.dart:_send',
+        message: 'sink.add THREW',
+        hypothesisId: 'H-A,H-E',
+        data: {'type': payload['type'], 'error': e.toString()},
+      );
+      // #endregion
+    }
   }
 
   void _markSessionReady() {
     if (_sessionReady) return;
     _sessionReady = true;
-    final completer = _sessionReadyCompleter;
-    if (completer != null && !completer.isCompleted) {
-      completer.complete();
-    }
+    _sessionReadyCompleter?.complete();
   }
 
-  void _setMiaSpeaking(bool speaking) {
-    if (_miaSpeaking == speaking) return;
-    _miaSpeaking = speaking;
-    if (speaking && _connected) {
-      _send({'type': 'input_audio_buffer.clear'});
-    }
+  void _beginAssistantTurn() {
+    if (_assistantSpeaking) return;
+    _assistantSpeaking = true;
+    _assistantAudioBytes = 0;
+    _assistantStartedAt = DateTime.now();
+    _assistantFinishTimer?.cancel();
+    _wantMicRunning = false;
+    _queueMicStateSync();
+    _send({'type': 'input_audio_buffer.clear'});
+    // Emergency fallback so the turn always ends even if something goes wrong
+    // with delta accounting. Each subsequent delta will replace this timer
+    // with the duration-based schedule.
+    _scheduleAssistantFinish(_emergencyFallback);
+    // #region agent log
+    DebugLog.send(
+      location: 'realtime_call_service.dart:_beginAssistantTurn',
+      message: 'Assistant turn started — mic will be stopped',
+      hypothesisId: 'H-B,H-C,H-F',
+      data: {'micRunning': _micRunning, 'wantMicRunning': _wantMicRunning},
+    );
+    // #endregion
   }
 
-  void _scheduleResumeMic() {
-    _resumeMicTimer?.cancel();
-    _resumeMicTimer = Timer(const Duration(milliseconds: 500), () {
-      _setMiaSpeaking(false);
-    });
+  void _scheduleAssistantFinish(Duration delay) {
+    _assistantFinishTimer?.cancel();
+    _assistantFinishTimer = Timer(delay, _finishAssistantTurn);
+  }
+
+  void _finishAssistantTurn() {
+    _assistantFinishTimer?.cancel();
+    if (!_assistantSpeaking) return;
+    _assistantSpeaking = false;
+    _assistantAudioBytes = 0;
+    _assistantStartedAt = null;
+    _send({'type': 'input_audio_buffer.clear'});
+    _wantMicRunning = _connected && _sessionReady && !_muted;
+    _queueMicStateSync();
+    transcriptController.add('…say something — i\'m listening');
+    // #region agent log
+    DebugLog.send(
+      location: 'realtime_call_service.dart:_finishAssistantTurn',
+      message: 'Assistant turn finished — mic will restart',
+      hypothesisId: 'H-B,H-C',
+      data: {
+        'connected': _connected,
+        'sessionReady': _sessionReady,
+        'muted': _muted,
+        'wantMicRunning': _wantMicRunning,
+        'micRunning': _micRunning,
+      },
+    );
+    // #endregion
+  }
+
+  /// Compute when the speaker buffer will be empty, then schedule the finish
+  /// for that moment + a small drain pad. Called on every audio delta — the
+  /// most recently scheduled timer always wins.
+  void _rescheduleFinishFromPlayback() {
+    if (!_assistantSpeaking) return;
+    final startedAt = _assistantStartedAt;
+    final elapsedMs = startedAt == null
+        ? 0
+        : DateTime.now().difference(startedAt).inMilliseconds;
+    final audioMs = (_assistantAudioBytes / _pcmBytesPerSecond * 1000).ceil();
+    final remainingMs = math.max(0, audioMs - elapsedMs);
+    final drainMs = remainingMs + _playbackDrainPaddingMs;
+    _scheduleAssistantFinish(Duration(milliseconds: drainMs));
+    // #region agent log
+    DebugLog.send(
+      location: 'realtime_call_service.dart:_rescheduleFinishFromPlayback',
+      message: 'Recomputed finish schedule from playback duration',
+      hypothesisId: 'H-F',
+      data: {
+        'audioMs': audioMs,
+        'elapsedMs': elapsedMs,
+        'remainingMs': remainingMs,
+        'drainMs': drainMs,
+      },
+    );
+    // #endregion
   }
 
   void _emitError(String message) {
+    // #region agent log
+    DebugLog.send(
+      location: 'realtime_call_service.dart:_emitError',
+      message: 'Fatal error path',
+      hypothesisId: 'H-G',
+      data: {'msg': message},
+    );
+    // #endregion
     _fatalError = true;
     connectionController.add(CallConnectionState.error);
     transcriptController.add(message);
-    final completer = _sessionReadyCompleter;
-    if (completer != null && !completer.isCompleted) {
-      completer.complete();
+    if (_sessionReadyCompleter != null &&
+        !_sessionReadyCompleter!.isCompleted) {
+      _sessionReadyCompleter!.complete();
     }
   }
 
-  Future<void> _startMic() async {
+  void _queueMicStateSync() {
+    _micQueue = _micQueue.catchError((_) {}).then((_) => _applyMicState());
+  }
+
+  Future<void> _applyMicState() async {
+    while (_micRunning != _wantMicRunning) {
+      if (_wantMicRunning) {
+        await _startMicNow();
+      } else {
+        await _stopMicNow();
+      }
+    }
+  }
+
+  Future<void> _startMicNow() async {
+    if (_micRunning) return;
     if (!await _recorder.hasPermission()) {
       throw Exception('Microphone permission denied');
     }
-
-    final stream = await _recorder.startStream(
-      const RecordConfig(
-        encoder: AudioEncoder.pcm16bits,
-        sampleRate: 24000,
-        numChannels: 1,
-        echoCancel: true,
-        noiseSuppress: true,
-        autoGain: true,
-      ),
-    );
-
+    Stream<Uint8List> stream;
+    try {
+      stream = await _recorder.startStream(
+        RecordConfig(
+          encoder: AudioEncoder.pcm16bits,
+          sampleRate: _sampleRate,
+          numChannels: 1,
+          echoCancel: true,
+          noiseSuppress: true,
+          autoGain: true,
+          androidConfig: AndroidRecordConfig(
+            audioSource: AndroidAudioSource.voiceCommunication,
+            audioManagerMode: AudioManagerMode.modeInCommunication,
+            speakerphone: _speakerOn,
+          ),
+        ),
+      );
+      // #region agent log
+      DebugLog.send(
+        location: 'realtime_call_service.dart:_startMicNow',
+        message: 'Recorder startStream succeeded',
+        hypothesisId: 'H-B',
+        data: {},
+      );
+      // #endregion
+    } catch (e) {
+      // #region agent log
+      DebugLog.send(
+        location: 'realtime_call_service.dart:_startMicNow',
+        message: 'Recorder startStream FAILED',
+        hypothesisId: 'H-B',
+        data: {'error': e.toString()},
+      );
+      // #endregion
+      rethrow;
+    }
+    _micRunning = true;
+    _micChunkCount = 0;
+    final cycleId = ++_micCycleId;
     _micSub = stream.listen(
       (chunk) {
-        if (!_shouldStreamMic) {
-          if (!_muted) levelController.add(8);
+        if (!_connected || !_sessionReady || _muted || _assistantSpeaking) {
           return;
         }
         levelController.add(_rmsLevel(chunk));
+        _micChunkCount++;
+        // #region agent log
+        if (_micChunkCount == 1 || _micChunkCount % 10 == 0) {
+          DebugLog.send(
+            location: 'realtime_call_service.dart:micChunk',
+            message: 'Mic chunk sent to xAI',
+            hypothesisId: 'H-D,H-E,H-G',
+            data: {
+              'cycleId': cycleId,
+              'chunkNum': _micChunkCount,
+              'chunkBytes': chunk.length,
+              'rms': _rmsLevel(chunk),
+            },
+          );
+        }
+        // #endregion
         _send({
           'type': 'input_audio_buffer.append',
           'audio': base64Encode(chunk),
         });
       },
-      onError: (e) => _emitError('mic error: $e'),
+      onError: (e) {
+        // #region agent log
+        DebugLog.send(
+          location: 'realtime_call_service.dart:micStreamOnError',
+          message: 'Mic stream emitted error',
+          hypothesisId: 'H-G',
+          data: {'cycleId': cycleId, 'error': e.toString()},
+        );
+        // #endregion
+        _emitError('mic error: $e');
+      },
+      onDone: () {
+        // #region agent log
+        DebugLog.send(
+          location: 'realtime_call_service.dart:micStreamOnDone',
+          message: 'Mic stream closed unexpectedly',
+          hypothesisId: 'H-G',
+          data: {
+            'cycleId': cycleId,
+            'chunksDelivered': _micChunkCount,
+            'micRunning': _micRunning,
+          },
+        );
+        // #endregion
+      },
     );
+  }
+
+  Future<void> _stopMicNow() async {
+    if (!_micRunning && _micSub == null) return;
+    await _micSub?.cancel();
+    _micSub = null;
+    Object? stopError;
+    try {
+      await _recorder.stop();
+    } catch (e) {
+      stopError = e;
+    }
+    _micRunning = false;
+    // #region agent log
+    DebugLog.send(
+      location: 'realtime_call_service.dart:_stopMicNow',
+      message: 'Recorder stopped',
+      hypothesisId: 'H-B',
+      data: {'stopError': stopError?.toString()},
+    );
+    // #endregion
   }
 
   int _rmsLevel(Uint8List bytes) {
@@ -243,6 +485,18 @@ class RealtimeCallService {
     }
 
     final type = event['type'] as String?;
+    // #region agent log
+    if (type != 'response.output_audio.delta' &&
+        type != 'response.audio.delta' &&
+        type != 'response.output_audio_transcript.delta') {
+      DebugLog.send(
+        location: 'realtime_call_service.dart:_onEvent',
+        message: 'WS event received',
+        hypothesisId: 'H-A,H-C,H-D',
+        data: {'type': type ?? 'unknown'},
+      );
+    }
+    // #endregion
 
     switch (type) {
       case 'session.created':
@@ -250,17 +504,21 @@ class RealtimeCallService {
       case 'conversation.created':
         _markSessionReady();
         break;
+
       case 'response.output_audio.delta':
-        _setMiaSpeaking(true);
+      case 'response.audio.delta':
         final b64 = event['delta'] as String?;
         if (b64 != null && b64.isNotEmpty) {
-          unawaited(_playPcmDelta(b64));
+          _beginAssistantTurn();
+          // Decode synchronously so we can update the audio-duration counter
+          // BEFORE scheduling the finish timer. Feeding the speaker is async.
+          final pcm = base64Decode(b64);
+          _assistantAudioBytes += pcm.length;
+          unawaited(_feedPcm(pcm));
+          _rescheduleFinishFromPlayback();
         }
         break;
-      case 'response.output_audio.done':
-      case 'response.done':
-        _scheduleResumeMic();
-        break;
+
       case 'response.output_audio_transcript.delta':
         final delta = event['delta'] as String? ?? '';
         if (delta.isNotEmpty) transcriptController.add(delta);
@@ -269,11 +527,26 @@ class RealtimeCallService {
         final done = event['transcript'] as String? ?? '';
         if (done.isNotEmpty) transcriptController.add(done);
         break;
+
       case 'input_audio_buffer.speech_started':
         levelController.add(40);
+        transcriptController.add('…i heard you');
         break;
       case 'input_audio_buffer.speech_stopped':
+        transcriptController.add('…one sec, mia is thinking');
         break;
+
+      case 'response.done':
+      case 'response.output_audio.done':
+        // If server actually sends these, recompute one last time so any
+        // tail audio still in the speaker queue plays out fully.
+        _rescheduleFinishFromPlayback();
+        break;
+
+      case 'response.cancelled':
+        _finishAssistantTurn();
+        break;
+
       case 'error':
         final err = event['error'];
         final msg = err is Map
@@ -284,33 +557,34 @@ class RealtimeCallService {
     }
   }
 
-  Future<void> _playPcmDelta(String b64) async {
+  Future<void> _feedPcm(Uint8List pcm) async {
     try {
-      final pcm = base64Decode(b64);
       if (pcm.isEmpty) return;
       await FlutterPcmSound.feed(
         PcmArrayInt16(bytes: ByteData.sublistView(pcm)),
       );
-    } catch (e) {
-      _emitError('playback error: $e');
+    } catch (_) {
+      // Ignore individual chunk feed failures.
     }
   }
 
   Future<void> hangUp() async {
     _connected = false;
     _sessionReady = false;
-    _resumeMicTimer?.cancel();
-    await _micSub?.cancel();
-    _micSub = null;
-    try {
-      await _recorder.stop();
-    } catch (_) {}
+    _assistantSpeaking = false;
+    _assistantFinishTimer?.cancel();
+    _wantMicRunning = false;
+    await _applyMicState();
     await _wsSub?.cancel();
     _wsSub = null;
     await _channel?.sink.close();
     _channel = null;
-    await FlutterPcmSound.release();
-    await _audioSession?.setActive(false);
+    try {
+      await FlutterPcmSound.release();
+    } catch (_) {}
+    try {
+      await _audioSession?.setActive(false);
+    } catch (_) {}
     connectionController.add(CallConnectionState.ended);
   }
 

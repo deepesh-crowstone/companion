@@ -1,0 +1,1 @@
+-keep class com.mia.companion.data.model.** { *; }
