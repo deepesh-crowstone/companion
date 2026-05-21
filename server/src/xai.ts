@@ -1,4 +1,10 @@
-import { MIA_SYSTEM_PROMPT, MIA_VOICE_ID, XAI_CHAT_MODEL } from "./mia.js";
+import {
+  MIA_STT_LANGUAGE,
+  MIA_SYSTEM_PROMPT,
+  MIA_TTS_LANGUAGE,
+  MIA_VOICE_ID,
+  XAI_CHAT_MODEL,
+} from "./mia.js";
 import { MIA_VOICE_TTS_INSTRUCTIONS } from "./tts-speech.js";
 import { buildRealtimeSession } from "./realtime-session.js";
 import type { DbMessage } from "./db.js";
@@ -74,6 +80,7 @@ export async function transcribeAudio(
     new Blob([buffer], { type: mimeType }),
     filename,
   );
+  form.append("language", MIA_STT_LANGUAGE);
 
   const res = await fetch(`${XAI_BASE}/stt`, {
     method: "POST",
@@ -97,7 +104,7 @@ export async function synthesizeSpeech(text: string): Promise<Buffer> {
     body: JSON.stringify({
       text,
       voice_id: MIA_VOICE_ID,
-      language: "en",
+      language: MIA_TTS_LANGUAGE,
       output_format: { codec: "mp3", sample_rate: 24000 },
     }),
   });
