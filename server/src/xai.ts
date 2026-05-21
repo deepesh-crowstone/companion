@@ -31,13 +31,27 @@ function stripEmojis(text: string): string {
   return text.replace(EMOJI_RE, "").replace(/\s{2,}/g, " ").trim();
 }
 
+function normalizeRespectfulUserGrammar(text: string): string {
+  return text
+    .replace(/\bbata\s+na\b/gi, "batao na")
+    .replace(/\ble\s+raha\s+hai\b/gi, "le rahe ho")
+    .replace(/\bkar\s+raha\s+hai\b/gi, "kar rahe ho")
+    .replace(/\bso\s+raha\s+hai\b/gi, "so rahe ho")
+    .replace(/\bja\s+raha\s+hai\b/gi, "ja rahe ho")
+    .replace(/\bthak\s+gaya\b/gi, "thak gaye")
+    .replace(/\bho\s+gaya\s+hai\b/gi, "ho gaye ho")
+    .replace(/\bho\s+gaya\b/gi, "ho gaye");
+}
+
 function cleanTextSegment(value: unknown): string | null {
   if (typeof value !== "string") return null;
-  const cleaned = stripEmojis(value)
-    .replace(/^\s*(?:[-*•]|\d+[.)])\s*/, "")
-    .replace(/^["'“”‘’]+|["'“”‘’]+$/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
+  const cleaned = normalizeRespectfulUserGrammar(
+    stripEmojis(value)
+      .replace(/^\s*(?:[-*•]|\d+[.)])\s*/, "")
+      .replace(/^["'“”‘’]+|["'“”‘’]+$/g, "")
+      .replace(/\s+/g, " ")
+      .trim(),
+  );
   return cleaned.length > 0 ? cleaned : null;
 }
 

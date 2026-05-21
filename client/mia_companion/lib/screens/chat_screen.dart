@@ -23,7 +23,6 @@ import '../widgets/mia_chat_header.dart';
 import '../widgets/scroll_to_bottom_button.dart';
 import 'auth_screen.dart';
 import 'mia_profile_screen.dart';
-import 'voice_call_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -39,6 +38,8 @@ class _ChatScreenState extends State<ChatScreen> {
   static const _replyIdlePause = Duration(milliseconds: 2500);
   static const _receiptDeliveredDelay = Duration(milliseconds: 450);
   static const _receiptReadDelay = Duration(milliseconds: 1300);
+  static const _minFirstReplyTypingDelay = Duration(milliseconds: 1800);
+  static const _maxFirstReplyTypingDelay = Duration(milliseconds: 4200);
 
   /// After the user sends, show Mia as online in the header.
   static const _goOnlineDelay = Duration(seconds: 2);
@@ -419,7 +420,13 @@ class _ChatScreenState extends State<ChatScreen> {
     final text = assistants.isEmpty ? '' : assistants.first.content;
     final natural = HumanPresence.typingDuration(text).inMilliseconds;
     return Duration(
-      milliseconds: (natural * 0.65).round().clamp(650, 2500).toInt(),
+      milliseconds: (natural * 0.9)
+          .round()
+          .clamp(
+            _minFirstReplyTypingDelay.inMilliseconds,
+            _maxFirstReplyTypingDelay.inMilliseconds,
+          )
+          .toInt(),
     );
   }
 
@@ -476,6 +483,8 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  // Voice note capture — wire back when the mic ships.
+  // ignore: unused_element
   Future<void> _startVoiceRecording() async {
     if (_recording) return;
 
@@ -521,6 +530,7 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
+  // ignore: unused_element
   void _lockVoiceRecording() {
     if (!_recording || _recordingLocked) return;
     setState(() {
@@ -528,12 +538,6 @@ class _ChatScreenState extends State<ChatScreen> {
       _slideCancelActive = false;
       _voiceSlideOffset = 0;
     });
-  }
-
-  Future<void> _tapStartAndLockVoiceNote() async {
-    await _startVoiceRecording();
-    if (!mounted || !_recording) return;
-    _lockVoiceRecording();
   }
 
   void _onVoiceSlideUpdate(double offset, bool cancelActive) {
@@ -723,6 +727,14 @@ class _ChatScreenState extends State<ChatScreen> {
     FocusManager.instance.primaryFocus?.unfocus();
   }
 
+  void _showComingSoonToast() {
+    MiaTheme.showMessage(
+      context,
+      'This feature is coming soon.',
+      isError: false,
+    );
+  }
+
   void _openMenuSheet() {
     _dismissKeyboard();
     showModalBottomSheet<void>(
@@ -784,11 +796,7 @@ class _ChatScreenState extends State<ChatScreen> {
             context,
           ).push(MaterialPageRoute(builder: (_) => const MiaProfileScreen()));
         },
-        onCall: () {
-          Navigator.of(
-            context,
-          ).push(MaterialPageRoute(builder: (_) => const VoiceCallScreen()));
-        },
+        onCall: _showComingSoonToast,
         onMenu: _openMenuSheet,
       ),
       body: GestureDetector(
@@ -846,8 +854,8 @@ class _ChatScreenState extends State<ChatScreen> {
               sending: _showMiaActivity,
               enabled: !_loading,
               onSend: _sendText,
-              onTapStartAndLock: _tapStartAndLockVoiceNote,
-              onHoldStart: _startVoiceRecording,
+              onTapStartAndLock: () async => _showComingSoonToast(),
+              onHoldStart: () async => _showComingSoonToast(),
               onHoldSend: () => unawaited(_sendVoiceRecording()),
               onHoldCancel: () => unawaited(_cancelVoiceRecording()),
               onSlideUpdate: _onVoiceSlideUpdate,
