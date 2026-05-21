@@ -11,7 +11,12 @@ import {
   uploadVoiceObject,
 } from "../storage.js";
 import { stripSpeechTagsForDisplay } from "../tts-speech.js";
-import { chatWithMia, synthesizeSpeech, transcribeAudio } from "../xai.js";
+import {
+  chatWithMia,
+  chatWithMiaText,
+  synthesizeSpeech,
+  transcribeAudio,
+} from "../xai.js";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -64,6 +69,17 @@ async function insertMessage(
   return rows[0];
 }
 
+async function insertAssistantTextMessages(
+  userId: number,
+  contents: string[],
+): Promise<DbMessage[]> {
+  const inserted: DbMessage[] = [];
+  for (const content of contents) {
+    inserted.push(await insertMessage(userId, "assistant", content, "text"));
+  }
+  return inserted;
+}
+
 function toIsoTimestamp(value: Date | string): string {
   if (value instanceof Date) return value.toISOString();
   return new Date(value).toISOString();
@@ -90,6 +106,16 @@ async function toPublicMessage(msg: DbMessage) {
     messageType: msg.message_type,
     audioUrl: await resolveAudioUrl(msg),
     createdAt: toIsoTimestamp(msg.created_at),
+  };
+}
+
+type PublicMessage = Awaited<ReturnType<typeof toPublicMessage>>;
+
+function combinedAssistantFallback(messages: PublicMessage[]): PublicMessage {
+  const [first] = messages;
+  return {
+    ...first,
+    content: messages.map((m) => m.content).join("\n"),
   };
 }
 
@@ -126,12 +152,19 @@ messagesRouter.post("/text", async (req, res) => {
     const history = await listMessages(auth.userId);
     const userMsg = await insertMessage(auth.userId, "user", trimmed, "text");
 
-    const reply = await chatWithMia([...history, userMsg]);
-    const assistantMsg = await insertMessage(auth.userId, "assistant", reply, "text");
+    const replySegments = await chatWithMiaText([...history, userMsg]);
+    const assistantMsgs = await insertAssistantTextMessages(
+      auth.userId,
+      replySegments,
+    );
+    const assistantMessages = await Promise.all(
+      assistantMsgs.map((m) => toPublicMessage(m)),
+    );
 
     res.json({
       userMessage: await toPublicMessage(userMsg),
-      assistantMessage: await toPublicMessage(assistantMsg),
+      assistantMessage: combinedAssistantFallback(assistantMessages),
+      assistantMessages,
     });
   } catch (e) {
     console.error(e);
@@ -172,14 +205,21 @@ messagesRouter.post("/text/batch", async (req, res) => {
       userMsgs.push(await insertMessage(auth.userId, "user", text, "text"));
     }
 
-    const reply = await chatWithMia([...history, ...userMsgs]);
-    const assistantMsg = await insertMessage(auth.userId, "assistant", reply, "text");
+    const replySegments = await chatWithMiaText([...history, ...userMsgs]);
+    const assistantMsgs = await insertAssistantTextMessages(
+      auth.userId,
+      replySegments,
+    );
+    const assistantMessages = await Promise.all(
+      assistantMsgs.map((m) => toPublicMessage(m)),
+    );
 
     res.json({
       userMessages: await Promise.all(
         userMsgs.map((m) => toPublicMessage(m)),
       ),
-      assistantMessage: await toPublicMessage(assistantMsg),
+      assistantMessage: combinedAssistantFallback(assistantMessages),
+      assistantMessages,
     });
   } catch (e) {
     console.error(e);

@@ -121,12 +121,16 @@ class ApiService {
     return data.messages.map(chatMessageFromJson);
   }
 
-  async sendText(text: string): Promise<{ user: ChatMessage; assistant: ChatMessage }> {
+  async sendText(text: string): Promise<{ user: ChatMessage; assistant: ChatMessage; assistants: ChatMessage[] }> {
     const batch = await this.sendTextBatch([text]);
-    return { user: batch.users[batch.users.length - 1], assistant: batch.assistant };
+    return {
+      user: batch.users[batch.users.length - 1],
+      assistant: batch.assistant,
+      assistants: batch.assistants,
+    };
   }
 
-  async sendTextBatch(texts: string[]): Promise<{ users: ChatMessage[]; assistant: ChatMessage }> {
+  async sendTextBatch(texts: string[]): Promise<{ users: ChatMessage[]; assistant: ChatMessage; assistants: ChatMessage[] }> {
     const res = await this.post(
       `${resolvedApiBaseUrl()}/messages/text/batch`,
       this.authHeaders,
@@ -137,10 +141,15 @@ class ApiService {
     const data = (await res.json()) as {
       userMessages: Record<string, unknown>[];
       assistantMessage: Record<string, unknown>;
+      assistantMessages?: Record<string, unknown>[];
     };
+    const assistants = data.assistantMessages?.length
+      ? data.assistantMessages.map(chatMessageFromJson)
+      : [chatMessageFromJson(data.assistantMessage)];
     return {
       users: data.userMessages.map(chatMessageFromJson),
       assistant: chatMessageFromJson(data.assistantMessage),
+      assistants,
     };
   }
 

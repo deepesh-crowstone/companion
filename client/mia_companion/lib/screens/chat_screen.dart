@@ -335,8 +335,10 @@ class _ChatScreenState extends State<ChatScreen> {
       final result = await ApiService.instance.sendTextBatch(texts);
       if (!mounted || generation != _replyGeneration) return;
 
+      final assistants = result.assistants;
+      final assistantText = assistants.map((m) => m.content).join(' ');
       await HumanPresence.waitRemaining(
-        HumanPresence.typingDuration(result.assistant.content),
+        HumanPresence.typingDuration(assistantText),
         typingElapsed,
       );
       if (!mounted || generation != _replyGeneration) return;
@@ -350,11 +352,25 @@ class _ChatScreenState extends State<ChatScreen> {
             updated[idx] = result.users[i];
           }
         }
-        _messages = [...updated, result.assistant];
-        _miaActivity = _MiaActivity.none;
-        _statusText = _statusWhenIdle();
+        _messages = updated;
       });
-      _scrollToBottom(animate: true);
+      for (var i = 0; i < assistants.length; i++) {
+        if (i > 0) {
+          final delayMs = (450 + assistants[i].content.length * 18)
+              .clamp(600, 1400)
+              .toInt();
+          await Future<void>.delayed(Duration(milliseconds: delayMs));
+          if (!mounted || generation != _replyGeneration) return;
+        }
+        setState(() {
+          _messages = [..._messages, assistants[i]];
+          _miaActivity =
+              i == assistants.length - 1 ? _MiaActivity.none : _MiaActivity.typing;
+          _statusText =
+              i == assistants.length - 1 ? _statusWhenIdle() : 'typing...';
+        });
+        _scrollToBottom(animate: true);
+      }
     } catch (e) {
       if (!mounted || generation != _replyGeneration) return;
       setState(() {

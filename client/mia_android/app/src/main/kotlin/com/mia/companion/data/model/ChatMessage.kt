@@ -58,6 +58,7 @@ data class TextBatchRequest(val texts: List<String>)
 data class TextBatchResponse(
     @Json(name = "userMessages") val userMessages: List<ChatMessage>,
     @Json(name = "assistantMessage") val assistantMessage: ChatMessage,
+    @Json(name = "assistantMessages") val assistantMessages: List<ChatMessage>? = null,
 )
 
 data class VoiceMessageResponse(

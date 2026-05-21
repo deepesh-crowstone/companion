@@ -188,7 +188,8 @@ export function ChatScreen({ navigation }: Props) {
       const result = await apiService.sendTextBatch(texts);
       if (generation !== replyGenerationRef.current) return;
 
-      await waitRemaining(typingDuration(result.assistant.content), startedAt);
+      const assistants = result.assistants;
+      await waitRemaining(typingDuration(assistants.map((m) => m.content).join(' ')), startedAt);
       if (generation !== replyGenerationRef.current) return;
 
       setMessages((prev) => {
@@ -197,11 +198,19 @@ export function ChatScreen({ navigation }: Props) {
           const idx = updated.findIndex((m) => m.id === optId);
           if (idx >= 0 && i < result.users.length) updated[idx] = result.users[i];
         });
-        return [...updated, result.assistant];
+        return updated;
       });
-      setMiaActivity('none');
-      setStatusText(statusWhenIdle());
-      scrollToBottom(true);
+      for (let i = 0; i < assistants.length; i += 1) {
+        if (i > 0) {
+          const delayMs = Math.min(1400, Math.max(600, 450 + assistants[i].content.length * 18));
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+          if (generation !== replyGenerationRef.current) return;
+        }
+        setMessages((prev) => [...prev, assistants[i]]);
+        setMiaActivity(i === assistants.length - 1 ? 'none' : 'typing');
+        setStatusText(i === assistants.length - 1 ? statusWhenIdle() : 'typing...');
+        scrollToBottom(true);
+      }
     } catch (e) {
       if (generation !== replyGenerationRef.current) return;
       setMessages((prev) => prev.filter((m) => !optimisticIds.includes(m.id)));

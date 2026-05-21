@@ -146,14 +146,28 @@ class ApiService {
         .toList();
   }
 
-  Future<({ChatMessage user, ChatMessage assistant})> sendText(
+  Future<
+      ({
+        ChatMessage user,
+        ChatMessage assistant,
+        List<ChatMessage> assistants,
+      })> sendText(
     String text,
   ) async {
     final batch = await sendTextBatch([text]);
-    return (user: batch.users.last, assistant: batch.assistant);
+    return (
+      user: batch.users.last,
+      assistant: batch.assistant,
+      assistants: batch.assistants,
+    );
   }
 
-  Future<({List<ChatMessage> users, ChatMessage assistant})> sendTextBatch(
+  Future<
+      ({
+        List<ChatMessage> users,
+        ChatMessage assistant,
+        List<ChatMessage> assistants,
+      })> sendTextBatch(
     List<String> texts,
   ) async {
     final res = await _post(
@@ -167,6 +181,16 @@ class ApiService {
     }
     final data = jsonDecode(res.body) as Map<String, dynamic>;
     final userList = data['userMessages'] as List<dynamic>;
+    final assistantList = data['assistantMessages'] as List<dynamic>?;
+    final assistants = assistantList != null && assistantList.isNotEmpty
+        ? assistantList
+            .map((e) => ChatMessage.fromJson(e as Map<String, dynamic>))
+            .toList()
+        : [
+            ChatMessage.fromJson(
+              data['assistantMessage'] as Map<String, dynamic>,
+            ),
+          ];
     return (
       users: userList
           .map((e) => ChatMessage.fromJson(e as Map<String, dynamic>))
@@ -174,6 +198,7 @@ class ApiService {
       assistant: ChatMessage.fromJson(
         data['assistantMessage'] as Map<String, dynamic>,
       ),
+      assistants: assistants,
     );
   }
 

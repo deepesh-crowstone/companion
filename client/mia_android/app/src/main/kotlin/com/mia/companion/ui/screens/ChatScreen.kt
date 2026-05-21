@@ -532,16 +532,26 @@ private suspend fun flushTextOutbox(
     try {
         val result = ApiClient.sendTextBatch(texts)
         if (currentGeneration() != generation) return
-        delay(max(0, max(800L, result.assistantMessage.content.length * 35L) - (System.currentTimeMillis() - t0)))
+        val assistants = result.assistantMessages?.takeIf { it.isNotEmpty() }
+            ?: listOf(result.assistantMessage)
+        val assistantText = assistants.joinToString(" ") { it.content }
+        delay(max(0, max(800L, assistantText.length * 35L) - (System.currentTimeMillis() - t0)))
         if (currentGeneration() != generation) return
         optIds.forEachIndexed { i, id ->
             val idx = messages.indexOfFirst { it.id == id }
             if (idx >= 0 && i < result.userMessages.size) messages[idx] = result.userMessages[i]
         }
-        messages.add(result.assistantMessage)
-        setActivity(MiaActivity.None)
-        setStatus("offline")
-        scrollToBottom()
+        assistants.forEachIndexed { i, assistant ->
+            if (i > 0) {
+                delay((450L + assistant.content.length * 18L).coerceIn(600L, 1400L))
+                if (currentGeneration() != generation) return
+            }
+            messages.add(assistant)
+            val isLast = i == assistants.lastIndex
+            setActivity(if (isLast) MiaActivity.None else MiaActivity.Typing)
+            setStatus(if (isLast) "offline" else "typing...")
+            scrollToBottom()
+        }
     } catch (e: Exception) {
         if (currentGeneration() != generation) return
         messages.removeAll { optIds.contains(it.id) }

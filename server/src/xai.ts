@@ -1,7 +1,8 @@
 import {
   MIA_STT_LANGUAGE,
-  MIA_SYSTEM_PROMPT,
+  MIA_TEXT_SYSTEM_PROMPT,
   MIA_TTS_LANGUAGE,
+  MIA_VOICE_SYSTEM_PROMPT,
   MIA_VOICE_ID,
   XAI_CHAT_MODEL,
 } from "./mia.js";
@@ -11,6 +12,7 @@ import type { DbMessage } from "./db.js";
 
 const XAI_BASE = "https://api.x.ai/v1";
 const MIA_CHAT_TEMPERATURE = 0.78;
+const MAX_TEXT_REPLY_SEGMENTS = 3;
 
 const LATIN_LETTER_RE = /[A-Za-z]/;
 const EMOJI_RE = /[\p{Extended_Pictographic}\uFE0F\u200D]/gu;
@@ -27,6 +29,84 @@ function containsLatinOutsideSpeechTags(text: string): boolean {
 
 function stripEmojis(text: string): string {
   return text.replace(EMOJI_RE, "").replace(/\s{2,}/g, " ").trim();
+}
+
+function cleanTextSegment(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const cleaned = stripEmojis(value)
+    .replace(/^\s*(?:[-*•]|\d+[.)])\s*/, "")
+    .replace(/^["'“”‘’]+|["'“”‘’]+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return cleaned.length > 0 ? cleaned : null;
+}
+
+function parseJsonSegments(raw: string): string[] | null {
+  const withoutFence = raw
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+  const candidates = [withoutFence];
+  const objectMatch = withoutFence.match(/\{[\s\S]*\}/);
+  if (objectMatch && objectMatch[0] !== withoutFence) {
+    candidates.push(objectMatch[0]);
+  }
+  const arrayMatch = withoutFence.match(/\[[\s\S]*\]/);
+  if (arrayMatch) {
+    candidates.push(arrayMatch[0]);
+  }
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate) as unknown;
+      const values =
+        Array.isArray(parsed)
+          ? parsed
+          : parsed &&
+              typeof parsed === "object" &&
+              "messages" in parsed &&
+              Array.isArray((parsed as { messages?: unknown }).messages)
+            ? (parsed as { messages: unknown[] }).messages
+            : null;
+      if (!values) continue;
+      const segments = values
+        .map((v) => cleanTextSegment(v))
+        .filter((v): v is string => v != null)
+        .slice(0, MAX_TEXT_REPLY_SEGMENTS);
+      if (segments.length > 0) return segments;
+    } catch {
+      // Try the next candidate, then fall back to plain-text splitting.
+    }
+  }
+
+  return null;
+}
+
+function splitPlainTextSegments(raw: string): string[] {
+  const lineSegments = raw
+    .split(/\r?\n+/)
+    .map((v) => cleanTextSegment(v))
+    .filter((v): v is string => v != null);
+  if (lineSegments.length > 1) {
+    return lineSegments.slice(0, MAX_TEXT_REPLY_SEGMENTS);
+  }
+
+  const oneLine = cleanTextSegment(raw);
+  if (!oneLine) return ["hmm"];
+  const sentenceSegments = oneLine
+    .split(/(?<=[.!?])\s+/)
+    .map((v) => cleanTextSegment(v))
+    .filter((v): v is string => v != null);
+  if (sentenceSegments.length > 1) {
+    return sentenceSegments.slice(0, MAX_TEXT_REPLY_SEGMENTS);
+  }
+  return [oneLine];
+}
+
+function parseTextReplySegments(raw: string): string[] {
+  const parsed = parseJsonSegments(raw) ?? splitPlainTextSegments(raw);
+  return parsed.slice(0, MAX_TEXT_REPLY_SEGMENTS);
 }
 
 function apiKey(): string {
@@ -197,8 +277,8 @@ export async function chatWithMia(
   }
 
   const systemPrompt = options?.expressiveTts
-    ? `${MIA_SYSTEM_PROMPT}\n${MIA_VOICE_TTS_INSTRUCTIONS}`
-    : MIA_SYSTEM_PROMPT;
+    ? `${MIA_VOICE_SYSTEM_PROMPT}\n${MIA_VOICE_TTS_INSTRUCTIONS}`
+    : MIA_VOICE_SYSTEM_PROMPT;
 
   const messages: { role: string; content: string }[] = [
     { role: "system", content: systemPrompt },
@@ -242,4 +322,56 @@ export async function chatWithMia(
   );
 
   return options?.expressiveTts ? stripEmojis(rewritten) : rewritten;
+}
+
+export async function chatWithMiaText(history: DbMessage[]): Promise<string[]> {
+  if (history.length === 0 || history[history.length - 1]?.role !== "user") {
+    throw new Error("Chat history must end with a user message");
+  }
+
+  const systemPrompt = `${MIA_TEXT_SYSTEM_PROMPT}
+
+output format:
+- Output only valid JSON.
+- Shape: {"messages":["first small text","second small text"]}
+- Use 1 to 3 messages total.
+- Each message must be Latin-script Hinglish/English only.
+- Do not include Devanagari, markdown, explanations, labels, numbering, or separators.`;
+
+  const messages: { role: string; content: string }[] = [
+    { role: "system", content: systemPrompt },
+  ];
+
+  for (const msg of history) {
+    messages.push({
+      role: msg.role,
+      content: msg.content,
+    });
+  }
+
+  const res = await fetch(`${XAI_BASE}/chat/completions`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify({
+      model: XAI_CHAT_MODEL,
+      messages,
+      temperature: MIA_CHAT_TEMPERATURE,
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Chat failed: ${res.status} ${err}`);
+  }
+
+  const data = (await res.json()) as {
+    choices?: { message?: { content?: string } }[];
+  };
+
+  const reply = data.choices?.[0]?.message?.content?.trim();
+  if (!reply) {
+    throw new Error("Empty response from xAI");
+  }
+
+  return parseTextReplySegments(reply);
 }
