@@ -7,15 +7,15 @@ class HumanPresence {
   static final _random = Random();
 
   /// How long Mia should appear to type before showing a text reply.
-  /// Tuned for casual mobile chat (~25–30 characters per second).
+  /// Tuned for slower, more human-feeling mobile chat (~12–14 chars/sec).
   static Duration typingDuration(String text) {
     final chars = text.trim().length;
-    if (chars == 0) return const Duration(milliseconds: 1200);
+    if (chars == 0) return const Duration(milliseconds: 2400);
 
-    const baseMs = 550;
-    const msPerChar = 36;
-    const minMs = 1100;
-    const maxMs = 16000;
+    const baseMs = 1100;
+    const msPerChar = 72;
+    const minMs = 2200;
+    const maxMs = 32000;
 
     return _duration(
       baseMs: baseMs,
