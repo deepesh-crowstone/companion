@@ -1,13 +1,18 @@
-import { MIA_SYSTEM_PROMPT, MIA_VOICE_ID, XAI_REALTIME_MODEL } from "./mia.js";
+import {
+  MIA_REALTIME_INSTRUCTIONS,
+  MIA_VOICE_ID,
+  XAI_REALTIME_MODEL,
+} from "./mia.js";
 
 /** Session fields for session.update / client secret binding (no model here). */
 export function buildRealtimeSessionConfig() {
   return {
     voice: MIA_VOICE_ID,
-    instructions: MIA_SYSTEM_PROMPT,
+    instructions: MIA_REALTIME_INSTRUCTIONS,
     turn_detection: {
       type: "server_vad",
-      silence_duration_ms: 600,
+      threshold: 0.45,
+      silence_duration_ms: 900,
       prefix_padding_ms: 300,
     },
     audio: {
