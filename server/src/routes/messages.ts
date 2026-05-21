@@ -141,7 +141,10 @@ messagesRouter.post("/text", async (req, res) => {
       return;
     }
     const msg = e instanceof Error ? e.message : "Failed to send message";
-    const isXai = msg.includes("API key") || msg.includes("Chat failed");
+    const isXai =
+      msg.includes("API key") ||
+      msg.includes("Chat failed") ||
+      msg.includes("Devanagari rewrite failed");
     res.status(isXai ? 502 : 500).json({
       error: isXai
         ? "Mia could not reach xAI. Check XAI_API_KEY in server/.env and restart npm run dev."
@@ -186,7 +189,10 @@ messagesRouter.post("/text/batch", async (req, res) => {
       return;
     }
     const msg = e instanceof Error ? e.message : "Failed to send messages";
-    const isXai = msg.includes("API key") || msg.includes("Chat failed");
+    const isXai =
+      msg.includes("API key") ||
+      msg.includes("Chat failed") ||
+      msg.includes("Devanagari rewrite failed");
     res.status(isXai ? 502 : 500).json({
       error: isXai
         ? "Mia could not reach xAI. Check XAI_API_KEY in server/.env and restart npm run dev."
@@ -274,7 +280,11 @@ messagesRouter.post("/voice", upload.single("audio"), async (req, res) => {
       return;
     }
     const msg = e instanceof Error ? e.message : "Failed to process voice note";
-    const isXai = msg.includes("API key") || msg.includes("STT failed") || msg.includes("TTS failed");
+    const isXai =
+      msg.includes("API key") ||
+      msg.includes("STT failed") ||
+      msg.includes("TTS failed") ||
+      msg.includes("Devanagari rewrite failed");
     res.status(isXai ? 502 : 500).json({
       error: isXai
         ? "Mia could not reach xAI. Check XAI_API_KEY in server/.env and restart npm run dev."

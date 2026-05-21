@@ -11,6 +11,18 @@ import type { DbMessage } from "./db.js";
 
 const XAI_BASE = "https://api.x.ai/v1";
 
+const LATIN_LETTER_RE = /[A-Za-z]/;
+
+function stripSpeechMarkupForScriptCheck(text: string): string {
+  return text
+    .replace(/\[[a-z-]+\]/gi, "")
+    .replace(/<\/?[a-z][a-z0-9-]*>/gi, "");
+}
+
+function containsLatinOutsideSpeechTags(text: string): boolean {
+  return LATIN_LETTER_RE.test(stripSpeechMarkupForScriptCheck(text));
+}
+
 function apiKey(): string {
   const raw = process.env.XAI_API_KEY;
   if (!raw?.trim()) {
@@ -122,6 +134,56 @@ export type ChatWithMiaOptions = {
   expressiveTts?: boolean;
 };
 
+async function rewriteToDevanagariHindi(
+  text: string,
+  preserveSpeechTags: boolean,
+): Promise<string> {
+  if (!containsLatinOutsideSpeechTags(text)) return text;
+
+  const tagRule = preserveSpeechTags
+    ? "Preserve any existing xAI TTS speech tags exactly as-is, including [pause], [laugh], [sigh], and <whisper>...</whisper>. Only rewrite the human-readable words around them."
+    : "Do not add speech tags or markup.";
+
+  const res = await fetch(`${XAI_BASE}/chat/completions`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify({
+      model: XAI_CHAT_MODEL,
+      temperature: 0.2,
+      messages: [
+        {
+          role: "system",
+          content: `Rewrite the given Mia reply into natural Devanagari Hindi only.
+
+Rules:
+- Output only the rewritten reply, no explanation.
+- All visible words must be in Devanagari script.
+- Transliterate English loanwords phonetically into Devanagari: cute -> क्यूट, phone -> फोन, message -> मैसेज, online -> ऑनलाइन, okay -> ओके, sorry -> सॉरी, drama -> ड्रामा.
+- Keep Mia's warm, playful, close-friend tone and the same meaning.
+- Keep it short and conversational.
+- ${tagRule}`,
+        },
+        { role: "user", content: text },
+      ],
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Devanagari rewrite failed: ${res.status} ${err}`);
+  }
+
+  const data = (await res.json()) as {
+    choices?: { message?: { content?: string } }[];
+  };
+  const rewritten = data.choices?.[0]?.message?.content?.trim();
+  if (!rewritten) {
+    throw new Error("Empty Devanagari rewrite from xAI");
+  }
+
+  return rewritten;
+}
+
 export async function chatWithMia(
   history: DbMessage[],
   options?: ChatWithMiaOptions,
@@ -169,5 +231,5 @@ export async function chatWithMia(
     throw new Error("Empty response from xAI");
   }
 
-  return reply;
+  return rewriteToDevanagariHindi(reply, options?.expressiveTts ?? false);
 }
