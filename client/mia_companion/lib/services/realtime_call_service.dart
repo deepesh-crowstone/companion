@@ -30,8 +30,9 @@ class RealtimeCallService {
   bool _speakerOn = false;
   bool _miaSpeaking = false;
   bool _playbackStarted = false;
+  bool _fatalError = false;
   Timer? _resumeMicTimer;
-  final Completer<void> _sessionReadyCompleter = Completer<void>();
+  Completer<void>? _sessionReadyCompleter;
 
   bool get isConnected => _connected && _sessionReady;
 
@@ -42,19 +43,20 @@ class RealtimeCallService {
     required String wsUrl,
     required String token,
     required Map<String, dynamic> sessionConfig,
+    bool sessionPreconfigured = false,
   }) async {
+    _fatalError = false;
+    _sessionReady = false;
+    _sessionReadyCompleter = Completer<void>();
     connectionController.add(CallConnectionState.connecting);
 
     await _configureVoiceAudio(speakerOn: _speakerOn);
     await _initPlayback();
 
     final uri = Uri.parse(wsUrl);
-    final clientSecretProtocol = token.startsWith('xai-client-secret.')
-        ? token
-        : 'xai-client-secret.$token';
     _channel = IOWebSocketChannel.connect(
       uri,
-      protocols: [clientSecretProtocol],
+      headers: {'Authorization': 'Bearer $token'},
     );
     _connected = true;
 
@@ -64,27 +66,44 @@ class RealtimeCallService {
         _emitError('connection lost: $e');
       },
       onDone: () {
-        if (_connected) _emitError('call disconnected');
+        if (_connected && !_fatalError) {
+          _emitError('call disconnected');
+        }
         _connected = false;
       },
     );
 
-    await Future<void>.delayed(const Duration(milliseconds: 350));
-    _send({
-      'type': 'session.update',
-      'session': sessionConfig,
-    });
+    if (!sessionPreconfigured) {
+      await Future<void>.delayed(const Duration(milliseconds: 350));
+      _send({
+        'type': 'session.update',
+        'session': _sessionPayload(sessionConfig),
+      });
+    }
 
-    // Wait for xAI session.updated (or fall back after timeout).
-    await _sessionReadyCompleter.future.timeout(
-      const Duration(seconds: 10),
+    await _sessionReadyCompleter!.future.timeout(
+      const Duration(seconds: 12),
       onTimeout: () {
-        if (!_sessionReady) _markSessionReady();
+        if (!_sessionReady && !_fatalError) {
+          _emitError('timed out waiting for voice session');
+        }
       },
     );
 
+    if (_fatalError || !_sessionReady) {
+      throw Exception(
+        _fatalError ? 'voice call failed' : 'voice session not ready',
+      );
+    }
+
     await _startMic();
     connectionController.add(CallConnectionState.ready);
+  }
+
+  Map<String, dynamic> _sessionPayload(Map<String, dynamic> sessionConfig) {
+    final copy = Map<String, dynamic>.from(sessionConfig);
+    copy.remove('model');
+    return copy;
   }
 
   Future<void> _initPlayback() async {
@@ -139,8 +158,9 @@ class RealtimeCallService {
   void _markSessionReady() {
     if (_sessionReady) return;
     _sessionReady = true;
-    if (!_sessionReadyCompleter.isCompleted) {
-      _sessionReadyCompleter.complete();
+    final completer = _sessionReadyCompleter;
+    if (completer != null && !completer.isCompleted) {
+      completer.complete();
     }
   }
 
@@ -160,8 +180,13 @@ class RealtimeCallService {
   }
 
   void _emitError(String message) {
+    _fatalError = true;
     connectionController.add(CallConnectionState.error);
     transcriptController.add(message);
+    final completer = _sessionReadyCompleter;
+    if (completer != null && !completer.isCompleted) {
+      completer.complete();
+    }
   }
 
   Future<void> _startMic() async {
@@ -222,8 +247,6 @@ class RealtimeCallService {
     switch (type) {
       case 'session.created':
       case 'session.updated':
-        _markSessionReady();
-        break;
       case 'conversation.created':
         _markSessionReady();
         break;
@@ -231,7 +254,7 @@ class RealtimeCallService {
         _setMiaSpeaking(true);
         final b64 = event['delta'] as String?;
         if (b64 != null && b64.isNotEmpty) {
-          _playPcmDelta(b64);
+          unawaited(_playPcmDelta(b64));
         }
         break;
       case 'response.output_audio.done':
@@ -279,9 +302,9 @@ class RealtimeCallService {
     _resumeMicTimer?.cancel();
     await _micSub?.cancel();
     _micSub = null;
-    if (await _recorder.isRecording()) {
+    try {
       await _recorder.stop();
-    }
+    } catch (_) {}
     await _wsSub?.cancel();
     _wsSub = null;
     await _channel?.sink.close();

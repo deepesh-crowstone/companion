@@ -1,8 +1,8 @@
-import { MIA_SYSTEM_PROMPT, MIA_VOICE_ID } from "./mia.js";
+import { MIA_SYSTEM_PROMPT, MIA_VOICE_ID, XAI_REALTIME_MODEL } from "./mia.js";
 
-export function buildRealtimeSession() {
+/** Session fields for session.update / client secret binding (no model here). */
+export function buildRealtimeSessionConfig() {
   return {
-    model: "grok-voice-latest",
     voice: MIA_VOICE_ID,
     instructions: MIA_SYSTEM_PROMPT,
     turn_detection: {
@@ -14,5 +14,14 @@ export function buildRealtimeSession() {
       input: { format: { type: "audio/pcm", rate: 24000 } },
       output: { format: { type: "audio/pcm", rate: 24000 } },
     },
+  };
+}
+
+/** Body for POST /v1/realtime/client_secrets */
+export function buildClientSecretRequest() {
+  return {
+    expires_after: { seconds: 600 },
+    model: XAI_REALTIME_MODEL,
+    session: buildRealtimeSessionConfig(),
   };
 }

@@ -95,12 +95,14 @@ class _VoiceCallScreenState extends State<VoiceCallScreen>
 
     try {
       final session = await ApiService.instance.createRealtimeSession();
-      final config = session['sessionConfig'] as Map<String, dynamic>;
+      final config = session['sessionConfig'] as Map<String, dynamic>? ?? {};
+      final preconfigured = session['sessionPreconfigured'] == true;
 
       await _call.connect(
         wsUrl: session['wsUrl'] as String,
         token: session['token'] as String,
         sessionConfig: config,
+        sessionPreconfigured: preconfigured,
       );
 
       _timer = Timer.periodic(const Duration(seconds: 1), (_) {

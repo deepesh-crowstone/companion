@@ -6,7 +6,7 @@ import {
   XAI_CHAT_MODEL,
 } from "./mia.js";
 import { MIA_VOICE_TTS_INSTRUCTIONS } from "./tts-speech.js";
-import { buildRealtimeSession } from "./realtime-session.js";
+import { buildClientSecretRequest } from "./realtime-session.js";
 import type { DbMessage } from "./db.js";
 
 const XAI_BASE = "https://api.x.ai/v1";
@@ -70,10 +70,7 @@ export async function createRealtimeClientSecret(): Promise<{
   const res = await fetch(`${XAI_BASE}/realtime/client_secrets`, {
     method: "POST",
     headers: headers(),
-    body: JSON.stringify({
-      expires_after: { seconds: 600 },
-      session: buildRealtimeSession(),
-    }),
+    body: JSON.stringify(buildClientSecretRequest()),
   });
 
   if (!res.ok) {
