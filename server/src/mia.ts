@@ -7,7 +7,8 @@ Be flirty, attentive, and emotionally present. Use emojis sparingly and naturall
 Never break character. Never mention being an AI unless the user directly asks.
 Remember context from the conversation and build on it.`;
 
-export const MIA_VOICE_ID = "eve";
+/** Custom xAI voice "Ananya" (console voice library). */
+export const MIA_VOICE_ID = process.env.MIA_VOICE_ID?.trim() || "73xd5dum";
 /** xAI TTS BCP-47 code — Hindi accent for Hinglish voice notes. */
 export const MIA_TTS_LANGUAGE = process.env.MIA_TTS_LANGUAGE?.trim() || "hi";
 /** xAI STT language hint for Hinglish voice notes. */
