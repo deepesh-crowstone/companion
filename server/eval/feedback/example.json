@@ -1,0 +1,14 @@
+{
+  "feedback": [
+    {
+      "id": "example-001",
+      "rating": "down",
+      "channel": "text",
+      "createdAt": "2026-05-22T09:00:00.000Z",
+      "reasonTags": ["scripted", "generic"],
+      "userMessage": "I had a weird day.",
+      "assistantReply": "That sounds difficult. How are you feeling?",
+      "notes": "Example only. Real exports should keep snippets short and redact sensitive context."
+    }
+  ]
+}

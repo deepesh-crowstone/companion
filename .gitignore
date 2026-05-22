@@ -4,5 +4,6 @@ server/.env
 server/node_modules/
 server/dist/
 server/data/
+server/eval/runs/
 client/mia_companion/.dart_tool/
 client/mia_companion/build/
