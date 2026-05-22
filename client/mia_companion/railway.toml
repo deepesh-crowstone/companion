@@ -1,0 +1,9 @@
+# New Railway service: set Root Directory to client/mia_companion (not repo root).
+[build]
+builder = "dockerfile"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+healthcheckPath = "/"
+healthcheckTimeout = 300
+restartPolicyType = "on_failure"
