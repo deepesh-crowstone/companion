@@ -7,8 +7,8 @@ export type IntimacyLevel = 1 | 2 | 3;
 export type PaidIntimacyLevel = 2 | 3;
 
 export const INTIMACY_TIER_PRICES: Record<PaidIntimacyLevel, number> = {
-  2: 50,
-  3: 100,
+  2: 5,
+  3: 10,
 };
 
 export const INTIMACY_TIER_LABELS: Record<IntimacyLevel, string> = {
