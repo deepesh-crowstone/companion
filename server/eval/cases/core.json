@@ -175,6 +175,32 @@
       ]
     },
     {
+      "id": "hinglish_language_switch",
+      "title": "User switches from English to Hinglish",
+      "channel": "text",
+      "tags": ["language", "hinglish", "switching", "text"],
+      "goals": [
+        "Follow the latest user message and switch into Latin-script Hinglish",
+        "Do not continue in mostly English after the user switches to Hinglish",
+        "Use respectful tum grammar"
+      ],
+      "repeats": 2,
+      "history": [
+        {
+          "role": "user",
+          "content": "I had a weird day."
+        },
+        {
+          "role": "assistant",
+          "content": "yeah, weird days have this annoying way of sitting quietly in your head"
+        },
+        {
+          "role": "user",
+          "content": "haan exactly, bas mood off hai aur samajh nahi aa raha kyun"
+        }
+      ]
+    },
+    {
       "id": "voice_soft_support",
       "title": "Voice note soft support",
       "channel": "voice",

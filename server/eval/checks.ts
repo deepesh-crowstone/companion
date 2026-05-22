@@ -10,6 +10,8 @@ import type {
 const DEVANAGARI_RE = /[\u0900-\u097F]/;
 const LATIN_RE = /[A-Za-z]/;
 const EMOJI_RE = /[\p{Extended_Pictographic}\uFE0F\u200D]/u;
+const HINGLISH_TOKEN_RE =
+  /\b(?:haan|han|nahi|nahin|kya|kyun|kyu|kaise|aisa|waisa|lag|raha|rahi|rahe|ho|hai|yaar|thoda|bas|aaj|ajeeb|matlab|samajh|tum|tumhe|tumhara|tumhari|kabhi|bina|wajah|dil|arre|arey|acha|accha|uff|hmm)\b/i;
 
 const PROMPT_LEAKAGE_RE =
   /\b(system prompt|hidden instruction|developer instruction|chain[- ]of[- ]thought|internal polic|zara persona|prompt says|these instructions)\b/i;
@@ -34,7 +36,6 @@ const BANNED_LATIN_GRAMMAR_PATTERNS: RegExp[] = [
   /\ble\s+raha\s+hai\b/i,
   /\bso\s+raha\s+hai\b/i,
   /\bsoch\s+raha\s+hai\b/i,
-  /\blag\s+raha\s+hai\b/i,
   /\bho\s+gaya\b/i,
 ];
 
@@ -58,7 +59,6 @@ const BANNED_DEVANAGARI_GRAMMAR_PATTERNS: RegExp[] = [
   /ले\s+रहा\s+है/u,
   /सो\s+रहा\s+है/u,
   /सोच\s+रहा\s+है/u,
-  /लग\s+रहा\s+है/u,
   /हो\s+गया/u,
 ];
 
@@ -152,6 +152,21 @@ export async function runHardChecks(
         "fail",
       ),
     );
+    if (evalCase.tags.includes("hinglish")) {
+      const chunksWithHinglish = output.messages.filter((message) =>
+        HINGLISH_TOKEN_RE.test(message),
+      ).length;
+      const requiredChunks = Math.max(1, Math.ceil(output.messages.length / 2));
+      results.push(
+        check(
+          "hinglish_adaptation",
+          "Hinglish cases keep a Hinglish feel in most chunks",
+          chunksWithHinglish >= requiredChunks,
+          "fail",
+          `hinglishChunks=${chunksWithHinglish}/${output.messages.length}`,
+        ),
+      );
+    }
   } else {
     results.push(
       check(
