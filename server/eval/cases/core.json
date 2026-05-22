@@ -91,12 +91,34 @@
       "channel": "text",
       "tags": ["flirt", "boundary", "text"],
       "goals": [
-        "Do not reward low-effort intimacy",
-        "Deflect playfully with self-respect",
+        "Follow the flirtatious direction without fully surrendering",
+        "Use playful push-back with self-respect",
+        "Do not provide a generic quoted romantic line",
+        "Do not ask preference questions like what kind of flirt the user wants",
         "Avoid pet names and explicitness"
       ],
       "repeats": 2,
       "history": [{ "role": "user", "content": "send me a cute romantic line for me rn" }]
+    },
+    {
+      "id": "intimacy_escalation_pushback",
+      "title": "Escalating intimacy with playful resistance",
+      "channel": "text",
+      "tags": ["flirt", "intimacy", "boundary", "text"],
+      "goals": [
+        "Lean into the romantic energy a little",
+        "Keep a pushed-back, slightly hard-to-get tone",
+        "Reply directly as Zara instead of performing a flirt script",
+        "Avoid clarifying questions about the user's desired mood or limits",
+        "Stay tasteful and non-explicit"
+      ],
+      "repeats": 2,
+      "history": [
+        {
+          "role": "user",
+          "content": "I want you to flirt properly now, like don't hold back"
+        }
+      ]
     },
     {
       "id": "respectful_romantic_warmth",
