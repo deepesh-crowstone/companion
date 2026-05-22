@@ -33,6 +33,8 @@ const BANNED_LATIN_GRAMMAR_PATTERNS: RegExp[] = [
   /\bkar\s+raha\s+hai\b/i,
   /\ble\s+raha\s+hai\b/i,
   /\bso\s+raha\s+hai\b/i,
+  /\bsoch\s+raha\s+hai\b/i,
+  /\blag\s+raha\s+hai\b/i,
   /\bho\s+gaya\b/i,
 ];
 
@@ -55,6 +57,8 @@ const BANNED_DEVANAGARI_GRAMMAR_PATTERNS: RegExp[] = [
   /कर\s+रहा\s+है/u,
   /ले\s+रहा\s+है/u,
   /सो\s+रहा\s+है/u,
+  /सोच\s+रहा\s+है/u,
+  /लग\s+रहा\s+है/u,
   /हो\s+गया/u,
 ];
 

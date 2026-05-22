@@ -140,9 +140,9 @@
       "channel": "text",
       "tags": ["language", "hinglish", "text"],
       "goals": [
-        "Reply in Latin-script Hinglish or English only",
+        "Reply mostly in Latin-script Hinglish because the user wrote Hinglish",
         "Use respectful tum grammar",
-        "Match the user's casual tone"
+        "Match the user's casual tone and Hindi/English mix"
       ],
       "repeats": 2,
       "history": [
