@@ -185,12 +185,15 @@ class _SendButton extends StatelessWidget {
         ? MiaColors.miaBubble
         : MiaColors.miaBubble.withValues(alpha: 0.55);
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: canSend ? onSend : null,
-        customBorder: const CircleBorder(),
-        child: Container(
+    return Focus(
+      canRequestFocus: false,
+      skipTraversal: true,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: canSend ? onSend : null,
+          customBorder: const CircleBorder(),
+          child: Container(
           width: 44,
           height: 44,
           decoration: BoxDecoration(
@@ -208,6 +211,7 @@ class _SendButton extends StatelessWidget {
             ),
           ),
         ),
+      ),
       ),
     );
   }

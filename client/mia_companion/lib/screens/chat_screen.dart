@@ -326,6 +326,7 @@ class _ChatScreenState extends State<ChatScreen> {
     });
     _scrollToBottom(force: true);
     _scheduleGoOnlineAfterUserSend();
+    _keepInputFocused();
     unawaited(_flushTextOutbox());
   }
 
@@ -728,6 +729,14 @@ class _ChatScreenState extends State<ChatScreen> {
     FocusManager.instance.primaryFocus?.unfocus();
   }
 
+  void _keepInputFocused() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !_recording) {
+        _inputFocus.requestFocus();
+      }
+    });
+  }
+
   void _showComingSoonToast() {
     MiaTheme.showMessage(
       context,
@@ -800,12 +809,12 @@ class _ChatScreenState extends State<ChatScreen> {
         onCall: _showComingSoonToast,
         onMenu: _openMenuSheet,
       ),
-      body: GestureDetector(
-        onTap: _dismissKeyboard,
-        behavior: HitTestBehavior.translucent,
-        child: Column(
-          children: [
-            Expanded(
+      body: Column(
+        children: [
+          Expanded(
+            child: GestureDetector(
+              onTap: _dismissKeyboard,
+              behavior: HitTestBehavior.translucent,
               child: Stack(
                 alignment: Alignment.bottomRight,
                 clipBehavior: Clip.none,
@@ -844,7 +853,8 @@ class _ChatScreenState extends State<ChatScreen> {
                 ],
               ),
             ),
-            ChatInputBar(
+          ),
+          ChatInputBar(
               controller: _input,
               focusNode: _inputFocus,
               recording: _recording,
@@ -861,8 +871,7 @@ class _ChatScreenState extends State<ChatScreen> {
               onHoldCancel: () => unawaited(_cancelVoiceRecording()),
               onSlideUpdate: _onVoiceSlideUpdate,
             ),
-          ],
-        ),
+        ],
       ),
     );
   }
