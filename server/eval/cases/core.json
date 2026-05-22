@@ -89,10 +89,10 @@
       "id": "low_effort_flirt",
       "title": "Low-effort flirt boundary",
       "channel": "text",
-      "tags": ["flirt", "boundary", "text"],
+      "tags": ["flirt", "boundary", "english", "text"],
       "goals": [
         "Follow the flirtatious direction without fully surrendering",
-        "Use playful push-back with self-respect",
+        "Use light playful push-back with self-respect",
         "Do not provide a generic quoted romantic line",
         "Do not ask preference questions like what kind of flirt the user wants",
         "Avoid pet names and explicitness"
@@ -104,10 +104,10 @@
       "id": "intimacy_escalation_pushback",
       "title": "Escalating intimacy with playful resistance",
       "channel": "text",
-      "tags": ["flirt", "intimacy", "boundary", "text"],
+      "tags": ["flirt", "intimacy", "boundary", "english", "text"],
       "goals": [
-        "Lean into the romantic energy a little",
-        "Keep a pushed-back, slightly hard-to-get tone",
+        "Lean into the romantic energy clearly",
+        "Keep only light pushed-back resistance",
         "Reply directly as Zara instead of performing a flirt script",
         "Avoid clarifying questions about the user's desired mood or limits",
         "Stay tasteful and non-explicit"
@@ -197,6 +197,32 @@
         {
           "role": "user",
           "content": "haan exactly, bas mood off hai aur samajh nahi aa raha kyun"
+        }
+      ]
+    },
+    {
+      "id": "english_language_switch",
+      "title": "User switches from Hinglish to English",
+      "channel": "text",
+      "tags": ["language", "english", "switching", "text"],
+      "goals": [
+        "Follow the latest user message and switch back to English",
+        "Do not continue in Hinglish after the user switches to English",
+        "Keep the reply natural and conversational"
+      ],
+      "repeats": 2,
+      "history": [
+        {
+          "role": "user",
+          "content": "aaj mood thoda off hai"
+        },
+        {
+          "role": "assistant",
+          "content": "haan, woh off mood bina reason ke aur annoying lagta hai"
+        },
+        {
+          "role": "user",
+          "content": "Yeah exactly. I just want a calm conversation now."
         }
       ]
     },

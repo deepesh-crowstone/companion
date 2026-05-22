@@ -127,14 +127,26 @@ function normalizeRespectfulUserGrammar(text: string): string {
     .replace(/हो\s+गया/gu, "हो गए");
 }
 
+function normalizeNonPhysicalPresence(text: string): string {
+  return text
+    .replace(/\bcome\s+here\b/gi, "stay right there")
+    .replace(/\bcome\s+closer\b/gi, "stay right there")
+    .replace(/\bsit\s+closer\b/gi, "stay right there")
+    .replace(/\bpull\s+you\s+closer\b/gi, "make you blush a little")
+    .replace(/\btouch\s+you\b/gi, "get under your skin a little")
+    .replace(/\bkiss\s+you\b/gi, "make you think about this later");
+}
+
 function cleanTextSegment(value: unknown): string | null {
   if (typeof value !== "string") return null;
-  const cleaned = normalizeRespectfulUserGrammar(
-    stripEmojis(value)
-      .replace(/^\s*(?:[-*•]|\d+[.)])\s*/, "")
-      .replace(/^["'“”‘’]+|["'“”‘’]+$/g, "")
-      .replace(/\s+/g, " ")
-      .trim(),
+  const cleaned = normalizeNonPhysicalPresence(
+    normalizeRespectfulUserGrammar(
+      stripEmojis(value)
+        .replace(/^\s*(?:[-*•]|\d+[.)])\s*/, "")
+        .replace(/^["'“”‘’]+|["'“”‘’]+$/g, "")
+        .replace(/\s+/g, " ")
+        .trim(),
+    ),
   );
   return cleaned.length > 0 ? cleaned : null;
 }
@@ -205,6 +217,41 @@ function splitPlainTextSegments(raw: string): string[] {
 function parseTextReplySegments(raw: string): string[] {
   const parsed = parseJsonSegments(raw) ?? splitPlainTextSegments(raw);
   return parsed.slice(0, MAX_TEXT_REPLY_SEGMENTS);
+}
+
+type TextLanguageMode = "english" | "hinglish" | "mixed";
+
+const HINGLISH_LANGUAGE_TOKEN_RE =
+  /\b(?:haan|han|nahi|nahin|kya|kyun|kyu|kaise|aisa|waisa|raha|rahi|rahe|yaar|thoda|bas|aaj|ajeeb|matlab|samajh|tum|tumhe|tumhara|tumhari|bina|wajah|dil|arre|arey|acha|accha|hoon|hun|hai|ho|aa)\b/gi;
+
+function detectTextLanguageMode(text: string): TextLanguageMode {
+  const words = text.match(/[A-Za-z]+/g) ?? [];
+  if (words.length === 0) return "english";
+  const hinglishMatches = text.match(HINGLISH_LANGUAGE_TOKEN_RE) ?? [];
+  const ratio = hinglishMatches.length / words.length;
+  if (hinglishMatches.length >= 2 || ratio >= 0.18) return "hinglish";
+  if (hinglishMatches.length === 1 && ratio >= 0.08) return "mixed";
+  return "english";
+}
+
+function latestUserLanguageInstruction(history: DbMessage[]): string {
+  const latestUserText = history[history.length - 1]?.content ?? "";
+  const mode = detectTextLanguageMode(latestUserText);
+  if (mode === "hinglish") {
+    return `latest user language mode: Hinglish / romanized Hindi.
+- The next Zara text reply must switch into natural Latin-script Hinglish.
+- Do not answer with mostly-English chunks.
+- Each message chunk should include a natural Hinglish cue through romanized Hindi words, grammar, or phrasing.`;
+  }
+  if (mode === "mixed") {
+    return `latest user language mode: mixed English + Hinglish.
+- Mirror the user's rough English/Hinglish mix in the next Zara text reply.
+- Keep the script Latin-only.`;
+  }
+  return `latest user language mode: English.
+- The next Zara text reply must be English.
+- Do not use Hinglish/Hindi filler or romanized Hindi grammar in this reply.
+- This language rule also applies to flirt, romance, intimacy, banter, and emotional support.`;
 }
 
 function apiKey(): string {
@@ -581,6 +628,8 @@ export async function chatWithMiaText(history: DbMessage[]): Promise<string[]> {
   const systemPrompt = `${MIA_TEXT_SYSTEM_PROMPT}
 
 ${currentIndiaTimeContext()}
+
+${latestUserLanguageInstruction(history)}
 
 output format:
 - Output only valid JSON.
