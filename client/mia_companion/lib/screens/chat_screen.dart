@@ -19,7 +19,9 @@ import '../widgets/chat_message_tile.dart';
 import '../widgets/empty_chat.dart';
 import '../widgets/mia_presence_row.dart';
 import '../widgets/mia_chat_header.dart';
+import '../widgets/intimacy_unlock_sheet.dart';
 import '../widgets/scroll_to_bottom_button.dart';
+import '../models/intimacy.dart';
 import 'auth_screen.dart';
 import 'mia_profile_screen.dart';
 
@@ -72,6 +74,8 @@ class _ChatScreenState extends State<ChatScreen> {
   int _replyGeneration = 0;
   final Map<int, MessageReceiptStatus> _receiptStatuses = {};
   final Map<int, DateTime> _receiptSentAt = {};
+
+  int _unlockedIntimacyLevel = 1;
 
   @override
   void initState() {
@@ -174,9 +178,18 @@ class _ChatScreenState extends State<ChatScreen> {
     setState(() => _loading = true);
     try {
       final messages = await ApiService.instance.fetchMessages();
+      IntimacyStatus? intimacy;
+      try {
+        intimacy = await ApiService.instance.fetchIntimacyStatus();
+      } catch (_) {
+        intimacy = null;
+      }
       if (!mounted) return;
       setState(() {
         _messages = messages;
+        if (intimacy != null) {
+          _unlockedIntimacyLevel = intimacy.unlockedLevel;
+        }
         _loading = false;
       });
       _scrollToBottom(force: true);
@@ -185,6 +198,26 @@ class _ChatScreenState extends State<ChatScreen> {
       setState(() => _loading = false);
       _handleError(e);
     }
+  }
+
+  void _onIntimacyUnlocked(IntimacyStatus status) {
+    setState(() => _unlockedIntimacyLevel = status.unlockedLevel);
+    MiaTheme.showMessage(
+      context,
+      '${status.tiers.firstWhere((t) => t.level == status.unlockedLevel).label} unlocked — go ahead 😊',
+    );
+  }
+
+  Future<void> _maybeShowIntimacyNudge(IntimacyNudge? nudge) async {
+    if (nudge == null || !mounted) return;
+    if (nudge.requiredLevel <= _unlockedIntimacyLevel) return;
+    await Future<void>.delayed(const Duration(milliseconds: 400));
+    if (!mounted) return;
+    await showIntimacyUnlockSheet(
+      context: context,
+      nudge: nudge,
+      onUnlocked: _onIntimacyUnlocked,
+    );
   }
 
   /// Reverse list: offset 0 is the newest messages (bottom, above input).
@@ -400,6 +433,7 @@ class _ChatScreenState extends State<ChatScreen> {
         });
         _scrollToBottom(animate: true);
       }
+      unawaited(_maybeShowIntimacyNudge(result.intimacyNudge));
     } catch (e) {
       if (!mounted || generation != _replyGeneration) return;
       setState(() {
@@ -664,6 +698,7 @@ class _ChatScreenState extends State<ChatScreen> {
       });
       await discardVoiceRecordingOutput(path);
       _scrollToBottom(force: true, animate: true);
+      unawaited(_maybeShowIntimacyNudge(result.intimacyNudge));
     } catch (e) {
       await discardVoiceRecordingOutput(path);
       if (!mounted) return;

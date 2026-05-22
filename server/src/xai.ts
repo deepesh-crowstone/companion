@@ -12,6 +12,7 @@ import {
 } from "./tts-speech.js";
 import { buildClientSecretRequest } from "./realtime-session.js";
 import type { DbMessage } from "./db.js";
+import { intimacyPromptForLevel, type IntimacyLevel } from "./intimacy.js";
 
 const XAI_BASE = "https://api.x.ai/v1";
 const ELEVENLABS_BASE = "https://api.elevenlabs.io/v1";
@@ -620,12 +621,18 @@ Rules:
   return rewriteToDevanagariHindi(stripEmojis(tagged), true);
 }
 
-export async function chatWithMiaText(history: DbMessage[]): Promise<string[]> {
+export async function chatWithMiaText(
+  history: DbMessage[],
+  options?: { intimacyLevel?: IntimacyLevel },
+): Promise<string[]> {
   if (history.length === 0 || history[history.length - 1]?.role !== "user") {
     throw new Error("Chat history must end with a user message");
   }
 
+  const intimacyLevel = options?.intimacyLevel ?? 1;
   const systemPrompt = `${MIA_TEXT_SYSTEM_PROMPT}
+
+${intimacyPromptForLevel(intimacyLevel)}
 
 ${currentIndiaTimeContext()}
 

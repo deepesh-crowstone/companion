@@ -4,6 +4,7 @@ import express from "express";
 import { authRouter } from "./routes/auth.js";
 import { messagesRouter } from "./routes/messages.js";
 import { realtimeRouter } from "./routes/realtime.js";
+import { intimacyRouter } from "./routes/intimacy.js";
 import { checkDbConnection, initDb } from "./db.js";
 import { checkBucketConnection, isBucketConfigured } from "./storage.js";
 import { verifyXaiConnection } from "./xai.js";
@@ -85,6 +86,7 @@ app.get("/health/xai", async (_req, res) => {
 app.use("/auth", authRouter);
 app.use("/messages", messagesRouter);
 app.use("/realtime", realtimeRouter);
+app.use("/intimacy", intimacyRouter);
 
 async function main(): Promise<void> {
   await initDb();

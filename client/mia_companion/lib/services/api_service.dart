@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config.dart';
 import '../models/chat_message.dart';
+import '../models/intimacy.dart';
 import '../models/voice_upload.dart';
 import 'session_expired.dart';
 import 'http_client_factory.dart';
@@ -161,6 +162,7 @@ class ApiService {
       List<ChatMessage> users,
       ChatMessage assistant,
       List<ChatMessage> assistants,
+      IntimacyNudge? intimacyNudge,
     })
   >
   sendTextBatch(List<String> texts) async {
@@ -193,10 +195,57 @@ class ApiService {
         data['assistantMessage'] as Map<String, dynamic>,
       ),
       assistants: assistants,
+      intimacyNudge: intimacyNudgeFromJson(
+        data['intimacyNudge'] as Map<String, dynamic>?,
+      ),
     );
   }
 
-  Future<({ChatMessage user, ChatMessage assistant})> sendVoice(
+  Future<IntimacyStatus> fetchIntimacyStatus() async {
+    final res = await _get(
+      Uri.parse('$resolvedApiBaseUrl/intimacy/status'),
+      headers: _authHeaders,
+    );
+    _guardAuth(res);
+    if (res.statusCode >= 400) {
+      throw Exception(_errorFrom(res));
+    }
+    return IntimacyStatus.fromJson(
+      jsonDecode(res.body) as Map<String, dynamic>,
+    );
+  }
+
+  Future<IntimacyPaymentOrder> createIntimacyOrder(int level) async {
+    final res = await _post(
+      Uri.parse('$resolvedApiBaseUrl/intimacy/orders'),
+      headers: _authHeaders,
+      body: jsonEncode({'level': level}),
+    );
+    _guardAuth(res);
+    if (res.statusCode >= 400) {
+      throw Exception(_errorFrom(res));
+    }
+    return IntimacyPaymentOrder.fromJson(
+      jsonDecode(res.body) as Map<String, dynamic>,
+    );
+  }
+
+  Future<IntimacyVerifyResult> verifyIntimacyOrder(String orderId) async {
+    final res = await _post(
+      Uri.parse('$resolvedApiBaseUrl/intimacy/orders/$orderId/verify'),
+      headers: _authHeaders,
+    );
+    _guardAuth(res);
+    if (res.statusCode >= 400) {
+      throw Exception(_errorFrom(res));
+    }
+    return IntimacyVerifyResult.fromJson(
+      jsonDecode(res.body) as Map<String, dynamic>,
+    );
+  }
+
+  Future<({ChatMessage user, ChatMessage assistant, IntimacyNudge? intimacyNudge})>
+  sendVoice(
     VoiceUpload audio,
   ) async {
     final request = http.MultipartRequest(
@@ -238,6 +287,9 @@ class ApiService {
         user: ChatMessage.fromJson(data['userMessage'] as Map<String, dynamic>),
         assistant: ChatMessage.fromJson(
           data['assistantMessage'] as Map<String, dynamic>,
+        ),
+        intimacyNudge: intimacyNudgeFromJson(
+          data['intimacyNudge'] as Map<String, dynamic>?,
         ),
       );
     } on TimeoutException {

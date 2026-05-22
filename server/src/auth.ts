@@ -29,7 +29,7 @@ export function verifyToken(token: string): AuthPayload {
 
 export async function findUserById(userId: number): Promise<DbUser | null> {
   const { rows } = await pool.query<DbUser>(
-    `SELECT id, username, password_hash, created_at FROM users WHERE id = $1`,
+    `SELECT id, username, password_hash, intimacy_level_unlocked, created_at FROM users WHERE id = $1`,
     [userId],
   );
   return rows[0] ?? null;
@@ -86,7 +86,7 @@ export async function registerUser(
     const { rows } = await pool.query<DbUser>(
       `INSERT INTO users (username, password_hash)
        VALUES ($1, $2)
-       RETURNING id, username, password_hash, created_at`,
+       RETURNING id, username, password_hash, intimacy_level_unlocked, created_at`,
       [trimmed, passwordHash],
     );
     const user = rows[0];
@@ -104,7 +104,7 @@ export async function loginUser(
   password: string,
 ): Promise<{ user: DbUser; token: string } | { error: string }> {
   const { rows } = await pool.query<DbUser>(
-    `SELECT id, username, password_hash, created_at
+    `SELECT id, username, password_hash, intimacy_level_unlocked, created_at
      FROM users WHERE LOWER(username) = LOWER($1)`,
     [username.trim()],
   );
