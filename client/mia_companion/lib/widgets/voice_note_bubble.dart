@@ -65,19 +65,31 @@ class _VoiceNoteBubbleState extends State<VoiceNoteBubble>
 
   Future<void> _loadDuration() async {
     if (widget.fallbackDurationSec != null) {
-      setState(() => _duration = Duration(seconds: widget.fallbackDurationSec!));
+      setState(
+        () => _duration = Duration(seconds: widget.fallbackDurationSec!),
+      );
       return;
     }
     final url = widget.audioUrl;
     if (url == null) return;
     try {
       final player = AudioPlayer();
-      await player.setUrl(url);
-      final d = player.duration;
+      final loadedDuration = await player.setUrl(url);
+      final d =
+          loadedDuration ??
+          player.duration ??
+          await player.durationStream
+              .where((value) => value != null)
+              .first
+              .timeout(const Duration(seconds: 2), onTimeout: () => null);
       await player.dispose();
       if (mounted && d != null) setState(() => _duration = d);
     } catch (_) {
-      if (mounted) setState(() => _duration = const Duration(seconds: 0));
+      if (mounted && widget.fallbackDurationSec != null) {
+        setState(
+          () => _duration = Duration(seconds: widget.fallbackDurationSec!),
+        );
+      }
     }
   }
 
@@ -95,10 +107,8 @@ class _VoiceNoteBubbleState extends State<VoiceNoteBubble>
     return '${m.toString().padLeft(2, '0')}:${r.toString().padLeft(2, '0')}';
   }
 
-  Color get _fg =>
-      widget.isUser ? Colors.white : MiaColors.accentDeep;
-  Color get _fgMuted =>
-      widget.isUser ? Colors.white70 : MiaColors.textMuted;
+  Color get _fg => widget.isUser ? Colors.white : MiaColors.accentDeep;
+  Color get _fgMuted => widget.isUser ? Colors.white70 : MiaColors.textMuted;
 
   @override
   Widget build(BuildContext context) {
@@ -132,12 +142,17 @@ class _VoiceNoteBubbleState extends State<VoiceNoteBubble>
                         children: List.generate(_barHeights.length, (i) {
                           final base = _barHeights[i];
                           final boost = widget.isPlaying
-                              ? math.sin(_playAnim.value * math.pi * 2 + i * 0.45) * 6
+                              ? math.sin(
+                                      _playAnim.value * math.pi * 2 + i * 0.45,
+                                    ) *
+                                    6
                               : 0.0;
                           final h = (base + boost).clamp(4.0, 28.0);
                           return Expanded(
                             child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 0.8),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 0.8,
+                              ),
                               child: Container(
                                 height: h,
                                 decoration: BoxDecoration(

@@ -1,19 +1,18 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:record/record.dart';
 
 import '../config.dart';
 import '../data/mia_profile.dart';
 import '../models/chat_message.dart';
+import '../models/voice_upload.dart';
 import '../utils/chat_dates.dart';
 import '../utils/human_presence.dart';
 import '../services/api_service.dart';
 import '../services/session_expired.dart';
+import '../services/voice_recording_platform.dart';
 import '../theme/mia_theme.dart';
 import '../widgets/chat_input_bar.dart';
 import '../widgets/chat_message_tile.dart';
@@ -386,9 +385,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
       for (var i = 0; i < assistants.length; i++) {
         if (i > 0) {
-          await Future<void>.delayed(
-            _assistantTypingDelay(assistants[i]),
-          );
+          await Future<void>.delayed(_assistantTypingDelay(assistants[i]));
           if (!mounted || generation != _replyGeneration) return;
         }
         setState(() {
@@ -474,8 +471,8 @@ class _ChatScreenState extends State<ChatScreen> {
     if (_recording) return;
 
     FocusScope.of(context).unfocus();
-    final status = await Permission.microphone.request();
-    if (!status.isGranted) {
+    final hasPermission = await _recorder.hasPermission();
+    if (!hasPermission) {
       if (!mounted) return;
       MiaTheme.showMessage(
         context,
@@ -484,14 +481,9 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
 
-    final dir = await getTemporaryDirectory();
-    final path =
-        '${dir.path}/note_${DateTime.now().millisecondsSinceEpoch}.m4a';
+    final path = await createVoiceRecordingPath();
 
-    await _recorder.start(
-      const RecordConfig(encoder: AudioEncoder.aacLc),
-      path: path,
-    );
+    await _recorder.start(voiceRecordConfig(), path: path);
 
     if (!mounted) return;
 
@@ -549,12 +541,7 @@ class _ChatScreenState extends State<ChatScreen> {
       }
     } catch (_) {}
 
-    if (path != null) {
-      try {
-        final file = File(path);
-        if (file.existsSync()) file.deleteSync();
-      } catch (_) {}
-    }
+    await discardVoiceRecordingOutput(path);
 
     if (!mounted) return;
     setState(() {
@@ -588,10 +575,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (path == null) return;
 
     if (duration < const Duration(milliseconds: 600)) {
-      try {
-        final file = File(path);
-        if (file.existsSync()) file.deleteSync();
-      } catch (_) {}
+      await discardVoiceRecordingOutput(path);
       if (mounted) {
         MiaTheme.showMessage(context, 'hold longer to record a voice note');
       }
@@ -600,10 +584,23 @@ class _ChatScreenState extends State<ChatScreen> {
     }
 
     _replyTimer?.cancel();
+    late final VoiceUpload upload;
+    try {
+      upload = await voiceUploadFromRecordingOutput(path);
+    } catch (e) {
+      await discardVoiceRecordingOutput(path);
+      if (!mounted) return;
+      setState(() => _statusText = _statusWhenIdle());
+      _handleError(e);
+      return;
+    }
 
     if (_textOutbox.isNotEmpty) {
       await _flushTextOutbox();
-      if (!mounted) return;
+      if (!mounted) {
+        await discardVoiceRecordingOutput(path);
+        return;
+      }
     }
 
     final optimisticId = -DateTime.now().millisecondsSinceEpoch;
@@ -613,7 +610,7 @@ class _ChatScreenState extends State<ChatScreen> {
       role: 'user',
       content: 'voice note',
       messageType: 'audio',
-      audioUrl: Uri.file(path).toString(),
+      audioUrl: upload.localPlaybackUrl,
       createdAt: DateTime.now(),
       audioDurationSec: durationSec,
     );
@@ -629,34 +626,45 @@ class _ChatScreenState extends State<ChatScreen> {
 
     // 2) Then Mia's recording state (voice reply).
     await Future<void>.delayed(Duration.zero);
-    if (!mounted) return;
+    if (!mounted) {
+      await discardVoiceRecordingOutput(path);
+      return;
+    }
     _showMiaRecordingIndicator();
     _scrollToBottom(force: true);
     final recordingElapsed = Stopwatch()..start();
 
     try {
       final generation = ++_replyGeneration;
-      final result = await ApiService.instance.sendVoice(File(path));
-      if (!mounted || generation != _replyGeneration) return;
+      final result = await ApiService.instance.sendVoice(upload);
+      if (!mounted || generation != _replyGeneration) {
+        await discardVoiceRecordingOutput(path);
+        return;
+      }
 
       await HumanPresence.waitRemaining(
         HumanPresence.recordingDuration(result.assistant.content),
         recordingElapsed,
       );
-      if (!mounted || generation != _replyGeneration) return;
+      if (!mounted || generation != _replyGeneration) {
+        await discardVoiceRecordingOutput(path);
+        return;
+      }
 
       // 3) Then Mia's voice note.
       setState(() {
         _messages = [
           ..._messages.where((m) => m.id != optimisticId),
-          result.user,
+          result.user.copyWith(audioDurationSec: durationSec),
           result.assistant,
         ];
         _miaActivity = _MiaActivity.none;
         _statusText = _statusWhenIdle();
       });
+      await discardVoiceRecordingOutput(path);
       _scrollToBottom(force: true, animate: true);
     } catch (e) {
+      await discardVoiceRecordingOutput(path);
       if (!mounted) return;
       setState(() {
         _messages = _messages.where((m) => m.id != optimisticId).toList();
@@ -678,7 +686,10 @@ class _ChatScreenState extends State<ChatScreen> {
 
     try {
       final url = msg.audioUrl!;
-      final playbackUrl = url.startsWith('http') || url.startsWith('file://')
+      final playbackUrl =
+          url.startsWith('http') ||
+              url.startsWith('file://') ||
+              url.startsWith('blob:')
           ? url
           : Uri.file(url).toString();
       await _player.setUrl(playbackUrl);

@@ -134,7 +134,9 @@ class MessageBubble extends StatelessWidget {
                 audioUrl: message.audioUrl,
                 onPlay: onPlayAudio,
                 fallbackDurationSec:
-                    audioDurationSec ?? message.audioDurationSec,
+                    audioDurationSec ??
+                    message.audioDurationSec ??
+                    _estimatedAssistantAudioDurationSec(message),
               ),
             ),
           ),
@@ -146,6 +148,13 @@ class MessageBubble extends StatelessWidget {
   String _displayText(String text, {required bool isUser}) {
     if (isUser) return text;
     return text.toLowerCase();
+  }
+
+  int? _estimatedAssistantAudioDurationSec(ChatMessage message) {
+    if (message.isUser || !message.isAudio) return null;
+    final chars = message.content.trim().length;
+    if (chars == 0) return 1;
+    return ((1.0 + chars * 0.055).round()).clamp(1, 599);
   }
 }
 

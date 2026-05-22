@@ -1,18 +1,18 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
-import 'package:http/io_client.dart';
+import 'package:http_parser/http_parser.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config.dart';
 import '../models/chat_message.dart';
+import '../models/voice_upload.dart';
 import 'session_expired.dart';
+import 'http_client_factory.dart';
 
 class ApiService {
-  ApiService._() : _client = _createClient();
+  ApiService._() : _client = createHttpClient();
   static final ApiService instance = ApiService._();
 
   static const _tokenKey = 'mia_auth_token';
@@ -22,14 +22,6 @@ class ApiService {
   static const _healthTimeout = Duration(seconds: 45);
 
   final http.Client _client;
-
-  static http.Client _createClient() {
-    if (kIsWeb) return http.Client();
-    final httpClient = HttpClient()
-      ..connectionTimeout = _timeout
-      ..idleTimeout = _timeout;
-    return IOClient(httpClient);
-  }
 
   String? _token;
   String? _username;
@@ -99,11 +91,14 @@ class ApiService {
   }
 
   Map<String, String> get _authHeaders => {
-        'Content-Type': 'application/json',
-        if (_token != null) 'Authorization': 'Bearer $_token',
-      };
+    'Content-Type': 'application/json',
+    if (_token != null) 'Authorization': 'Bearer $_token',
+  };
 
-  Future<Map<String, dynamic>> register(String username, String password) async {
+  Future<Map<String, dynamic>> register(
+    String username,
+    String password,
+  ) async {
     final res = await _post(
       Uri.parse('$resolvedApiBaseUrl/auth/register'),
       headers: {'Content-Type': 'application/json'},
@@ -150,13 +145,9 @@ class ApiService {
   }
 
   Future<
-      ({
-        ChatMessage user,
-        ChatMessage assistant,
-        List<ChatMessage> assistants,
-      })> sendText(
-    String text,
-  ) async {
+    ({ChatMessage user, ChatMessage assistant, List<ChatMessage> assistants})
+  >
+  sendText(String text) async {
     final batch = await sendTextBatch([text]);
     return (
       user: batch.users.last,
@@ -166,13 +157,13 @@ class ApiService {
   }
 
   Future<
-      ({
-        List<ChatMessage> users,
-        ChatMessage assistant,
-        List<ChatMessage> assistants,
-      })> sendTextBatch(
-    List<String> texts,
-  ) async {
+    ({
+      List<ChatMessage> users,
+      ChatMessage assistant,
+      List<ChatMessage> assistants,
+    })
+  >
+  sendTextBatch(List<String> texts) async {
     final res = await _post(
       Uri.parse('$resolvedApiBaseUrl/messages/text/batch'),
       headers: _authHeaders,
@@ -187,8 +178,8 @@ class ApiService {
     final assistantList = data['assistantMessages'] as List<dynamic>?;
     final assistants = assistantList != null && assistantList.isNotEmpty
         ? assistantList
-            .map((e) => ChatMessage.fromJson(e as Map<String, dynamic>))
-            .toList()
+              .map((e) => ChatMessage.fromJson(e as Map<String, dynamic>))
+              .toList()
         : [
             ChatMessage.fromJson(
               data['assistantMessage'] as Map<String, dynamic>,
@@ -206,16 +197,34 @@ class ApiService {
   }
 
   Future<({ChatMessage user, ChatMessage assistant})> sendVoice(
-    File audioFile,
+    VoiceUpload audio,
   ) async {
     final request = http.MultipartRequest(
       'POST',
       Uri.parse('$resolvedApiBaseUrl/messages/voice'),
     );
     request.headers['Authorization'] = 'Bearer $_token';
-    request.files.add(
-      await http.MultipartFile.fromPath('audio', audioFile.path),
-    );
+    final contentType = MediaType.parse(audio.mimeType);
+    final bytes = audio.bytes;
+    if (bytes != null) {
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          'audio',
+          bytes,
+          filename: audio.filename,
+          contentType: contentType,
+        ),
+      );
+    } else {
+      request.files.add(
+        await http.MultipartFile.fromPath(
+          'audio',
+          audio.filePath!,
+          filename: audio.filename,
+          contentType: contentType,
+        ),
+      );
+    }
 
     try {
       final streamed = await request.send().timeout(_voiceTimeout);
@@ -233,8 +242,8 @@ class ApiService {
       );
     } on TimeoutException {
       throw Exception(_connectionError());
-    } on SocketException {
-      throw Exception(_connectionError());
+    } on http.ClientException catch (e) {
+      throw Exception(_connectionError(detail: e.message));
     }
   }
 
@@ -269,20 +278,12 @@ class ApiService {
     return _wrap(() => _client.post(uri, headers: headers, body: body));
   }
 
-  Future<http.Response> _wrap(
-    Future<http.Response> Function() request,
-  ) async {
+  Future<http.Response> _wrap(Future<http.Response> Function() request) async {
     try {
       return await request().timeout(_timeout);
     } on TimeoutException {
       throw Exception(_connectionError());
-    } on SocketException {
-      throw Exception(_connectionError());
     } on http.ClientException catch (e) {
-      throw Exception(_connectionError(detail: e.message));
-    } on HandshakeException catch (e) {
-      throw Exception(_connectionError(detail: e.message));
-    } on TlsException catch (e) {
       throw Exception(_connectionError(detail: e.message));
     }
   }

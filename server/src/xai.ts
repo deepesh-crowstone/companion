@@ -77,14 +77,54 @@ function stripEmojis(text: string): string {
 
 function normalizeRespectfulUserGrammar(text: string): string {
   return text
+    .replace(/\btu\b/gi, "tum")
+    .replace(/\btujhe\b/gi, "tumhe")
+    .replace(/\btera\b/gi, "tumhara")
+    .replace(/\bteri\b/gi, "tumhari")
+    .replace(/\btere\b/gi, "tumhare")
     .replace(/\bbata\s+na\b/gi, "batao na")
+    .replace(/\bbata\b(?!\s+(?:diya|di|raha|rahi|rahe|chuka|chuki|chuke)\b)/gi, "batao")
+    .replace(/\bsun\b(?!\s+(?:raha|rahi|rahe|liya|lo)\b)/gi, "suno")
+    .replace(/\bdekh\b(?!\s+(?:raha|rahi|rahe|liya|lo)\b)/gi, "dekho")
+    .replace(/\bja\b(?!\s+(?:raha|rahi|rahe)\b)/gi, "jao")
+    .replace(/\bkha\b(?!\s+(?:raha|rahi|rahe|liya)\b)/gi, "khao")
+    .replace(/\bkar\s+de\b/gi, "kar do")
+    .replace(/\bbol\s+de\b/gi, "bol do")
+    .replace(/\bbhej\s+de\b/gi, "bhej do")
+    .replace(/\bde\s+de\b/gi, "de do")
+    .replace(/\brehne\s+de\b/gi, "rehne do")
+    .replace(/\bmaar\s+de\b/gi, "maar do")
     .replace(/\ble\s+raha\s+hai\b/gi, "le rahe ho")
     .replace(/\bkar\s+raha\s+hai\b/gi, "kar rahe ho")
     .replace(/\bso\s+raha\s+hai\b/gi, "so rahe ho")
     .replace(/\bja\s+raha\s+hai\b/gi, "ja rahe ho")
     .replace(/\bthak\s+gaya\b/gi, "thak gaye")
     .replace(/\bho\s+gaya\s+hai\b/gi, "ho gaye ho")
-    .replace(/\bho\s+gaya\b/gi, "ho gaye");
+    .replace(/\bho\s+gaya\b/gi, "ho gaye")
+    .replace(/(^|[\s,.:;!?'"“”‘’()[\]{}-])तू(?=$|[\s,.:;!?'"“”‘’()[\]{}-])/gu, "$1तुम")
+    .replace(/(^|[\s,.:;!?'"“”‘’()[\]{}-])तुझे(?=$|[\s,.:;!?'"“”‘’()[\]{}-])/gu, "$1तुम्हें")
+    .replace(/(^|[\s,.:;!?'"“”‘’()[\]{}-])तेरा(?=$|[\s,.:;!?'"“”‘’()[\]{}-])/gu, "$1तुम्हारा")
+    .replace(/(^|[\s,.:;!?'"“”‘’()[\]{}-])तेरी(?=$|[\s,.:;!?'"“”‘’()[\]{}-])/gu, "$1तुम्हारी")
+    .replace(/(^|[\s,.:;!?'"“”‘’()[\]{}-])तेरे(?=$|[\s,.:;!?'"“”‘’()[\]{}-])/gu, "$1तुम्हारे")
+    .replace(/(^|[\s,.:;!?'"“”‘’()[\]{}-])बता\s+ना(?=$|[\s,.:;!?'"“”‘’()[\]{}-])/gu, "$1बताओ ना")
+    .replace(/(^|[\s,.:;!?'"“”‘’()[\]{}-])बता(?=$|[\s,.:;!?'"“”‘’()[\]{}-])/gu, "$1बताओ")
+    .replace(/(^|[\s,.:;!?'"“”‘’()[\]{}-])सुन(?=$|[\s,.:;!?'"“”‘’()[\]{}-])/gu, "$1सुनो")
+    .replace(/(^|[\s,.:;!?'"“”‘’()[\]{}-])देख(?=$|[\s,.:;!?'"“”‘’()[\]{}-])/gu, "$1देखो")
+    .replace(/(^|[\s,.:;!?'"“”‘’()[\]{}-])जा(?=$|[\s,.:;!?'"“”‘’()[\]{}-])/gu, "$1जाओ")
+    .replace(/(^|[\s,.:;!?'"“”‘’()[\]{}-])खा(?=$|[\s,.:;!?'"“”‘’()[\]{}-])/gu, "$1खाओ")
+    .replace(/कर\s+दे/gu, "कर दो")
+    .replace(/बोल\s+दे/gu, "बोल दो")
+    .replace(/भेज\s+दे/gu, "भेज दो")
+    .replace(/दे\s+दे/gu, "दे दो")
+    .replace(/रहने\s+दे/gu, "रहने दो")
+    .replace(/मार\s+दे/gu, "मार दो")
+    .replace(/ले\s+रहा\s+है/gu, "ले रहे हो")
+    .replace(/कर\s+रहा\s+है/gu, "कर रहे हो")
+    .replace(/सो\s+रहा\s+है/gu, "सो रहे हो")
+    .replace(/जा\s+रहा\s+है/gu, "जा रहे हो")
+    .replace(/थक\s+गया/gu, "थक गए")
+    .replace(/हो\s+गया\s+है/gu, "हो गए हो")
+    .replace(/हो\s+गया/gu, "हो गए");
 }
 
 function cleanTextSegment(value: unknown): string | null {
@@ -369,11 +409,17 @@ function voiceTtsInstructions(): string {
     : ELEVENLABS_VOICE_TTS_INSTRUCTIONS;
 }
 
+export function voiceReplyPipeline(): string {
+  return envValue("MIA_VOICE_REPLY_PIPELINE")?.toLowerCase() ?? "voice";
+}
+
 async function rewriteToDevanagariHindi(
   text: string,
   preserveSpeechTags: boolean,
 ): Promise<string> {
-  if (!containsLatinOutsideSpeechTags(text)) return text;
+  if (!containsLatinOutsideSpeechTags(text)) {
+    return normalizeRespectfulUserGrammar(text);
+  }
 
   const tagRule = preserveSpeechTags
     ? "Preserve any existing TTS delivery tags exactly as-is, including square-bracket tags like [laughs], [sighs], [teasing], [pauses], [light chuckle], and any <whisper>...</whisper> tags. Only rewrite the human-readable words around them."
@@ -396,6 +442,7 @@ Rules:
 - All visible words must be in Devanagari script.
 - Transliterate English loanwords phonetically into Devanagari: cute -> क्यूट, phone -> फोन, message -> मैसेज, online -> ऑनलाइन, okay -> ओके, sorry -> सॉरी, drama -> ड्रामा.
 - Keep Zara's natural, warm, close-friend tone and the same meaning.
+- Keep respectful "tum" grammar: "तुम", "तुम्हें", "बताओ", "बताओ ना", "कर दो", "हो गए हो"; never "तू", "तुझे", "बता", "बता ना", "कर दे", "हो गया".
 - Keep it short and conversational.
 - Do not add pet names, extra direct address, or a new follow-up question while rewriting.
 - ${tagRule}`,
@@ -418,7 +465,7 @@ Rules:
     throw new Error("Empty Devanagari rewrite from xAI");
   }
 
-  return rewritten;
+  return normalizeRespectfulUserGrammar(rewritten);
 }
 
 export async function chatWithMia(
@@ -480,6 +527,52 @@ export async function chatWithMia(
   return options?.expressiveTts ? stripEmojis(rewritten) : rewritten;
 }
 
+async function addVoiceDeliveryToTextReply(textReply: string): Promise<string> {
+  const cleanReply = stripEmojis(textReply).trim();
+  if (!cleanReply) {
+    throw new Error("Empty text reply for voice delivery");
+  }
+
+  const res = await fetch(`${XAI_BASE}/chat/completions`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify({
+      model: XAI_CHAT_MODEL,
+      reasoning_effort: "none",
+      temperature: 0.35,
+      messages: [
+        {
+          role: "system",
+          content: `Convert Zara's normal text-chat reply into a realistic voice-note script for TTS.
+
+Rules:
+- Keep the same meaning, emotional stance, and Zara personality. Do not add new ideas, questions, advice, facts, pet names, or extra intimacy.
+- Preserve the user's respectful/plural grammar style as a hard rule: tum/tumhe/tumhara, batao, batao na, kar do, le rahe ho, ho gaye. Never use tu/tujhe/tera, bata, bata na, kar de, le raha hai, ho gaya.
+- Convert the spoken words to Devanagari Hindi/Hinglish so the Hindi voice sounds natural. Transliterate English loanwords phonetically when possible.
+- Add only a few delivery tags for performance. ${voiceTtsInstructions()}
+- Output only the final tagged voice-note script.`,
+        },
+        { role: "user", content: cleanReply },
+      ],
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Voice delivery tagging failed: ${res.status} ${err}`);
+  }
+
+  const data = (await res.json()) as {
+    choices?: { message?: { content?: string } }[];
+  };
+  const tagged = data.choices?.[0]?.message?.content?.trim();
+  if (!tagged) {
+    throw new Error("Empty voice delivery tagging response from xAI");
+  }
+
+  return rewriteToDevanagariHindi(stripEmojis(tagged), true);
+}
+
 export async function chatWithMiaText(history: DbMessage[]): Promise<string[]> {
   if (history.length === 0 || history[history.length - 1]?.role !== "user") {
     throw new Error("Chat history must end with a user message");
@@ -533,4 +626,9 @@ output format:
   }
 
   return parseTextReplySegments(reply);
+}
+
+export async function chatWithMiaTextAsVoice(history: DbMessage[]): Promise<string> {
+  const textSegments = await chatWithMiaText(history);
+  return addVoiceDeliveryToTextReply(textSegments.join(" "));
 }

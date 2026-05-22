@@ -32,6 +32,27 @@ class ChatMessage {
       messageType: json['messageType'] as String? ?? 'text',
       audioUrl: json['audioUrl'] as String?,
       createdAt: ChatDates.parseCreatedAt(json['createdAt'] as String),
+      audioDurationSec: json['audioDurationSec'] as int?,
+    );
+  }
+
+  ChatMessage copyWith({
+    int? id,
+    String? role,
+    String? content,
+    String? messageType,
+    String? audioUrl,
+    DateTime? createdAt,
+    int? audioDurationSec,
+  }) {
+    return ChatMessage(
+      id: id ?? this.id,
+      role: role ?? this.role,
+      content: content ?? this.content,
+      messageType: messageType ?? this.messageType,
+      audioUrl: audioUrl ?? this.audioUrl,
+      createdAt: createdAt ?? this.createdAt,
+      audioDurationSec: audioDurationSec ?? this.audioDurationSec,
     );
   }
 }

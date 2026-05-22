@@ -13,9 +13,11 @@ import {
 import { stripSpeechTagsForDisplay } from "../tts-speech.js";
 import {
   chatWithMia,
+  chatWithMiaTextAsVoice,
   chatWithMiaText,
   synthesizeSpeech,
   transcribeAudio,
+  voiceReplyPipeline,
 } from "../xai.js";
 
 const upload = multer({
@@ -288,9 +290,11 @@ messagesRouter.post("/voice", upload.single("audio"), async (req, res) => {
       userAudioKey,
     );
 
-    const replyForTts = await chatWithMia([...history, userMsg], {
-      expressiveTts: true,
-    });
+    const voiceHistory = [...history, userMsg];
+    const replyForTts =
+      voiceReplyPipeline() === "text_tagged"
+        ? await chatWithMiaTextAsVoice(voiceHistory)
+        : await chatWithMia(voiceHistory, { expressiveTts: true });
     const displayReply = stripSpeechTagsForDisplay(replyForTts);
     const mp3Buffer = await synthesizeSpeech(replyForTts);
     const assistantLocalName = `${uuidv4()}.mp3`;
@@ -325,6 +329,8 @@ messagesRouter.post("/voice", upload.single("audio"), async (req, res) => {
       msg.includes("STT failed") ||
       msg.includes("TTS failed") ||
       msg.includes("ElevenLabs") ||
+      msg.includes("Chat failed") ||
+      msg.includes("Voice delivery tagging failed") ||
       msg.includes("Devanagari rewrite failed");
     res.status(isXai ? 502 : 500).json({
       error: isXai
