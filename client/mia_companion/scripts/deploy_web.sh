@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 API_BASE_URL="${API_BASE_URL:-https://companion-production-850d.up.railway.app}"
 
 cd "$ROOT"
-flutter build web --release --dart-define="API_BASE_URL=$API_BASE_URL"
+flutter build web --release --pwa-strategy=none --dart-define="API_BASE_URL=$API_BASE_URL"
 
 echo
 echo "Web build ready:"

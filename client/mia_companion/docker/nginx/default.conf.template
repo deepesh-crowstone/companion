@@ -15,10 +15,16 @@ server {
         expires off;
     }
 
-    # Content-hashed bundles under /assets/ are safe to cache long-term.
+    # App images keep the same URL each deploy (not content-hashed).
+    location /assets/assets/ {
+        add_header Cache-Control "no-cache, must-revalidate";
+        expires off;
+    }
+
+    # Manifests and fonts change less often but still ship with each build.
     location /assets/ {
-        expires 30d;
-        add_header Cache-Control "public, immutable";
+        add_header Cache-Control "no-cache, must-revalidate";
+        expires off;
     }
 
     location / {
@@ -28,7 +34,7 @@ server {
     }
 
     location ~* \.(png|jpg|jpeg|gif|ico|svg|woff|woff2|wasm)$ {
-        expires 1d;
-        add_header Cache-Control "public";
+        add_header Cache-Control "no-cache, must-revalidate";
+        expires off;
     }
 }
