@@ -9,12 +9,26 @@ server {
     gzip on;
     gzip_types text/plain text/css application/javascript application/json image/svg+xml;
 
-    location / {
-        try_files $uri $uri/ /index.html;
+    # Flutter web reuses the same filenames each deploy — never long-cache these.
+    location ~* ^/(index\.html|flutter_service_worker\.js|flutter_bootstrap\.js|main\.dart\.js|version\.json)$ {
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        expires off;
     }
 
-    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|wasm)$ {
-        expires 7d;
+    # Content-hashed bundles under /assets/ are safe to cache long-term.
+    location /assets/ {
+        expires 30d;
+        add_header Cache-Control "public, immutable";
+    }
+
+    location / {
+        try_files $uri $uri/ /index.html;
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        expires off;
+    }
+
+    location ~* \.(png|jpg|jpeg|gif|ico|svg|woff|woff2|wasm)$ {
+        expires 1d;
         add_header Cache-Control "public";
     }
 }
