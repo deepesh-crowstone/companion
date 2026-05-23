@@ -14,6 +14,7 @@ import '../services/api_service.dart';
 import '../services/session_expired.dart';
 import '../services/voice_recording_platform.dart';
 import '../theme/mia_theme.dart';
+import '../widgets/mia_background.dart';
 import '../widgets/chat_input_bar.dart';
 import '../widgets/chat_message_tile.dart';
 import '../widgets/empty_chat.dart';
@@ -832,64 +833,64 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: MiaColors.chatBackground,
       resizeToAvoidBottomInset: true,
-      appBar: MiaChatHeader(
-        statusText: _statusText,
-        onProfile: () {
-          Navigator.of(
-            context,
-          ).push(MaterialPageRoute(builder: (_) => const MiaProfileScreen()));
-        },
-        onCall: _showComingSoonToast,
-        onMenu: _openMenuSheet,
-      ),
-      body: Column(
-        children: [
-          Expanded(
-            child: GestureDetector(
-              onTap: _dismissKeyboard,
-              behavior: HitTestBehavior.translucent,
-              child: Stack(
-                alignment: Alignment.bottomRight,
-                clipBehavior: Clip.none,
-                children: [
-                  _loading
-                      ? const Center(
-                          child: CircularProgressIndicator(
-                            color: MiaColors.accent,
-                            strokeWidth: 2.5,
-                          ),
-                        )
-                      : _messages.isEmpty && !_showMiaActivity
-                      ? const EmptyChat()
-                      : RefreshIndicator(
-                          color: MiaColors.accent,
-                          onRefresh: _load,
-                          child: ListView.builder(
-                            controller: _scroll,
-                            reverse: true,
-                            keyboardDismissBehavior:
-                                ScrollViewKeyboardDismissBehavior.manual,
-                            physics: const AlwaysScrollableScrollPhysics(
-                              parent: ClampingScrollPhysics(),
+      body: MiaBackground(
+        child: Column(
+          children: [
+            MiaChatHeader(
+              statusText: _statusText,
+              onProfile: () {
+                Navigator.of(
+                  context,
+                ).push(MaterialPageRoute(builder: (_) => const MiaProfileScreen()));
+              },
+              onCall: _showComingSoonToast,
+              onMenu: _openMenuSheet,
+            ),
+            Expanded(
+              child: GestureDetector(
+                onTap: _dismissKeyboard,
+                behavior: HitTestBehavior.translucent,
+                child: Stack(
+                  alignment: Alignment.bottomRight,
+                  clipBehavior: Clip.none,
+                  children: [
+                    _loading
+                        ? const Center(
+                            child: CircularProgressIndicator(
+                              color: MiaColors.accent,
+                              strokeWidth: 2.5,
                             ),
-                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                            cacheExtent: 800,
-                            itemCount: _listItemCount,
-                            itemBuilder: _buildListItem,
+                          )
+                        : _messages.isEmpty && !_showMiaActivity
+                        ? const EmptyChat()
+                        : RefreshIndicator(
+                            color: MiaColors.accent,
+                            onRefresh: _load,
+                            child: ListView.builder(
+                              controller: _scroll,
+                              reverse: true,
+                              keyboardDismissBehavior:
+                                  ScrollViewKeyboardDismissBehavior.manual,
+                              physics: const AlwaysScrollableScrollPhysics(
+                                parent: ClampingScrollPhysics(),
+                              ),
+                              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                              cacheExtent: 800,
+                              itemCount: _listItemCount,
+                              itemBuilder: _buildListItem,
+                            ),
                           ),
-                        ),
-                  if (_showScrollToBottom)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 12, bottom: 10),
-                      child: ScrollToBottomButton(onPressed: _jumpToBottom),
-                    ),
-                ],
+                    if (_showScrollToBottom)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 12, bottom: 10),
+                        child: ScrollToBottomButton(onPressed: _jumpToBottom),
+                      ),
+                  ],
+                ),
               ),
             ),
-          ),
-          ChatInputBar(
+            ChatInputBar(
               controller: _input,
               focusNode: _inputFocus,
               recording: _recording,
@@ -906,7 +907,8 @@ class _ChatScreenState extends State<ChatScreen> {
               onHoldCancel: () => unawaited(_cancelVoiceRecording()),
               onSlideUpdate: _onVoiceSlideUpdate,
             ),
-        ],
+          ],
+        ),
       ),
     );
   }

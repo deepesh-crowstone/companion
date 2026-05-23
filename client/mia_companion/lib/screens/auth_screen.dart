@@ -5,6 +5,7 @@ import '../config.dart';
 import '../data/mia_profile.dart';
 import '../services/api_service.dart';
 import '../theme/mia_theme.dart';
+import '../widgets/mia_background.dart';
 import 'chat_screen.dart';
 
 class AuthScreen extends StatefulWidget {
@@ -98,95 +99,59 @@ class _AuthScreenState extends State<AuthScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       resizeToAvoidBottomInset: true,
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          Image.asset(
-            'assets/images/auth_background.png',
-            fit: BoxFit.cover,
-            alignment: Alignment.centerLeft,
-          ),
-          DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  MiaColors.background.withValues(alpha: 0.15),
-                  MiaColors.background.withValues(alpha: 0.45),
-                  MiaColors.background.withValues(alpha: 0.88),
-                ],
-                stops: const [0.0, 0.42, 1.0],
-              ),
-            ),
-          ),
-          DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.centerLeft,
-                end: Alignment.centerRight,
-                colors: [
-                  Colors.transparent,
-                  MiaColors.background.withValues(alpha: 0.35),
-                  MiaColors.background.withValues(alpha: 0.82),
-                ],
-                stops: const [0.0, 0.55, 1.0],
-              ),
-            ),
-          ),
-          SafeArea(
-            child: Column(
-              children: [
-                if (_serverReachable == false)
-                  _OfflineBanner(onRetry: _checkServer),
-                Expanded(
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final wide = constraints.maxWidth >= 720;
-                      return Align(
-                        alignment:
-                            wide ? Alignment.centerRight : Alignment.bottomCenter,
-                        child: SingleChildScrollView(
-                          padding: EdgeInsets.fromLTRB(
-                            wide ? constraints.maxWidth * 0.42 : 28,
-                            wide ? 24 : 16,
-                            28,
-                            28,
+      body: MiaBackground(
+        child: SafeArea(
+          child: Column(
+            children: [
+              if (_serverReachable == false)
+                _OfflineBanner(onRetry: _checkServer),
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final wide = constraints.maxWidth >= 720;
+                    return Align(
+                      alignment:
+                          wide ? Alignment.centerRight : Alignment.bottomCenter,
+                      child: SingleChildScrollView(
+                        padding: EdgeInsets.fromLTRB(
+                          wide ? constraints.maxWidth * 0.42 : 28,
+                          wide ? 24 : 16,
+                          28,
+                          28,
+                        ),
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxWidth: wide ? 420 : double.infinity,
                           ),
-                          child: ConstrainedBox(
-                            constraints: BoxConstraints(
-                              maxWidth: wide ? 420 : double.infinity,
-                            ),
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                color: MiaColors.surface.withValues(alpha: 0.72),
-                                borderRadius: BorderRadius.circular(28),
-                                border: Border.all(
-                                  color: MiaColors.miaBubble.withValues(alpha: 0.6),
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: MiaColors.surface.withValues(alpha: 0.72),
+                              borderRadius: BorderRadius.circular(28),
+                              border: Border.all(
+                                color: MiaColors.miaBubble.withValues(alpha: 0.6),
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: MiaColors.accentDeep.withValues(alpha: 0.08),
+                                  blurRadius: 24,
+                                  offset: const Offset(0, 8),
                                 ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: MiaColors.accentDeep.withValues(alpha: 0.08),
-                                    blurRadius: 24,
-                                    offset: const Offset(0, 8),
-                                  ),
-                                ],
-                              ),
-                              child: Padding(
-                                padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
-                                child: _buildForm(),
-                              ),
+                              ],
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
+                              child: _buildForm(),
                             ),
                           ),
                         ),
-                      );
-                    },
-                  ),
+                      ),
+                    );
+                  },
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
