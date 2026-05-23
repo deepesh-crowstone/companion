@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
@@ -18,6 +19,27 @@ class ApiService {
 
   static const _tokenKey = 'mia_auth_token';
   static const _usernameKey = 'mia_username';
+  static const _guestPasswordKey = 'mia_guest_password';
+  static const _guestAdjectives = [
+    'happy',
+    'lucky',
+    'calm',
+    'swift',
+    'bold',
+    'keen',
+    'warm',
+    'bright',
+  ];
+  static const _guestNouns = [
+    'fox',
+    'owl',
+    'star',
+    'wave',
+    'leaf',
+    'moon',
+    'dawn',
+    'spark',
+  ];
   static const _timeout = Duration(seconds: 30);
   static const _voiceTimeout = Duration(seconds: 90);
   static const _healthTimeout = Duration(seconds: 45);
@@ -51,6 +73,52 @@ class ApiService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_tokenKey);
     await prefs.remove(_usernameKey);
+  }
+
+  /// Ensures a valid session exists, registering a guest user in the background if needed.
+  Future<void> ensureAuthenticated() async {
+    await loadSession();
+    if (isLoggedIn && await validateSession()) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    final storedUsername = prefs.getString(_usernameKey);
+    final storedPassword = prefs.getString(_guestPasswordKey);
+    if (storedUsername != null && storedPassword != null) {
+      try {
+        await login(storedUsername, storedPassword);
+        if (await validateSession()) return;
+      } catch (_) {
+        // Fall through to fresh guest registration.
+      }
+    }
+
+    for (var attempt = 0; attempt < 5; attempt++) {
+      final username = _generateGuestUsername();
+      final password = _generateGuestPassword();
+      try {
+        await register(username, password);
+        await prefs.setString(_guestPasswordKey, password);
+        return;
+      } catch (e) {
+        final msg = e.toString();
+        if (!msg.contains('already taken') || attempt == 4) rethrow;
+      }
+    }
+  }
+
+  String _generateGuestUsername() {
+    final random = Random();
+    final adjective = _guestAdjectives[random.nextInt(_guestAdjectives.length)];
+    final noun = _guestNouns[random.nextInt(_guestNouns.length)];
+    final suffix = random.nextInt(9000) + 1000;
+    return '${adjective}_$noun$suffix';
+  }
+
+  String _generateGuestPassword() {
+    const chars =
+        'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    final random = Random.secure();
+    return List.generate(16, (_) => chars[random.nextInt(chars.length)]).join();
   }
 
   /// Returns false and clears storage if the saved token is no longer valid.

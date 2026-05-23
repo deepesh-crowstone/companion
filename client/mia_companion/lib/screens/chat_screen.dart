@@ -23,7 +23,6 @@ import '../widgets/mia_chat_header.dart';
 import '../widgets/intimacy_unlock_sheet.dart';
 import '../widgets/scroll_to_bottom_button.dart';
 import '../models/intimacy.dart';
-import 'auth_screen.dart';
 import 'mia_profile_screen.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -178,6 +177,9 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
+      if (!ApiService.instance.isLoggedIn) {
+        await ApiService.instance.ensureAuthenticated();
+      }
       final messages = await ApiService.instance.fetchMessages();
       IntimacyStatus? intimacy;
       try {
@@ -274,62 +276,37 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  Future<void> _recoverSession() async {
+    try {
+      await ApiService.instance.ensureAuthenticated();
+      await _load();
+    } catch (e) {
+      if (!mounted) return;
+      final msg = e.toString().replaceFirst('Exception: ', '');
+      MiaTheme.showMessage(
+        context,
+        msg.contains('Cannot reach server')
+            ? 'can\'t reach ${MiaProfile.name.toLowerCase()}\'s server. open $resolvedApiBaseUrl/health in your browser.'
+            : 'couldn\'t restore your session. try refresh chat.',
+      );
+    }
+  }
+
   void _handleError(Object e) {
     if (!mounted) return;
     if (e is SessionExpiredException) {
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const AuthScreen()),
-        (_) => false,
-      );
-      MiaTheme.showMessage(context, e.message);
+      unawaited(_recoverSession());
       return;
     }
     final msg = e.toString().replaceFirst('Exception: ', '');
     if (msg.contains('Session expired') || msg.contains('foreign key')) {
-      MiaTheme.showMessage(context, 'please log in again.');
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const AuthScreen()),
-        (_) => false,
-      );
-      unawaited(ApiService.instance.logout());
+      unawaited(_recoverSession());
       return;
     }
     final short = msg.contains('Cannot reach server')
         ? 'can\'t reach ${MiaProfile.name.toLowerCase()}\'s server. open $resolvedApiBaseUrl/health in your phone browser, then reinstall the app with the production API URL.'
         : msg;
     MiaTheme.showMessage(context, short);
-  }
-
-  Future<void> _confirmLogout() async {
-    final yes = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: MiaColors.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('log out?', style: MiaTheme.serifTitle(size: 22)),
-        content: Text(
-          'you\'ll need to sign in again to message ${MiaProfile.name}.',
-          style: MiaTheme.chatBody(isUser: false),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('log out'),
-          ),
-        ],
-      ),
-    );
-    if (yes != true || !mounted) return;
-    await ApiService.instance.logout();
-    if (!mounted) return;
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const AuthScreen()),
-      (_) => false,
-    );
   }
 
   Future<void> _sendText() async {
@@ -808,14 +785,6 @@ class _ChatScreenState extends State<ChatScreen> {
               onTap: () {
                 Navigator.pop(ctx);
                 _load();
-              },
-            ),
-            ListTile(
-              leading: Icon(Icons.logout_rounded, color: MiaColors.accentDeep),
-              title: const Text('log out'),
-              onTap: () {
-                Navigator.pop(ctx);
-                _confirmLogout();
               },
             ),
             const SizedBox(height: 8),

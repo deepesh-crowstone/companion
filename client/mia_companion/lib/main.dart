@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import 'screens/auth_screen.dart';
 import 'screens/chat_screen.dart';
 import 'services/api_service.dart';
 import 'theme/mia_theme.dart';
@@ -40,7 +39,6 @@ class _Bootstrap extends StatefulWidget {
 
 class _BootstrapState extends State<_Bootstrap> {
   bool _ready = false;
-  bool _loggedIn = false;
 
   @override
   void initState() {
@@ -49,24 +47,19 @@ class _BootstrapState extends State<_Bootstrap> {
   }
 
   Future<void> _init() async {
-    var loggedIn = false;
     try {
-      await ApiService.instance.loadSession();
-      if (ApiService.instance.isLoggedIn) {
-        final reachable = await ApiService.instance.checkHealth().timeout(
-          const Duration(seconds: 8),
-          onTimeout: () => false,
-        );
-        loggedIn = reachable && await ApiService.instance.validateSession();
+      final reachable = await ApiService.instance.checkHealth().timeout(
+        const Duration(seconds: 8),
+        onTimeout: () => false,
+      );
+      if (reachable) {
+        await ApiService.instance.ensureAuthenticated();
       }
     } catch (_) {
-      loggedIn = false;
+      // Chat screen handles unreachable server / auth errors.
     }
     if (!mounted) return;
-    setState(() {
-      _loggedIn = loggedIn;
-      _ready = true;
-    });
+    setState(() => _ready = true);
   }
 
   @override
@@ -77,6 +70,6 @@ class _BootstrapState extends State<_Bootstrap> {
       );
     }
 
-    return _loggedIn ? const ChatScreen() : const AuthScreen();
+    return const ChatScreen();
   }
 }
