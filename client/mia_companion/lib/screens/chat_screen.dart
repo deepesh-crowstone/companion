@@ -41,9 +41,6 @@ class _ChatScreenState extends State<ChatScreen> {
   static const _receiptReadDelay = Duration(milliseconds: 1300);
   static const _postReadBeforeTypingDelay = Duration(milliseconds: 1500);
 
-  /// After the user sends, show Mia as online in the header.
-  static const _goOnlineDelay = Duration(seconds: 2);
-
   final _input = TextEditingController();
   final _inputFocus = FocusNode();
   final _scroll = ScrollController();
@@ -64,9 +61,7 @@ class _ChatScreenState extends State<ChatScreen> {
   Timer? _recordDurationTimer;
   int? _playingId;
   StreamSubscription<PlayerState>? _playerSub;
-  String _statusText = 'offline';
-  bool _miaIsOnline = false;
-  Timer? _goOnlineTimer;
+  String _statusText = 'online now';
 
   final List<String> _textOutbox = [];
   final List<int> _pendingOptimisticIds = [];
@@ -88,7 +83,6 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void dispose() {
     _replyTimer?.cancel();
-    _goOnlineTimer?.cancel();
     _recordDurationTimer?.cancel();
     _input.removeListener(_onInputChanged);
     _scroll.removeListener(_onScroll);
@@ -127,18 +121,7 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  String _statusWhenIdle() => _miaIsOnline ? 'online now' : 'offline';
-
-  void _scheduleGoOnlineAfterUserSend() {
-    _goOnlineTimer?.cancel();
-    _goOnlineTimer = Timer(_goOnlineDelay, () {
-      if (!mounted) return;
-      _miaIsOnline = true;
-      if (_miaActivity == _MiaActivity.none) {
-        setState(() => _statusText = 'online now');
-      }
-    });
-  }
+  String _statusWhenIdle() => 'online now';
 
   void _abortMiaReply() {
     _replyGeneration++;
@@ -336,7 +319,6 @@ class _ChatScreenState extends State<ChatScreen> {
       _pinnedToBottom = true;
     });
     _scrollToBottom(force: true);
-    _scheduleGoOnlineAfterUserSend();
     _keepInputFocused();
     unawaited(_flushTextOutbox());
   }
@@ -634,7 +616,6 @@ class _ChatScreenState extends State<ChatScreen> {
       _miaActivity = _MiaActivity.none;
       _pinnedToBottom = true;
     });
-    _scheduleGoOnlineAfterUserSend();
     _scrollToBottom(force: true);
 
     // 2) Then Mia's recording state (voice reply).
