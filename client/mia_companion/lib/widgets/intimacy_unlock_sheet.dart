@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -6,27 +8,58 @@ import '../services/api_service.dart';
 import '../services/intimacy_payment_service.dart';
 import '../theme/mia_theme.dart';
 
+class _IntimacySheetClose {
+  bool explicitNotNow = false;
+}
+
 Future<IntimacyStatus?> showIntimacyUnlockSheet({
   required BuildContext context,
   required IntimacyNudge nudge,
   ValueChanged<IntimacyStatus>? onUnlocked,
 }) {
+  final close = _IntimacySheetClose();
+
   return showModalBottomSheet<IntimacyStatus>(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
-    builder: (ctx) => _IntimacyUnlockSheet(nudge: nudge, onUnlocked: onUnlocked),
-  );
+    builder: (ctx) => _IntimacyUnlockSheet(
+      nudge: nudge,
+      onUnlocked: onUnlocked,
+      onNotNow: () {
+        close.explicitNotNow = true;
+        unawaited(
+          ApiService.instance.trackEvent(
+            'intimacy_not_now_clicked',
+            eventTime: DateTime.now(),
+          ),
+        );
+        Navigator.of(ctx).pop();
+      },
+    ),
+  ).then((status) {
+    if (status == null && !close.explicitNotNow) {
+      unawaited(
+        ApiService.instance.trackEvent(
+          'intimacy_nudge_dismissed',
+          eventTime: DateTime.now(),
+        ),
+      );
+    }
+    return status;
+  });
 }
 
 class _IntimacyUnlockSheet extends StatefulWidget {
   const _IntimacyUnlockSheet({
     required this.nudge,
     this.onUnlocked,
+    required this.onNotNow,
   });
 
   final IntimacyNudge nudge;
   final ValueChanged<IntimacyStatus>? onUnlocked;
+  final VoidCallback onNotNow;
 
   @override
   State<_IntimacyUnlockSheet> createState() => _IntimacyUnlockSheetState();
@@ -38,6 +71,12 @@ class _IntimacyUnlockSheetState extends State<_IntimacyUnlockSheet> {
 
   Future<void> _unlock() async {
     if (_paying) return;
+    unawaited(
+      ApiService.instance.trackEvent(
+        'intimacy_unlock_clicked',
+        eventTime: DateTime.now(),
+      ),
+    );
     setState(() {
       _paying = true;
       _error = null;
@@ -180,7 +219,7 @@ class _IntimacyUnlockSheetState extends State<_IntimacyUnlockSheet> {
           ),
           const SizedBox(height: 10),
           TextButton(
-            onPressed: _paying ? null : () => Navigator.of(context).pop(),
+            onPressed: _paying ? null : widget.onNotNow,
             child: Text(
               'Not now',
               style: GoogleFonts.inter(

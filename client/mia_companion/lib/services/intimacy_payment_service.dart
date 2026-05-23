@@ -7,6 +7,8 @@ import 'package:flutter_cashfree_pg_sdk/api/cfsession/cfsession.dart';
 import 'package:flutter_cashfree_pg_sdk/utils/cfenums.dart';
 import 'package:flutter_cashfree_pg_sdk/utils/cfexceptions.dart';
 
+import 'api_service.dart';
+
 typedef PaymentVerifyCallback = Future<void> Function(String orderId);
 
 class IntimacyPaymentService {
@@ -63,6 +65,12 @@ class IntimacyPaymentService {
           .build();
 
       _gateway.doPayment(checkout);
+      unawaited(
+        ApiService.instance.trackEvent(
+          'intimacy_pay_clicked',
+          eventTime: DateTime.now(),
+        ),
+      );
       await completer.future;
     } on CFException catch (e) {
       onError(e.message);

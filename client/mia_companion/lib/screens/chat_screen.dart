@@ -15,6 +15,7 @@ import '../services/session_expired.dart';
 import '../services/voice_recording_platform.dart';
 import '../theme/mia_theme.dart';
 import '../widgets/mia_background.dart';
+import '../utils/web_keyboard_inset.dart';
 import '../widgets/chat_input_bar.dart';
 import '../widgets/chat_message_tile.dart';
 import '../widgets/empty_chat.dart';
@@ -214,6 +215,12 @@ class _ChatScreenState extends State<ChatScreen> {
     if (nudge.requiredLevel <= _unlockedIntimacyLevel) return;
     await Future<void>.delayed(const Duration(milliseconds: 400));
     if (!mounted) return;
+    unawaited(
+      ApiService.instance.trackEvent(
+        'intimacy_detected',
+        eventTime: DateTime.now(),
+      ),
+    );
     await showIntimacyUnlockSheet(
       context: context,
       nudge: nudge,
@@ -861,22 +868,24 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
               ),
             ),
-            ChatInputBar(
-              controller: _input,
-              focusNode: _inputFocus,
-              recording: _recording,
-              recordingLocked: _recordingLocked,
-              recordingDuration: _recordingDuration,
-              slideCancelActive: _slideCancelActive,
-              slideOffset: _voiceSlideOffset,
-              sending: _showMiaActivity,
-              enabled: !_loading,
-              onSend: _sendText,
-              onTapStartAndLock: _tapStartAndLockVoiceNote,
-              onHoldStart: _startVoiceRecording,
-              onHoldSend: () => unawaited(_sendVoiceRecording()),
-              onHoldCancel: () => unawaited(_cancelVoiceRecording()),
-              onSlideUpdate: _onVoiceSlideUpdate,
+            WebKeyboardInset(
+              child: ChatInputBar(
+                controller: _input,
+                focusNode: _inputFocus,
+                recording: _recording,
+                recordingLocked: _recordingLocked,
+                recordingDuration: _recordingDuration,
+                slideCancelActive: _slideCancelActive,
+                slideOffset: _voiceSlideOffset,
+                sending: _showMiaActivity,
+                enabled: !_loading,
+                onSend: _sendText,
+                onTapStartAndLock: _tapStartAndLockVoiceNote,
+                onHoldStart: _startVoiceRecording,
+                onHoldSend: () => unawaited(_sendVoiceRecording()),
+                onHoldCancel: () => unawaited(_cancelVoiceRecording()),
+                onSlideUpdate: _onVoiceSlideUpdate,
+              ),
             ),
           ],
         ),
