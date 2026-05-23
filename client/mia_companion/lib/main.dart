@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'screens/chat_screen.dart';
+import 'screens/new_user_screen.dart';
 import 'services/api_service.dart';
 import 'theme/mia_theme.dart';
 
@@ -39,6 +40,7 @@ class _Bootstrap extends StatefulWidget {
 
 class _BootstrapState extends State<_Bootstrap> {
   bool _ready = false;
+  bool _showNewUser = false;
 
   @override
   void initState() {
@@ -47,6 +49,7 @@ class _BootstrapState extends State<_Bootstrap> {
   }
 
   Future<void> _init() async {
+    var showNewUser = false;
     try {
       final reachable = await ApiService.instance.checkHealth().timeout(
         const Duration(seconds: 8),
@@ -55,11 +58,19 @@ class _BootstrapState extends State<_Bootstrap> {
       if (reachable) {
         await ApiService.instance.ensureAuthenticated();
       }
+      showNewUser = !await hasStartedChatting();
     } catch (_) {
-      // Chat screen handles unreachable server / auth errors.
+      // New user / chat screens handle unreachable server / auth errors.
     }
     if (!mounted) return;
-    setState(() => _ready = true);
+    setState(() {
+      _ready = true;
+      _showNewUser = showNewUser;
+    });
+  }
+
+  void _onStartedChatting() {
+    setState(() => _showNewUser = false);
   }
 
   @override
@@ -68,6 +79,10 @@ class _BootstrapState extends State<_Bootstrap> {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
       );
+    }
+
+    if (_showNewUser) {
+      return NewUserScreen(onStarted: _onStartedChatting);
     }
 
     return const ChatScreen();
