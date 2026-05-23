@@ -3,6 +3,10 @@ import 'package:flutter/material.dart';
 import '../theme/mia_theme.dart';
 
 /// Full-screen portrait background shared across auth and chat.
+///
+/// Background layers are pinned to the full screen height so opening the
+/// keyboard does not rescale the image when [Scaffold.resizeToAvoidBottomInset]
+/// shrinks the body.
 class MiaBackground extends StatelessWidget {
   const MiaBackground({super.key, required this.child});
 
@@ -12,11 +16,35 @@ class MiaBackground extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final screenHeight = MediaQuery.sizeOf(context).height;
+
+    return Stack(
+      fit: StackFit.expand,
+      clipBehavior: Clip.none,
+      children: [
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          height: screenHeight,
+          child: const _MiaBackgroundLayers(),
+        ),
+        child,
+      ],
+    );
+  }
+}
+
+class _MiaBackgroundLayers extends StatelessWidget {
+  const _MiaBackgroundLayers();
+
+  @override
+  Widget build(BuildContext context) {
     return Stack(
       fit: StackFit.expand,
       children: [
         Image.asset(
-          imageAsset,
+          MiaBackground.imageAsset,
           fit: BoxFit.cover,
           alignment: Alignment.centerLeft,
         ),
@@ -48,7 +76,6 @@ class MiaBackground extends StatelessWidget {
             ),
           ),
         ),
-        child,
       ],
     );
   }
