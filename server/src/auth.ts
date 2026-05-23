@@ -65,6 +65,33 @@ export async function authMiddleware(
   }
 }
 
+export async function optionalAuthMiddleware(
+  req: Request,
+  _res: Response,
+  next: NextFunction,
+): Promise<void> {
+  const header = req.headers.authorization;
+  if (!header?.startsWith("Bearer ")) {
+    next();
+    return;
+  }
+
+  try {
+    const payload = verifyToken(header.slice(7));
+    const user = await findUserById(payload.userId);
+    if (user) {
+      (req as Request & { auth?: AuthPayload }).auth = {
+        userId: user.id,
+        username: user.username,
+      };
+    }
+  } catch {
+    // Ignore invalid tokens for anonymous analytics events.
+  }
+
+  next();
+}
+
 export async function registerUser(
   username: string,
   password: string,

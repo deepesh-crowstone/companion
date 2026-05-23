@@ -1,15 +1,17 @@
 import { Router, type Request } from "express";
-import { authMiddleware, type AuthPayload } from "../auth.js";
+import { optionalAuthMiddleware, type AuthPayload } from "../auth.js";
 import { pool, type DbUserEvent } from "../db.js";
 
 export const eventsRouter = Router();
 
-function getAuth(req: Request): AuthPayload {
-  return (req as Request & { auth: AuthPayload }).auth;
+const ANONYMOUS_EVENTS = new Set(["page_viewed"]);
+
+function getOptionalAuth(req: Request): AuthPayload | undefined {
+  return (req as Request & { auth?: AuthPayload }).auth;
 }
 
-eventsRouter.post("/", authMiddleware, async (req, res) => {
-  const auth = getAuth(req);
+eventsRouter.post("/", optionalAuthMiddleware, async (req, res) => {
+  const auth = getOptionalAuth(req);
   const { eventName, eventTime } = req.body as {
     eventName?: string;
     eventTime?: string;
@@ -31,12 +33,18 @@ eventsRouter.post("/", authMiddleware, async (req, res) => {
     return;
   }
 
+  const anonymous = ANONYMOUS_EVENTS.has(trimmed);
+  if (!anonymous && !auth) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+
   try {
     const { rows } = await pool.query<DbUserEvent>(
       `INSERT INTO user_events (user_id, event_name, event_time)
        VALUES ($1, $2, $3)
        RETURNING id, user_id, event_name, event_time`,
-      [auth.userId, trimmed, occurredAt],
+      [anonymous ? null : auth!.userId, trimmed, occurredAt],
     );
     res.status(201).json({ event: rows[0] });
   } catch (e) {

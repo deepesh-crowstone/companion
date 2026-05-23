@@ -368,18 +368,24 @@ class ApiService {
   }
 
   /// Records a product analytics event. Failures are swallowed so UI is not blocked.
-  Future<void> trackEvent(String eventName, {DateTime? eventTime}) async {
+  Future<void> trackEvent(
+    String eventName, {
+    DateTime? eventTime,
+    bool anonymous = false,
+  }) async {
     try {
       final res = await _post(
         Uri.parse('$resolvedApiBaseUrl/events'),
-        headers: _authHeaders,
+        headers: anonymous
+            ? const {'Content-Type': 'application/json'}
+            : _authHeaders,
         body: jsonEncode({
           'eventName': eventName,
           if (eventTime != null)
             'eventTime': eventTime.toUtc().toIso8601String(),
         }),
       );
-      if (res.statusCode == 401) {
+      if (!anonymous && res.statusCode == 401) {
         await logout();
       }
     } catch (_) {

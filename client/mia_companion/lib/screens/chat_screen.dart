@@ -71,6 +71,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final Map<int, DateTime> _receiptSentAt = {};
 
   int _unlockedIntimacyLevel = 1;
+  bool _pageViewTracked = false;
 
   @override
   void initState() {
@@ -178,12 +179,26 @@ class _ChatScreenState extends State<ChatScreen> {
         }
         _loading = false;
       });
+      _trackPageViewedOnce();
       _scrollToBottom(force: true);
     } catch (e) {
       if (!mounted) return;
       setState(() => _loading = false);
+      _trackPageViewedOnce();
       _handleError(e);
     }
+  }
+
+  void _trackPageViewedOnce() {
+    if (_pageViewTracked) return;
+    _pageViewTracked = true;
+    unawaited(
+      ApiService.instance.trackEvent(
+        'page_viewed',
+        eventTime: DateTime.now(),
+        anonymous: true,
+      ),
+    );
   }
 
   void _onIntimacyUnlocked(IntimacyStatus status) {

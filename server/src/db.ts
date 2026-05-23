@@ -37,7 +37,7 @@ export type DbMessage = {
 
 export type DbUserEvent = {
   id: number;
-  user_id: number;
+  user_id: number | null;
   event_name: string;
   event_time: Date;
 };
@@ -98,6 +98,9 @@ export async function initDb(): Promise<void> {
 
       CREATE INDEX IF NOT EXISTS idx_user_events_user_time
         ON user_events (user_id, event_time DESC);
+
+      ALTER TABLE user_events
+        ALTER COLUMN user_id DROP NOT NULL;
     `);
   } finally {
     client.release();
