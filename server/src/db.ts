@@ -35,6 +35,13 @@ export type DbMessage = {
   created_at: Date;
 };
 
+export type DbUserEvent = {
+  id: number;
+  user_id: number;
+  event_name: string;
+  event_time: Date;
+};
+
 export async function initDb(): Promise<void> {
   const client = await pool.connect();
   try {
@@ -81,6 +88,16 @@ export async function initDb(): Promise<void> {
 
       CREATE INDEX IF NOT EXISTS idx_messages_user_created
         ON messages (user_id, created_at, id);
+
+      CREATE TABLE IF NOT EXISTS user_events (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        event_name TEXT NOT NULL,
+        event_time TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_user_events_user_time
+        ON user_events (user_id, event_time DESC);
     `);
   } finally {
     client.release();

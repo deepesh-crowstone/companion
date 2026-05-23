@@ -367,6 +367,26 @@ class ApiService {
     }
   }
 
+  /// Records a product analytics event. Failures are swallowed so UI is not blocked.
+  Future<void> trackEvent(String eventName, {DateTime? eventTime}) async {
+    try {
+      final res = await _post(
+        Uri.parse('$resolvedApiBaseUrl/events'),
+        headers: _authHeaders,
+        body: jsonEncode({
+          'eventName': eventName,
+          if (eventTime != null)
+            'eventTime': eventTime.toUtc().toIso8601String(),
+        }),
+      );
+      if (res.statusCode == 401) {
+        await logout();
+      }
+    } catch (_) {
+      // Analytics should never interrupt the user flow.
+    }
+  }
+
   Future<Map<String, dynamic>> createRealtimeSession() async {
     final res = await _post(
       Uri.parse('$resolvedApiBaseUrl/realtime/session'),

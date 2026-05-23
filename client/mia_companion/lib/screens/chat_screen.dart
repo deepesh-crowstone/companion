@@ -731,7 +731,13 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
-  void _showComingSoonToast() {
+  void _onCallPressed() {
+    unawaited(
+      ApiService.instance.trackEvent(
+        'call_button_clicked',
+        eventTime: DateTime.now(),
+      ),
+    );
     MiaTheme.showMessage(
       context,
       'This feature is coming soon.',
@@ -794,7 +800,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   context,
                 ).push(MaterialPageRoute(builder: (_) => const MiaProfileScreen()));
               },
-              onCall: _showComingSoonToast,
+              onCall: _onCallPressed,
               onMenu: _openMenuSheet,
             ),
             Expanded(
