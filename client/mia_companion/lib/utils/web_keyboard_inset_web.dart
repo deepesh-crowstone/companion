@@ -6,11 +6,12 @@ import 'package:flutter/material.dart';
 import 'package:web/web.dart' as web;
 
 /// Lifts [child] above the virtual keyboard in mobile webviews that overlay
-/// the keyboard instead of resizing the layout (e.g. Instagram in-app browser).
+/// the keyboard without informing Flutter (e.g. Instagram in-app browser).
 ///
-/// On regular Chrome/Safari the layout viewport shrinks and Flutter's
-/// `Scaffold.resizeToAvoidBottomInset` already handles the inset — in that case
-/// this widget stays a no-op so we never apply the inset twice.
+/// On regular Chrome / Safari the visual viewport overlap is already exposed
+/// via `MediaQuery.viewInsets.bottom`, and `Scaffold.resizeToAvoidBottomInset`
+/// handles the inset. We only apply the *residual* lift Flutter has not already
+/// accounted for, so we never double-pad in normal browsers.
 class WebKeyboardInset extends StatefulWidget {
   const WebKeyboardInset({
     super.key,
@@ -28,11 +29,11 @@ class WebKeyboardInset extends StatefulWidget {
 class _WebKeyboardInsetState extends State<WebKeyboardInset> {
   static const _gap = 10.0;
   static const _openThreshold = 8.0;
-  static const _focusLossDebounce = Duration(milliseconds: 120);
+  static const _focusLossDebounce = Duration(milliseconds: 150);
 
-  double _overlayLift = 0;
-  double _baselineWindowHeight = 0;
-  Timer? _clearTimer;
+  double _visualOverlap = 0;
+  Timer? _focusLossTimer;
+  bool _focusedSnapshot = false;
   late final web.EventListener _onViewportChange = _handleViewportChange.toJS;
 
   void _handleViewportChange(web.Event _) {
@@ -42,7 +43,7 @@ class _WebKeyboardInsetState extends State<WebKeyboardInset> {
   @override
   void initState() {
     super.initState();
-    _baselineWindowHeight = _windowHeight;
+    _focusedSnapshot = widget.focusNode.hasFocus;
     widget.focusNode.addListener(_onFocusChanged);
     _attachListeners();
     WidgetsBinding.instance.addPostFrameCallback((_) => _sync());
@@ -54,26 +55,28 @@ class _WebKeyboardInsetState extends State<WebKeyboardInset> {
     if (oldWidget.focusNode != widget.focusNode) {
       oldWidget.focusNode.removeListener(_onFocusChanged);
       widget.focusNode.addListener(_onFocusChanged);
+      _focusedSnapshot = widget.focusNode.hasFocus;
       _sync();
     }
   }
 
   void _onFocusChanged() {
     if (widget.focusNode.hasFocus) {
-      _clearTimer?.cancel();
-      _clearTimer = null;
-      _sync();
+      _focusLossTimer?.cancel();
+      _focusLossTimer = null;
+      if (!_focusedSnapshot) {
+        setState(() => _focusedSnapshot = true);
+      }
       return;
     }
-    // Debounce focus loss so refocusing right after sending doesn't flicker.
-    _clearTimer?.cancel();
-    _clearTimer = Timer(_focusLossDebounce, () {
+    // Debounce focus loss so the brief blur during _sendText doesn't toggle
+    // the lift on and off (visible flicker).
+    _focusLossTimer?.cancel();
+    _focusLossTimer = Timer(_focusLossDebounce, () {
       if (!mounted || widget.focusNode.hasFocus) return;
-      if (_overlayLift != 0) setState(() => _overlayLift = 0);
+      setState(() => _focusedSnapshot = false);
     });
   }
-
-  double get _windowHeight => web.window.innerHeight.toDouble();
 
   void _attachListeners() {
     web.window.visualViewport?.addEventListener('resize', _onViewportChange);
@@ -89,37 +92,22 @@ class _WebKeyboardInsetState extends State<WebKeyboardInset> {
 
   void _sync() {
     if (!mounted) return;
-
     final vv = web.window.visualViewport;
     if (vv == null) return;
 
-    final windowHeight = _windowHeight;
     final overlap = math.max(
       0.0,
-      windowHeight - vv.height - vv.offsetTop,
+      web.window.innerHeight.toDouble() - vv.height - vv.offsetTop,
     );
 
-    if (overlap < _openThreshold) {
-      _baselineWindowHeight = windowHeight;
-    }
-
-    // If the layout viewport shrank by roughly the keyboard height, the
-    // browser is in resize mode — Flutter already adjusts via viewInsets, so
-    // we must not add our own lift on top of that.
-    final shrink = _baselineWindowHeight - windowHeight;
-    final isOverlayKeyboard =
-        overlap > _openThreshold && shrink < overlap * 0.35;
-
-    final nextLift = isOverlayKeyboard ? overlap + _gap : 0.0;
-
-    if ((nextLift - _overlayLift).abs() > 0.5) {
-      setState(() => _overlayLift = nextLift);
+    if ((overlap - _visualOverlap).abs() > 0.5) {
+      setState(() => _visualOverlap = overlap);
     }
   }
 
   @override
   void dispose() {
-    _clearTimer?.cancel();
+    _focusLossTimer?.cancel();
     widget.focusNode.removeListener(_onFocusChanged);
     _detachListeners();
     super.dispose();
@@ -127,9 +115,17 @@ class _WebKeyboardInsetState extends State<WebKeyboardInset> {
 
   @override
   Widget build(BuildContext context) {
-    // Stable wrapper so focus is preserved when the lift changes.
+    final flutterInset = MediaQuery.viewInsetsOf(context).bottom;
+    // Only the part of the visual-viewport overlap Flutter hasn't already
+    // accounted for. In normal browsers this is 0, so we add nothing on top
+    // of Scaffold.resizeToAvoidBottomInset.
+    final residual = math.max(0.0, _visualOverlap - flutterInset);
+    final lift = (_focusedSnapshot && residual > _openThreshold)
+        ? residual + _gap
+        : 0.0;
+
     return Padding(
-      padding: EdgeInsets.only(bottom: _overlayLift),
+      padding: EdgeInsets.only(bottom: lift),
       child: widget.child,
     );
   }
