@@ -114,20 +114,45 @@ class _OnboardingScrim extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            Colors.black.withValues(alpha: 0.65),
-            Colors.black.withValues(alpha: 0.35),
-            Colors.black.withValues(alpha: 0.12),
-            MiaColors.background.withValues(alpha: 0.82),
-          ],
-          stops: const [0.0, 0.22, 0.5, 1.0],
+    final topTintHeight = MediaQuery.sizeOf(context).height * 0.35;
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          height: topTintHeight,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.black.withValues(alpha: 0.82),
+                  Colors.black.withValues(alpha: 0.58),
+                  Colors.black.withValues(alpha: 0.0),
+                ],
+                stops: const [0.0, 0.62, 1.0],
+              ),
+            ),
+          ),
         ),
-      ),
+        DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Colors.transparent,
+                MiaColors.background.withValues(alpha: 0.82),
+              ],
+              stops: const [0.55, 1.0],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
