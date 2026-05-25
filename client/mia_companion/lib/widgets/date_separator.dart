@@ -13,7 +13,7 @@ class DateSeparator extends StatelessWidget {
   String get _label {
     final local = date.toLocal();
     if (ChatDates.isToday(local)) {
-      return 'today';
+      return 'Today';
     }
     return DateFormat('EEE, d MMM').format(local).toLowerCase();
   }
