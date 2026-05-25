@@ -41,6 +41,7 @@ class NewUserScreen extends StatefulWidget {
 
 class _NewUserScreenState extends State<NewUserScreen> {
   bool _starting = false;
+  bool _videoMuted = true;
   String? _error;
 
   Future<void> _onStartChatting() async {
@@ -82,8 +83,17 @@ class _NewUserScreenState extends State<NewUserScreen> {
       body: Stack(
         fit: StackFit.expand,
         children: [
-          const OnboardingVideoBackground(),
+          OnboardingVideoBackground(isMuted: _videoMuted),
           if (_error == null) const _OnboardingPitch(),
+          if (_error == null)
+            Positioned(
+              right: 20,
+              bottom: MediaQuery.paddingOf(context).bottom + 96,
+              child: _OnboardingMuteButton(
+                muted: _videoMuted,
+                onTap: () => setState(() => _videoMuted = !_videoMuted),
+              ),
+            ),
           if (_error != null)
             SafeArea(
               child: _ErrorState(
@@ -103,6 +113,36 @@ class _NewUserScreenState extends State<NewUserScreen> {
               ),
             )
           : null,
+    );
+  }
+}
+
+class _OnboardingMuteButton extends StatelessWidget {
+  const _OnboardingMuteButton({
+    required this.muted,
+    required this.onTap,
+  });
+
+  final bool muted;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.black.withValues(alpha: 0.38),
+      shape: const CircleBorder(),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Icon(
+            muted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
+            color: Colors.white,
+            size: 24,
+          ),
+        ),
+      ),
     );
   }
 }

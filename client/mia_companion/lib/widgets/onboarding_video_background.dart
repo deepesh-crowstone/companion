@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
@@ -6,9 +8,11 @@ import '../theme/mia_theme.dart';
 
 /// Full-screen looping video background for the onboarding welcome screen.
 class OnboardingVideoBackground extends StatefulWidget {
-  const OnboardingVideoBackground({super.key});
+  const OnboardingVideoBackground({super.key, this.isMuted = true});
 
   static const videoAsset = 'assets/onboarding_video.mp4';
+
+  final bool isMuted;
 
   @override
   State<OnboardingVideoBackground> createState() =>
@@ -23,6 +27,20 @@ class _OnboardingVideoBackgroundState extends State<OnboardingVideoBackground> {
   void initState() {
     super.initState();
     _initVideo();
+  }
+
+  @override
+  void didUpdateWidget(covariant OnboardingVideoBackground oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.isMuted != widget.isMuted) {
+      unawaited(_applyVolume());
+    }
+  }
+
+  Future<void> _applyVolume() async {
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized) return;
+    await controller.setVolume(widget.isMuted ? 0 : 1);
   }
 
   Future<void> _initVideo() async {
@@ -48,7 +66,7 @@ class _OnboardingVideoBackgroundState extends State<OnboardingVideoBackground> {
         await controller.dispose();
         return;
       }
-      await controller.setVolume(1);
+      await controller.setVolume(widget.isMuted ? 0 : 1);
       await controller.play();
       _controller = controller;
       setState(() => _ready = true);
