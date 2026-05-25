@@ -11,7 +11,6 @@ class MessageBubble extends StatelessWidget {
     required this.message,
     this.onPlayAudio,
     this.isPlaying = false,
-    this.showTimestamp = false,
     this.audioDurationSec,
     this.compactTop = false,
     this.receiptStatus,
@@ -20,7 +19,6 @@ class MessageBubble extends StatelessWidget {
   final ChatMessage message;
   final VoidCallback? onPlayAudio;
   final bool isPlaying;
-  final bool showTimestamp;
   final int? audioDurationSec;
   final MessageReceiptStatus? receiptStatus;
 
@@ -43,104 +41,81 @@ class MessageBubble extends StatelessWidget {
       return _buildAudioMessage(context, isUser);
     }
 
-    final time = DateFormat('h:mm a').format(message.createdAt).toLowerCase();
-
     return Padding(
       padding: EdgeInsets.zero,
-      child: Column(
-        crossAxisAlignment: isUser
-            ? CrossAxisAlignment.end
-            : CrossAxisAlignment.start,
-        children: [
-          Align(
-            alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-            child: Container(
-              constraints: BoxConstraints(
-                maxWidth: MediaQuery.sizeOf(context).width * 0.76,
-              ),
-              margin: _bubbleMargin,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: isUser ? MiaColors.userBubble : MiaColors.miaBubble,
-                borderRadius: MiaTheme.bubbleShape(isUser: isUser),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: isUser ? 0.08 : 0.04),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: isUser
-                    ? CrossAxisAlignment.end
-                    : CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    _displayText(message.content, isUser: isUser),
-                    style: MiaTheme.chatBody(isUser: isUser),
-                  ),
-                  if (isUser && receiptStatus != null) ...[
-                    const SizedBox(height: 4),
-                    _ReceiptTicks(status: receiptStatus!),
-                  ],
-                ],
-              ),
-            ),
+      child: Align(
+        alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+        child: Container(
+          constraints: BoxConstraints(
+            maxWidth: MediaQuery.sizeOf(context).width * 0.76,
           ),
-          if (showTimestamp)
-            Padding(
-              padding: EdgeInsets.only(
-                left: isUser ? 0 : 8,
-                right: isUser ? 8 : 0,
-                bottom: 6,
+          margin: _bubbleMargin,
+          padding: const EdgeInsets.fromLTRB(14, 10, 12, 8),
+          decoration: BoxDecoration(
+            color: isUser ? MiaColors.userBubble : MiaColors.miaBubble,
+            borderRadius: MiaTheme.bubbleShape(isUser: isUser),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: isUser ? 0.08 : 0.04),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
               ),
-              child: Text(time, style: MiaTheme.caption()),
-            ),
-        ],
+            ],
+          ),
+          child: _BubbleContent(
+            text: _displayText(message.content, isUser: isUser),
+            time: _formatTime(message.createdAt),
+            isUser: isUser,
+            receiptStatus: isUser ? receiptStatus : null,
+          ),
+        ),
       ),
     );
   }
 
+  static String _formatTime(DateTime dt) {
+    return DateFormat('h:mm a').format(dt).toLowerCase();
+  }
+
   Widget _buildAudioMessage(BuildContext context, bool isUser) {
-    return Padding(
-      padding: EdgeInsets.zero,
-      child: Column(
-        crossAxisAlignment: isUser
-            ? CrossAxisAlignment.end
-            : CrossAxisAlignment.start,
-        children: [
-          Align(
-            alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-            child: Container(
-              margin: _bubbleMargin,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                color: isUser ? MiaColors.userBubble : MiaColors.miaBubble,
-                borderRadius: MiaTheme.bubbleShape(isUser: isUser),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: isUser ? 0.08 : 0.04),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: VoiceNoteBubble(
-                isUser: isUser,
-                isPlaying: isPlaying,
-                seed: message.id,
-                audioUrl: message.audioUrl,
-                onPlay: onPlayAudio,
-                fallbackDurationSec:
-                    audioDurationSec ??
-                    message.audioDurationSec ??
-                    _estimatedAssistantAudioDurationSec(message),
-              ),
+    return Align(
+      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        margin: _bubbleMargin,
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+        decoration: BoxDecoration(
+          color: isUser ? MiaColors.userBubble : MiaColors.miaBubble,
+          borderRadius: MiaTheme.bubbleShape(isUser: isUser),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: isUser ? 0.08 : 0.04),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
             ),
-          ),
-        ],
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            VoiceNoteBubble(
+              isUser: isUser,
+              isPlaying: isPlaying,
+              seed: message.id,
+              audioUrl: message.audioUrl,
+              onPlay: onPlayAudio,
+              fallbackDurationSec:
+                  audioDurationSec ??
+                  message.audioDurationSec ??
+                  _estimatedAssistantAudioDurationSec(message),
+            ),
+            const SizedBox(height: 2),
+            _MetaRow(
+              time: _formatTime(message.createdAt),
+              receiptStatus: isUser ? receiptStatus : null,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -158,6 +133,65 @@ class MessageBubble extends StatelessWidget {
   }
 }
 
+class _BubbleContent extends StatelessWidget {
+  const _BubbleContent({
+    required this.text,
+    required this.time,
+    required this.isUser,
+    required this.receiptStatus,
+  });
+
+  final String text;
+  final String time;
+  final bool isUser;
+  final MessageReceiptStatus? receiptStatus;
+
+  @override
+  Widget build(BuildContext context) {
+    final meta = _MetaRow(time: time, receiptStatus: receiptStatus);
+
+    return IntrinsicWidth(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(text, style: MiaTheme.chatBody(isUser: isUser)),
+          const SizedBox(height: 2),
+          Align(alignment: Alignment.centerRight, child: meta),
+        ],
+      ),
+    );
+  }
+}
+
+class _MetaRow extends StatelessWidget {
+  const _MetaRow({required this.time, required this.receiptStatus});
+
+  final String time;
+  final MessageReceiptStatus? receiptStatus;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Text(
+          time,
+          style: MiaTheme.caption().copyWith(
+            fontSize: 10.5,
+            color: MiaColors.textMuted,
+          ),
+        ),
+        if (receiptStatus != null) ...[
+          const SizedBox(width: 4),
+          _ReceiptTicks(status: receiptStatus!),
+        ],
+      ],
+    );
+  }
+}
+
 class _ReceiptTicks extends StatelessWidget {
   const _ReceiptTicks({required this.status});
 
@@ -168,11 +202,11 @@ class _ReceiptTicks extends StatelessWidget {
     final isRead = status == MessageReceiptStatus.read;
     final color = isRead
         ? MiaColors.online
-        : Colors.white.withValues(alpha: 0.68);
+        : MiaColors.textMuted.withValues(alpha: 0.7);
     final icon = status == MessageReceiptStatus.sent
         ? Icons.done
         : Icons.done_all;
 
-    return Icon(icon, size: 15, color: color);
+    return Icon(icon, size: 14, color: color);
   }
 }

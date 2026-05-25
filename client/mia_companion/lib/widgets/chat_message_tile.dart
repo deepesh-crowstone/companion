@@ -25,18 +25,20 @@ class ChatMessageTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (showDateHeader) DateSeparator(date: message.createdAt),
-        MessageBubble(
-          message: message,
-          compactTop: compactTop,
-          isPlaying: isPlaying,
-          onPlayAudio: onPlayAudio,
-          receiptStatus: receiptStatus,
-        ),
-      ],
+    return RepaintBoundary(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (showDateHeader) DateSeparator(date: message.createdAt),
+          MessageBubble(
+            message: message,
+            compactTop: compactTop,
+            isPlaying: isPlaying,
+            onPlayAudio: onPlayAudio,
+            receiptStatus: receiptStatus,
+          ),
+        ],
+      ),
     );
   }
 }

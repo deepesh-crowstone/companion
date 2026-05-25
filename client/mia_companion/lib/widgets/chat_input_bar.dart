@@ -14,6 +14,7 @@ class ChatInputBar extends StatefulWidget {
     required this.recording,
     required this.recordingLocked,
     required this.recordingDuration,
+    required this.recordingLevels,
     required this.slideCancelActive,
     required this.slideOffset,
     required this.sending,
@@ -31,6 +32,7 @@ class ChatInputBar extends StatefulWidget {
   final bool recording;
   final bool recordingLocked;
   final Duration recordingDuration;
+  final List<double> recordingLevels;
   final bool slideCancelActive;
   final double slideOffset;
   final bool sending;
@@ -102,6 +104,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
                 child: widget.recording
                     ? VoiceRecordingBar(
                         duration: widget.recordingDuration,
+                        levels: widget.recordingLevels,
                         locked: widget.recordingLocked,
                         slideCancelActive: widget.slideCancelActive,
                         slideOffset: widget.slideOffset,

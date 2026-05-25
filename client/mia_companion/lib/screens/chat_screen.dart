@@ -14,8 +14,9 @@ import '../services/api_service.dart';
 import '../services/session_expired.dart';
 import '../services/voice_recording_platform.dart';
 import '../theme/mia_theme.dart';
-import '../widgets/mia_background.dart';
+import '../widgets/chat_pattern_background.dart';
 import '../utils/web_keyboard_inset.dart';
+import '../utils/voice_waveform_levels.dart';
 import '../widgets/chat_input_bar.dart';
 import '../widgets/chat_message_tile.dart';
 import '../widgets/empty_chat.dart';
@@ -60,6 +61,8 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _slideCancelActive = false;
   double _voiceSlideOffset = 0;
   Timer? _recordDurationTimer;
+  StreamSubscription<Amplitude>? _amplitudeSub;
+  List<double> _recordingLevels = [];
   int? _playingId;
   StreamSubscription<PlayerState>? _playerSub;
   String _statusText = 'online now';
@@ -86,6 +89,7 @@ class _ChatScreenState extends State<ChatScreen> {
   void dispose() {
     _replyTimer?.cancel();
     _recordDurationTimer?.cancel();
+    _stopAmplitudeListener();
     _input.removeListener(_onInputChanged);
     _scroll.removeListener(_onScroll);
     _inputFocus.dispose();
@@ -504,6 +508,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
     if (!mounted) return;
 
+    _startAmplitudeListener();
     _recordDurationTimer?.cancel();
     _recordingDuration = Duration.zero;
     _recordDurationTimer = Timer.periodic(const Duration(milliseconds: 200), (
@@ -533,6 +538,29 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
+  void _startAmplitudeListener() {
+    _amplitudeSub?.cancel();
+    _recordingLevels = [];
+    _amplitudeSub = _recorder
+        .onAmplitudeChanged(const Duration(milliseconds: 120))
+        .listen((amp) {
+      if (!mounted || !_recording) return;
+      setState(() {
+        _recordingLevels.add(normalizeRecordingAmplitude(amp.current));
+        const maxSamples = 72;
+        if (_recordingLevels.length > maxSamples) {
+          _recordingLevels.removeAt(0);
+        }
+      });
+    });
+  }
+
+  void _stopAmplitudeListener() {
+    _amplitudeSub?.cancel();
+    _amplitudeSub = null;
+    _recordingLevels = [];
+  }
+
   void _onVoiceSlideUpdate(double offset, bool cancelActive) {
     if (!mounted) return;
     setState(() {
@@ -550,6 +578,7 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _cancelVoiceRecording() async {
     _recordDurationTimer?.cancel();
     _recordDurationTimer = null;
+    _stopAmplitudeListener();
 
     String? path;
     try {
@@ -576,6 +605,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
     _recordDurationTimer?.cancel();
     _recordDurationTimer = null;
+    _stopAmplitudeListener();
 
     final duration = _recordingDuration;
     final path = await _recorder.stop();
@@ -812,7 +842,8 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       resizeToAvoidBottomInset: true,
-      body: MiaBackground(
+      backgroundColor: MiaColors.chatBackground,
+      body: ChatPatternBackground(
         child: Column(
           children: [
             MiaChatHeader(
@@ -876,6 +907,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 recording: _recording,
                 recordingLocked: _recordingLocked,
                 recordingDuration: _recordingDuration,
+                recordingLevels: _recordingLevels,
                 slideCancelActive: _slideCancelActive,
                 slideOffset: _voiceSlideOffset,
                 sending: _showMiaActivity,

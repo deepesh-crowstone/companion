@@ -3,25 +3,25 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class MiaColors {
-  static const background = Color(0xFFFFF0F3);
-  /// Chat thread — slightly lighter than [background].
-  static const chatBackground = Color(0xFFFFF6F8);
-  static const backgroundDeep = Color(0xFFFCE8EC);
+  static const background = Color(0xFFF3EEF9);
+  /// Chat thread — whitish base for the message area.
+  static const chatBackground = Color(0xFFFAFAFC);
+  static const backgroundDeep = Color(0xFFE8E0F2);
   static const surface = Color(0xFFFFFFFF);
-  static const miaBubble = Color(0xFFF9DDE3);
-  static const userBubble = Color(0xFF4A3F42);
-  static const textPrimary = Color(0xFF2D2323);
-  static const miaText = Color(0xFF151012);
-  static const textMuted = Color(0xFF9A8589);
-  static const accent = Color(0xFFE8899A);
-  static const accentLight = Color(0xFFF5B8C4);
-  static const accentDeep = Color(0xFFB04A5A);
-  static const statusPink = Color(0xFFD48494);
+  static const miaBubble = Color(0xFFE2D6F0);
+  static const userBubble = Color(0xFFE8E6EB);
+  static const textPrimary = Color(0xFF2A2430);
+  static const miaText = Color(0xFF151018);
+  static const textMuted = Color(0xFF8E8699);
+  static const accent = Color(0xFF9B72D4);
+  static const accentLight = Color(0xFFC9B0E8);
+  static const accentDeep = Color(0xFF6E48AB);
+  static const statusPink = Color(0xFF9170C4);
   static const online = Color(0xFF4CD964);
-  static const errorBg = Color(0xFF3D2A2E);
-  static const callGradientTop = Color(0xFFB85A6B);
-  static const callGradientMid = Color(0xFF5A2430);
-  static const callGradientBottom = Color(0xFF2A0F14);
+  static const errorBg = Color(0xFF352A42);
+  static const callGradientTop = Color(0xFF7A52B8);
+  static const callGradientMid = Color(0xFF452A62);
+  static const callGradientBottom = Color(0xFF1E1228);
 }
 
 class MiaTheme {
@@ -106,7 +106,7 @@ class MiaTheme {
   static TextStyle chatBody({required bool isUser}) => GoogleFonts.inter(
         fontSize: 15,
         height: 1.4,
-        color: isUser ? Colors.white : MiaColors.miaText,
+        color: MiaColors.miaText,
       );
 
   static TextStyle caption() => GoogleFonts.inter(

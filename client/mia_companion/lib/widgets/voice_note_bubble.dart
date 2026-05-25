@@ -41,7 +41,7 @@ class _VoiceNoteBubbleState extends State<VoiceNoteBubble>
     _barHeights = _generateWaveform(widget.seed);
     _playAnim = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 900),
+      duration: const Duration(milliseconds: 1800),
     );
     _loadDuration();
   }
@@ -107,8 +107,8 @@ class _VoiceNoteBubbleState extends State<VoiceNoteBubble>
     return '${m.toString().padLeft(2, '0')}:${r.toString().padLeft(2, '0')}';
   }
 
-  Color get _fg => widget.isUser ? Colors.white : MiaColors.accentDeep;
-  Color get _fgMuted => widget.isUser ? Colors.white70 : MiaColors.textMuted;
+  Color get _fg => widget.isUser ? MiaColors.miaText : MiaColors.accentDeep;
+  Color get _fgMuted => MiaColors.textMuted;
 
   @override
   Widget build(BuildContext context) {

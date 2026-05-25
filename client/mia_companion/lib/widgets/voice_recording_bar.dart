@@ -4,12 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../theme/mia_theme.dart';
+import '../utils/voice_waveform_levels.dart';
 
 /// Voice recording UI — locked (tap) or hold (slide to cancel).
 class VoiceRecordingBar extends StatelessWidget {
   const VoiceRecordingBar({
     super.key,
     required this.duration,
+    required this.levels,
     required this.locked,
     required this.slideCancelActive,
     required this.slideOffset,
@@ -17,6 +19,7 @@ class VoiceRecordingBar extends StatelessWidget {
   });
 
   final Duration duration;
+  final List<double> levels;
   final bool locked;
   final bool slideCancelActive;
   final double slideOffset;
@@ -34,33 +37,37 @@ class VoiceRecordingBar extends StatelessWidget {
     if (locked) {
       return _LockedRecordingBar(
         durationLabel: _timerLabel,
+        levels: levels,
         onCancelTap: onCancelTap,
       );
     }
 
     return _HoldRecordingBar(
       durationLabel: _timerLabel,
+      levels: levels,
       slideCancelActive: slideCancelActive,
       slideOffset: slideOffset,
     );
   }
 }
 
-/// Tap-to-lock: trash, timer, waveform.
+/// Tap-to-lock: trash, waveform, timer.
 class _LockedRecordingBar extends StatelessWidget {
   const _LockedRecordingBar({
     required this.durationLabel,
+    required this.levels,
     required this.onCancelTap,
   });
 
   final String durationLabel;
+  final List<double> levels;
   final VoidCallback? onCancelTap;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       height: 48,
-      padding: const EdgeInsets.symmetric(horizontal: 6),
+      padding: const EdgeInsets.only(left: 4, right: 10),
       child: Row(
         children: [
           Material(
@@ -79,34 +86,44 @@ class _LockedRecordingBar extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 4),
-          const _RecordingDot(),
-          const SizedBox(width: 8),
-          Text(
-            durationLabel,
-            style: GoogleFonts.inter(
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-              color: MiaColors.textPrimary,
-              fontFeatures: const [FontFeature.tabularFigures()],
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: _LiveWaveform(levels: levels),
             ),
           ),
-          const Spacer(),
-          const _LiveWaveform(),
+          const _RecordingDot(),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 46,
+            child: Text(
+              durationLabel,
+              textAlign: TextAlign.right,
+              style: GoogleFonts.inter(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: MiaColors.textPrimary,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
 }
 
-/// Push-to-talk: prominent slide-to-cancel, timer on the right.
+/// Push-to-talk: slide-to-cancel, waveform, timer.
 class _HoldRecordingBar extends StatelessWidget {
   const _HoldRecordingBar({
     required this.durationLabel,
+    required this.levels,
     required this.slideCancelActive,
     required this.slideOffset,
   });
 
   final String durationLabel;
+  final List<double> levels;
   final bool slideCancelActive;
   final double slideOffset;
 
@@ -116,11 +133,11 @@ class _HoldRecordingBar extends StatelessWidget {
 
     return Container(
       height: 52,
-      alignment: Alignment.center,
-      padding: const EdgeInsets.symmetric(horizontal: 4),
+      padding: const EdgeInsets.fromLTRB(6, 0, 10, 0),
       child: Row(
         children: [
-          Expanded(
+          Flexible(
+            flex: 5,
             child: Transform.translate(
               offset: Offset(slideShift, 0),
               child: _SlideToCancelHint(
@@ -130,18 +147,26 @@ class _HoldRecordingBar extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
+          Expanded(
+            flex: 4,
+            child: _LiveWaveform(compact: true, levels: levels),
+          ),
+          const SizedBox(width: 8),
           const _RecordingDot(),
           const SizedBox(width: 8),
-          Text(
-            durationLabel,
-            style: GoogleFonts.inter(
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-              color: MiaColors.textPrimary,
-              fontFeatures: const [FontFeature.tabularFigures()],
+          SizedBox(
+            width: 46,
+            child: Text(
+              durationLabel,
+              textAlign: TextAlign.right,
+              style: GoogleFonts.inter(
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                color: MiaColors.textPrimary,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
             ),
           ),
-          const SizedBox(width: 10),
         ],
       ),
     );
@@ -250,52 +275,50 @@ class _RecordingDotState extends State<_RecordingDot>
   }
 }
 
-class _LiveWaveform extends StatefulWidget {
-  const _LiveWaveform();
+class _LiveWaveform extends StatelessWidget {
+  const _LiveWaveform({
+    this.compact = false,
+    this.levels = const [],
+  });
 
-  @override
-  State<_LiveWaveform> createState() => _LiveWaveformState();
-}
-
-class _LiveWaveformState extends State<_LiveWaveform>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _anim;
-
-  @override
-  void initState() {
-    super.initState();
-    _anim = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 600),
-    )..repeat();
-  }
-
-  @override
-  void dispose() {
-    _anim.dispose();
-    super.dispose();
-  }
+  final bool compact;
+  final List<double> levels;
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _anim,
-      builder: (context, _) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        if (width <= 0) return const SizedBox.shrink();
+
+        const barWidth = 3.0;
+        const barGap = 2.5;
+        final minBars = compact ? 10 : 16;
+        final barCount = math.max(
+          minBars,
+          ((width + barGap) / (barWidth + barGap)).floor(),
+        );
+        final maxHeight = compact ? 20.0 : 24.0;
+        final minHeight = compact ? 5.0 : 6.0;
+        final amplitude = compact ? 10.0 : 14.0;
+        final normalizedLevels = resampleWaveformLevels(levels, barCount);
+
         return SizedBox(
-          width: 36,
-          height: 22,
+          height: maxHeight,
+          width: width,
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.end,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             crossAxisAlignment: CrossAxisAlignment.center,
-            children: List.generate(5, (i) {
-              final phase = (_anim.value * 2 * math.pi) + (i * 0.9);
-              final h = 6 + math.sin(phase).abs() * 12;
-              return Container(
-                width: 3,
+            children: List.generate(barCount, (i) {
+              final level = normalizedLevels[i];
+              final h = minHeight + level * amplitude;
+              return AnimatedContainer(
+                duration: const Duration(milliseconds: 120),
+                curve: Curves.easeOut,
+                width: barWidth,
                 height: h,
-                margin: const EdgeInsets.only(left: 2),
                 decoration: BoxDecoration(
-                  color: MiaColors.accentDeep.withValues(alpha: 0.75),
+                  color: MiaColors.accentDeep.withValues(alpha: 0.72),
                   borderRadius: BorderRadius.circular(2),
                 ),
               );
