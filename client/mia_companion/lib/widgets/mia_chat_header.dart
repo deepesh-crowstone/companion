@@ -11,12 +11,14 @@ class MiaChatHeader extends StatelessWidget implements PreferredSizeWidget {
     super.key,
     required this.onCall,
     required this.onMenu,
+    required this.onMood,
     required this.onProfile,
     this.statusText = 'online now',
   });
 
   final VoidCallback onCall;
   final VoidCallback onMenu;
+  final VoidCallback onMood;
   final VoidCallback onProfile;
   final String statusText;
 
@@ -63,6 +65,13 @@ class MiaChatHeader extends StatelessWidget implements PreferredSizeWidget {
                       _StatusLine(text: statusText),
                     ],
                   ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.mood_outlined, size: 22),
+                  color: MiaColors.textPrimary,
+                  tooltip: 'Zara mood',
+                  onPressed: onMood,
+                  visualDensity: VisualDensity.compact,
                 ),
                 IconButton(
                   icon: const Icon(Icons.phone_outlined, size: 22),

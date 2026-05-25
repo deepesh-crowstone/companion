@@ -13,6 +13,7 @@ import '../utils/chat_dates.dart';
 import '../utils/human_presence.dart';
 import '../services/api_service.dart';
 import '../services/disappearing_messages_controller.dart';
+import '../services/mood_controller.dart';
 import '../services/session_expired.dart';
 import '../services/voice_recording_platform.dart';
 import '../theme/mia_theme.dart';
@@ -28,6 +29,7 @@ import '../widgets/intimacy_unlock_sheet.dart';
 import '../theme/theme_controller.dart';
 import '../widgets/scroll_to_bottom_button.dart';
 import '../widgets/mia_bottom_sheet.dart';
+import '../widgets/mood_options_sheet.dart';
 import '../widgets/theme_options_sheet.dart';
 import '../models/intimacy.dart';
 import 'mia_profile_screen.dart';
@@ -290,7 +292,8 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Widget _buildListItem(BuildContext context, int index) {
     if (_showMiaActivity && index == 0) {
-      final compact = _visibleMessages.isNotEmpty &&
+      final compact =
+          _visibleMessages.isNotEmpty &&
           _visibleMessages.last.role == 'assistant';
       final kind = _miaActivity == _MiaActivity.recording
           ? MiaPresenceKind.recording
@@ -391,7 +394,10 @@ class _ChatScreenState extends State<ChatScreen> {
     final generation = ++_replyGeneration;
 
     try {
-      final replyFuture = ApiService.instance.sendTextBatch(texts);
+      final replyFuture = ApiService.instance.sendTextBatch(
+        texts,
+        mood: MoodController.instance.mood,
+      );
       await _ensureReceiptsRead(optimisticIds);
       if (!mounted || generation != _replyGeneration) {
         unawaited(replyFuture.then<void>((_) {}, onError: (_) {}));
@@ -575,15 +581,15 @@ class _ChatScreenState extends State<ChatScreen> {
     _amplitudeSub = _recorder
         .onAmplitudeChanged(const Duration(milliseconds: 120))
         .listen((amp) {
-      if (!mounted || !_recording) return;
-      setState(() {
-        _recordingLevels.add(normalizeRecordingAmplitude(amp.current));
-        const maxSamples = 72;
-        if (_recordingLevels.length > maxSamples) {
-          _recordingLevels.removeAt(0);
-        }
-      });
-    });
+          if (!mounted || !_recording) return;
+          setState(() {
+            _recordingLevels.add(normalizeRecordingAmplitude(amp.current));
+            const maxSamples = 72;
+            if (_recordingLevels.length > maxSamples) {
+              _recordingLevels.removeAt(0);
+            }
+          });
+        });
   }
 
   void _stopAmplitudeListener() {
@@ -713,7 +719,10 @@ class _ChatScreenState extends State<ChatScreen> {
 
     try {
       final generation = ++_replyGeneration;
-      final result = await ApiService.instance.sendVoice(upload);
+      final result = await ApiService.instance.sendVoice(
+        upload,
+        mood: MoodController.instance.mood,
+      );
       if (!mounted || generation != _replyGeneration) {
         await discardVoiceRecordingOutput(path);
         return;
@@ -897,18 +906,14 @@ class _ChatScreenState extends State<ChatScreen> {
                   ),
                   onTap: () => showThemeOptionsSheet(ctx),
                 ),
-                Divider(height: 1, color: MiaColors.miaBubble.withValues(alpha: 0.6)),
-                SwitchListTile(
-                  secondary: Icon(
+                ListTile(
+                  leading: Icon(
                     Icons.timer_outlined,
                     color: MiaColors.accentDeep,
                   ),
                   title: Text(
                     'Disappearing messages',
-                    style: GoogleFonts.inter(
-                      fontWeight: FontWeight.w500,
-                      color: MiaColors.textPrimary,
-                    ),
+                    style: GoogleFonts.inter(color: MiaColors.textPrimary),
                   ),
                   subtitle: Text(
                     'Messages will disappear after 24 Hrs',
@@ -917,9 +922,14 @@ class _ChatScreenState extends State<ChatScreen> {
                       color: MiaColors.textMuted,
                     ),
                   ),
-                  value: disappearing,
-                  activeThumbColor: MiaColors.accentDeep,
-                  onChanged: DisappearingMessagesController.instance.setEnabled,
+                  trailing: Switch(
+                    value: disappearing,
+                    activeThumbColor: MiaColors.accentDeep,
+                    onChanged:
+                        DisappearingMessagesController.instance.setEnabled,
+                  ),
+                  onTap: () => DisappearingMessagesController.instance
+                      .setEnabled(!disappearing),
                 ),
                 const SizedBox(height: 8),
               ],
@@ -946,11 +956,12 @@ class _ChatScreenState extends State<ChatScreen> {
             MiaChatHeader(
               statusText: _statusText,
               onProfile: () {
-                Navigator.of(
-                  context,
-                ).push(MaterialPageRoute(builder: (_) => const MiaProfileScreen()));
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const MiaProfileScreen()),
+                );
               },
               onCall: _onCallPressed,
+              onMood: () => showMoodOptionsSheet(context),
               onMenu: _openMenuSheet,
             ),
             Expanded(

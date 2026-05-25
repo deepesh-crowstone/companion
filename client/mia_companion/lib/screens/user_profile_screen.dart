@@ -69,7 +69,6 @@ class UserProfileScreen extends StatelessWidget {
                       decoration: BoxDecoration(
                         color: MiaColors.surface,
                         borderRadius: BorderRadius.circular(22),
-                        border: Border.all(color: MiaColors.miaBubble),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -178,13 +177,8 @@ class _ProfileMenuTile extends StatelessWidget {
         child: InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(18),
-          child: Container(
-            width: double.infinity,
+          child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: MiaColors.miaBubble),
-            ),
             child: Row(
               children: [
                 Icon(icon, color: MiaColors.accentDeep, size: 22),

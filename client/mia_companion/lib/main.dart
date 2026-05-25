@@ -5,6 +5,7 @@ import 'screens/chat_screen.dart';
 import 'screens/new_user_screen.dart';
 import 'services/api_service.dart';
 import 'services/disappearing_messages_controller.dart';
+import 'services/mood_controller.dart';
 import 'services/session_reset.dart';
 import 'theme/mia_theme.dart';
 import 'theme/theme_controller.dart';
@@ -13,6 +14,7 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await ThemeController.instance.load();
   await DisappearingMessagesController.instance.load();
+  await MoodController.instance.load();
   runApp(const MiaApp());
 }
 
@@ -145,9 +147,7 @@ class _BootstrapState extends State<_Bootstrap> {
   Widget build(BuildContext context) {
     if (!_ready) {
       return Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(color: MiaColors.accent),
-        ),
+        body: Center(child: CircularProgressIndicator(color: MiaColors.accent)),
       );
     }
 

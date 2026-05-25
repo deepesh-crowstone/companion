@@ -13,6 +13,7 @@ import {
 import { buildClientSecretRequest } from "./realtime-session.js";
 import type { DbMessage } from "./db.js";
 import { intimacyPromptForLevel, type IntimacyLevel } from "./intimacy.js";
+import { moodPromptForMood, type ZaraMood } from "./mood.js";
 
 const XAI_BASE = "https://api.x.ai/v1";
 const ELEVENLABS_BASE = "https://api.elevenlabs.io/v1";
@@ -445,6 +446,7 @@ export async function synthesizeSpeech(text: string): Promise<Buffer> {
 export type ChatWithMiaOptions = {
   /** Voice notes: model may embed TTS delivery tags in the reply. */
   expressiveTts?: boolean;
+  mood?: ZaraMood;
 };
 
 function ttsProvider(): string {
@@ -524,11 +526,12 @@ export async function chatWithMia(
     throw new Error("Chat history must end with a user message");
   }
 
+  const moodLine = moodPromptForMood(options?.mood ?? "friendly");
   const systemPrompt = `${
     options?.expressiveTts
       ? `${MIA_VOICE_SYSTEM_PROMPT}\n${voiceTtsInstructions()}`
       : MIA_VOICE_SYSTEM_PROMPT
-  }\n\n${currentIndiaTimeContext()}`;
+  }\n\n${moodLine}\n\n${currentIndiaTimeContext()}`;
 
   const messages: { role: string; content: string }[] = [
     { role: "system", content: systemPrompt },
@@ -623,16 +626,19 @@ Rules:
 
 export async function chatWithMiaText(
   history: DbMessage[],
-  options?: { intimacyLevel?: IntimacyLevel },
+  options?: { intimacyLevel?: IntimacyLevel; mood?: ZaraMood },
 ): Promise<string[]> {
   if (history.length === 0 || history[history.length - 1]?.role !== "user") {
     throw new Error("Chat history must end with a user message");
   }
 
   const intimacyLevel = options?.intimacyLevel ?? 1;
+  const mood = options?.mood ?? "friendly";
   const systemPrompt = `${MIA_TEXT_SYSTEM_PROMPT}
 
 ${intimacyPromptForLevel(intimacyLevel)}
+
+${moodPromptForMood(mood)}
 
 ${currentIndiaTimeContext()}
 
@@ -684,7 +690,10 @@ output format:
   return parseTextReplySegments(reply);
 }
 
-export async function chatWithMiaTextAsVoice(history: DbMessage[]): Promise<string> {
-  const textSegments = await chatWithMiaText(history);
+export async function chatWithMiaTextAsVoice(
+  history: DbMessage[],
+  options?: { mood?: ZaraMood },
+): Promise<string> {
+  const textSegments = await chatWithMiaText(history, { mood: options?.mood });
   return addVoiceDeliveryToTextReply(textSegments.join(" "));
 }

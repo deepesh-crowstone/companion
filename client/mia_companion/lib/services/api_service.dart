@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../config.dart';
 import '../models/chat_message.dart';
 import '../models/intimacy.dart';
+import '../models/zara_mood.dart';
 import '../models/voice_upload.dart';
 import 'session_expired.dart';
 import 'http_client_factory.dart';
@@ -225,8 +226,8 @@ class ApiService {
   Future<
     ({ChatMessage user, ChatMessage assistant, List<ChatMessage> assistants})
   >
-  sendText(String text) async {
-    final batch = await sendTextBatch([text]);
+  sendText(String text, {ZaraMood? mood}) async {
+    final batch = await sendTextBatch([text], mood: mood);
     return (
       user: batch.users.last,
       assistant: batch.assistant,
@@ -242,11 +243,14 @@ class ApiService {
       IntimacyNudge? intimacyNudge,
     })
   >
-  sendTextBatch(List<String> texts) async {
+  sendTextBatch(List<String> texts, {ZaraMood? mood}) async {
     final res = await _post(
       Uri.parse('$resolvedApiBaseUrl/messages/text/batch'),
       headers: _authHeaders,
-      body: jsonEncode({'texts': texts}),
+      body: jsonEncode({
+        'texts': texts,
+        if (mood != null) 'mood': mood.serverValue,
+      }),
     );
     _guardAuth(res);
     if (res.statusCode >= 400) {
@@ -321,15 +325,18 @@ class ApiService {
     );
   }
 
-  Future<({ChatMessage user, ChatMessage assistant, IntimacyNudge? intimacyNudge})>
-  sendVoice(
-    VoiceUpload audio,
-  ) async {
+  Future<
+    ({ChatMessage user, ChatMessage assistant, IntimacyNudge? intimacyNudge})
+  >
+  sendVoice(VoiceUpload audio, {ZaraMood? mood}) async {
     final request = http.MultipartRequest(
       'POST',
       Uri.parse('$resolvedApiBaseUrl/messages/voice'),
     );
     request.headers['Authorization'] = 'Bearer $_token';
+    if (mood != null) {
+      request.fields['mood'] = mood.serverValue;
+    }
     final contentType = MediaType.parse(audio.mimeType);
     final bytes = audio.bytes;
     if (bytes != null) {

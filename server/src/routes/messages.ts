@@ -26,6 +26,7 @@ import {
   getUserIntimacyLevel,
   type IntimacyNudgePayload,
 } from "../intimacy.js";
+import { parseMood, type ZaraMood } from "../mood.js";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -132,6 +133,7 @@ async function buildTextReply(
   userId: number,
   history: DbMessage[],
   userMsgs: DbMessage[],
+  mood: ZaraMood,
 ): Promise<{
   assistantMsgs: DbMessage[];
   intimacyNudge: IntimacyNudgePayload | null;
@@ -149,6 +151,7 @@ async function buildTextReply(
 
   const replySegments = await chatWithMiaText([...history, ...userMsgs], {
     intimacyLevel: classified.level,
+    mood,
   });
   const assistantMsgs = await insertAssistantTextMessages(userId, replySegments);
   return { assistantMsgs, intimacyNudge: null };
@@ -175,7 +178,8 @@ messagesRouter.get("/", async (req, res) => {
 
 messagesRouter.post("/text", async (req, res) => {
   const auth = getAuth(req);
-  const { text } = req.body as { text?: string };
+  const { text, mood: moodRaw } = req.body as { text?: string; mood?: string };
+  const mood = parseMood(moodRaw);
   const trimmed = text?.trim();
 
   if (!trimmed) {
@@ -191,6 +195,7 @@ messagesRouter.post("/text", async (req, res) => {
       auth.userId,
       history,
       [userMsg],
+      mood,
     );
     const assistantMessages = await Promise.all(
       assistantMsgs.map((m) => toPublicMessage(m)),
@@ -224,7 +229,11 @@ messagesRouter.post("/text", async (req, res) => {
 
 messagesRouter.post("/text/batch", async (req, res) => {
   const auth = getAuth(req);
-  const { texts } = req.body as { texts?: string[] };
+  const { texts, mood: moodRaw } = req.body as {
+    texts?: string[];
+    mood?: string;
+  };
+  const mood = parseMood(moodRaw);
   const trimmed = (texts ?? [])
     .map((t) => (typeof t === "string" ? t.trim() : ""))
     .filter((t) => t.length > 0);
@@ -245,6 +254,7 @@ messagesRouter.post("/text/batch", async (req, res) => {
       auth.userId,
       history,
       userMsgs,
+      mood,
     );
     const assistantMessages = await Promise.all(
       assistantMsgs.map((m) => toPublicMessage(m)),
@@ -305,6 +315,7 @@ messagesRouter.post("/voice", upload.single("audio"), async (req, res) => {
   const { writeFileSync, unlinkSync } = await import("fs");
   const tmpPath = path.join(os.tmpdir(), `mia-${localName}`);
   writeFileSync(tmpPath, file.buffer);
+  const mood = parseMood(req.body?.mood);
 
   try {
     const history = await listMessages(auth.userId);
@@ -336,8 +347,8 @@ messagesRouter.post("/voice", upload.single("audio"), async (req, res) => {
       const voiceHistory = [...history, userMsg];
       replyForTts =
         voiceReplyPipeline() === "text_tagged"
-          ? await chatWithMiaTextAsVoice(voiceHistory)
-          : await chatWithMia(voiceHistory, { expressiveTts: true });
+          ? await chatWithMiaTextAsVoice(voiceHistory, { mood })
+          : await chatWithMia(voiceHistory, { expressiveTts: true, mood });
     }
 
     const displayReply = stripSpeechTagsForDisplay(replyForTts);
