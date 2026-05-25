@@ -31,7 +31,7 @@ Future<void> showMoodOptionsSheet(BuildContext context) {
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    "Select Zara's Mood",
+                    "Select Zara's Personality",
                     style: GoogleFonts.inter(
                       fontSize: 18,
                       fontWeight: FontWeight.w700,

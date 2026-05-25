@@ -26,7 +26,7 @@ class MoodChangeBanner extends StatelessWidget {
               Icon(_iconFor(mood), size: 16, color: MiaColors.accentDeep),
               const SizedBox(width: 8),
               Text(
-                "You changed Zara's mood to ${mood.label}",
+                "You changed Zara's personality to ${mood.label}",
                 style: GoogleFonts.inter(
                   fontSize: 12,
                   fontWeight: FontWeight.w500,
