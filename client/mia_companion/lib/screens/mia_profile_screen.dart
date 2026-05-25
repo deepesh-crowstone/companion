@@ -69,44 +69,45 @@ class MiaProfileScreen extends StatelessWidget {
                     const SizedBox(height: 24),
                     _SectionCard(
                       title: 'about me',
-                      child: Text(
-                        MiaProfile.about,
-                        style: GoogleFonts.inter(
-                          fontSize: 15,
-                          height: 1.5,
-                          color: MiaColors.miaText,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    _SectionCard(
-                      title: 'hobbies',
-                      child: Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: MiaProfile.hobbies.map((h) {
-                          return Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 8,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            MiaProfile.about,
+                            style: GoogleFonts.inter(
+                              fontSize: 15,
+                              height: 1.5,
+                              color: MiaColors.miaText,
                             ),
-                            decoration: BoxDecoration(
-                              color: MiaColors.miaBubble.withValues(alpha: 0.65),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                color: MiaColors.accent.withValues(alpha: 0.2),
-                              ),
-                            ),
-                            child: Text(
-                              h,
-                              style: GoogleFonts.inter(
-                                fontSize: 13,
-                                color: MiaColors.miaText,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          );
-                        }).toList(),
+                          ),
+                          const SizedBox(height: 16),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: MiaProfile.hobbies.map((h) {
+                              return Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 8,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: MiaColors.miaBubble.withValues(
+                                    alpha: 0.65,
+                                  ),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Text(
+                                  h,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 13,
+                                    color: MiaColors.miaText,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ],
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -205,7 +206,6 @@ class _SectionCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: MiaColors.surface,
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: MiaColors.miaBubble),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.04),
