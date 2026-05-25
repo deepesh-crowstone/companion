@@ -129,6 +129,29 @@ function combinedAssistantFallback(messages: PublicMessage[]): PublicMessage {
   };
 }
 
+function normalizeGreeting(text: string): string {
+  return text
+    .trim()
+    .toLowerCase()
+    .replace(/[!?.…,]+$/g, "")
+    .replace(/\s+/g, " ");
+}
+
+const SIMPLE_OPENING_GREETING =
+  /^(hi|hello|hey|hii+|heyy+|yo|sup)( zara)?$/;
+
+function isFirstMessageSimpleGreeting(
+  history: DbMessage[],
+  userText: string,
+): boolean {
+  if (history.length > 0) return false;
+  return SIMPLE_OPENING_GREETING.test(normalizeGreeting(userText));
+}
+
+function openingGreetingReply(): string[] {
+  return ["hi", "kaise ho"];
+}
+
 async function buildTextReply(
   userId: number,
   history: DbMessage[],
@@ -147,6 +170,14 @@ async function buildTextReply(
     const teaser = await generateIntimacyTeaser(lastUserText, classified.level);
     const assistantMsgs = await insertAssistantTextMessages(userId, [teaser]);
     return { assistantMsgs, intimacyNudge };
+  }
+
+  if (isFirstMessageSimpleGreeting(history, lastUserText)) {
+    const assistantMsgs = await insertAssistantTextMessages(
+      userId,
+      openingGreetingReply(),
+    );
+    return { assistantMsgs, intimacyNudge: null };
   }
 
   const replySegments = await chatWithMiaText([...history, ...userMsgs], {

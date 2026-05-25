@@ -50,21 +50,6 @@ class EmptyChat extends StatelessWidget {
                 color: MiaColors.textMuted,
               ),
             ),
-            const SizedBox(height: 20),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: MiaColors.miaBubble.withValues(alpha: 0.7),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(
-                "you're up early 👀",
-                style: GoogleFonts.inter(
-                  fontSize: 15,
-                  color: MiaColors.textPrimary,
-                ),
-              ),
-            ),
           ],
         ),
       ),
