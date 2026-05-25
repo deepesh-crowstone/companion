@@ -26,6 +26,7 @@ dependencies:
   web: ^1.1.1
   flutter_cashfree_pg_sdk: ^2.4.0+52
   font_awesome_flutter: ^11.0.0
+  video_player: ^2.11.1
 
 dev_dependencies:
   flutter_test:
@@ -38,3 +39,4 @@ flutter:
     - assets/images/mia_profile.png
     - assets/images/auth_background.png
     - assets/images/zara_gallery/
+    - assets/onboarding_video.mp4

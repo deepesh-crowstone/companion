@@ -1,11 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import '../data/mia_profile.dart';
-import '../theme/mia_theme.dart';
-import 'mia_avatar.dart';
-
-/// Welcome card shown to new users: Zara's profile, online status, and CTA.
+/// Bottom CTA for the onboarding welcome screen.
 class StartChattingCard extends StatelessWidget {
   const StartChattingCard({
     super.key,
@@ -16,78 +12,55 @@ class StartChattingCard extends StatelessWidget {
   final VoidCallback? onStart;
   final bool loading;
 
+  static const _buttonColor = Color(0xFF5F269F);
+
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 28),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const MiaAvatar(size: 108, showBorder: true, borderWidth: 3),
-          const SizedBox(height: 20),
-          Text(MiaProfile.name, style: MiaTheme.serifTitle(size: 32)),
-          const SizedBox(height: 6),
-          Text(
-            MiaProfile.tagline,
-            textAlign: TextAlign.center,
-            style: GoogleFonts.inter(
-              fontSize: 14,
-              color: MiaColors.statusPink,
-              fontWeight: FontWeight.w500,
+    return SafeArea(
+      top: false,
+      minimum: const EdgeInsets.only(bottom: 8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 28),
+        child: SizedBox(
+          width: double.infinity,
+          child: FilledButton(
+            onPressed: loading ? null : onStart,
+            style: FilledButton.styleFrom(
+              backgroundColor: _buttonColor,
+              disabledBackgroundColor: _buttonColor.withValues(alpha: 0.7),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              padding: const EdgeInsets.symmetric(vertical: 20),
             ),
-          ),
-          const SizedBox(height: 14),
-          const _OnlineStatus(),
-          const SizedBox(height: 36),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton(
-              onPressed: loading ? null : onStart,
-              child: loading
-                  ? const SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.2,
-                        color: Colors.white,
+            child: loading
+                ? const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.2,
+                      color: Colors.white,
+                    ),
+                  )
+                : Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Start Chatting with Zara',
+                        style: GoogleFonts.inter(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 16,
+                        ),
                       ),
-                    )
-                  : const Text('Start Chatting with Zara'),
-            ),
+                      const SizedBox(width: 8),
+                      const Icon(Icons.arrow_forward_rounded, size: 22),
+                    ],
+                  ),
           ),
-        ],
+        ),
       ),
-    );
-  }
-}
-
-class _OnlineStatus extends StatelessWidget {
-  const _OnlineStatus();
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 8,
-          height: 8,
-          decoration: BoxDecoration(
-            color: MiaColors.online,
-            shape: BoxShape.circle,
-          ),
-        ),
-        const SizedBox(width: 6),
-        Text(
-          'Active',
-          style: GoogleFonts.inter(
-            fontSize: 13,
-            color: MiaColors.textMuted,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ],
     );
   }
 }

@@ -1,11 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/api_service.dart';
 import '../theme/mia_theme.dart';
-import '../widgets/mia_background.dart';
+import '../widgets/onboarding_video_background.dart';
 import '../widgets/start_chatting_card.dart';
 
 const _startedChattingKey = 'mia_started_chatting';
@@ -39,70 +40,154 @@ class NewUserScreen extends StatefulWidget {
 }
 
 class _NewUserScreenState extends State<NewUserScreen> {
-  bool _loading = true;
   bool _starting = false;
   String? _error;
 
-  @override
-  void initState() {
-    super.initState();
-    _init();
-  }
+  Future<void> _onStartChatting() async {
+    if (_starting) return;
+    setState(() {
+      _starting = true;
+      _error = null;
+    });
 
-  Future<void> _init() async {
     try {
-      if (!ApiService.instance.isLoggedIn) {
-        await ApiService.instance.ensureAuthenticated();
-      }
+      await ApiService.instance.ensureAuthenticated();
+
+      final eventTime = DateTime.now();
+      unawaited(
+        ApiService.instance.trackEvent(
+          startChattingEventName,
+          eventTime: eventTime,
+        ),
+      );
+
+      await markStartedChatting();
+      if (!mounted) return;
+      widget.onStarted();
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _loading = false;
+        _starting = false;
         _error = e.toString().replaceFirst('Exception: ', '');
       });
-      return;
     }
-    if (!mounted) return;
-    setState(() => _loading = false);
-  }
-
-  Future<void> _onStartChatting() async {
-    if (_starting) return;
-    setState(() => _starting = true);
-
-    final eventTime = DateTime.now();
-    unawaited(
-      ApiService.instance.trackEvent(
-        startChattingEventName,
-        eventTime: eventTime,
-      ),
-    );
-
-    await markStartedChatting();
-    if (!mounted) return;
-    widget.onStarted();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      resizeToAvoidBottomInset: false,
+      extendBody: true,
       backgroundColor: MiaColors.background,
-      body: MiaBackground(
-        child: SafeArea(
-          child: _loading
-              ? const Center(child: CircularProgressIndicator())
-              : _error != null
-              ? _ErrorState(message: _error!, onRetry: _init)
-              : Center(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(vertical: 32),
-                    child: StartChattingCard(
-                      loading: _starting,
-                      onStart: _onStartChatting,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          const OnboardingVideoBackground(),
+          if (_error == null) const _OnboardingPitch(),
+          if (_error != null)
+            SafeArea(
+              child: _ErrorState(
+                message: _error!,
+                onRetry: () => setState(() => _error = null),
+              ),
+            ),
+        ],
+      ),
+      bottomNavigationBar: _error == null
+          ? Material(
+              color: Colors.transparent,
+              elevation: 0,
+              child: StartChattingCard(
+                loading: _starting,
+                onStart: _onStartChatting,
+              ),
+            )
+          : null,
+    );
+  }
+}
+
+class _OnboardingPitch extends StatelessWidget {
+  const _OnboardingPitch();
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      bottom: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(left: 4, bottom: 16),
+              child: Text(
+                'Meet Zara',
+                style: MiaTheme.serifTitle(size: 68).copyWith(
+                  fontWeight: FontWeight.w400,
+                  color: Colors.white,
+                  height: 1.05,
+                  letterSpacing: 0,
+                  shadows: const [
+                    Shadow(
+                      blurRadius: 12,
+                      color: Colors.black54,
+                      offset: Offset(0, 2),
                     ),
-                  ),
+                  ],
                 ),
+              ),
+            ),
+            const _PitchRow(
+              icon: Icons.support_agent_rounded,
+              text: '24×7 AI Companion',
+            ),
+            const SizedBox(height: 12),
+            const _PitchRow(
+              icon: Icons.shield_rounded,
+              text: '100% Private & Safe',
+            ),
+          ],
         ),
+      ),
+    );
+  }
+}
+
+class _PitchRow extends StatelessWidget {
+  const _PitchRow({required this.icon, required this.text});
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.15),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: Colors.white, size: 18),
+          const SizedBox(width: 8),
+          Text(
+            text,
+            style: GoogleFonts.inter(
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
+              color: Colors.white,
+              height: 1.15,
+              letterSpacing: -0.2,
+            ),
+          ),
+        ],
       ),
     );
   }

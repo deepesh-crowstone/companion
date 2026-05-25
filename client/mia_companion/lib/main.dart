@@ -121,16 +121,18 @@ class _BootstrapState extends State<_Bootstrap> {
   Future<void> _init() async {
     var showNewUser = false;
     try {
-      final reachable = await ApiService.instance.checkHealth().timeout(
-        const Duration(seconds: 8),
-        onTimeout: () => false,
-      );
-      if (reachable) {
-        await ApiService.instance.ensureAuthenticated();
-      }
       showNewUser = !await hasStartedChatting();
+      if (!showNewUser) {
+        final reachable = await ApiService.instance.checkHealth().timeout(
+          const Duration(seconds: 8),
+          onTimeout: () => false,
+        );
+        if (reachable) {
+          await ApiService.instance.ensureAuthenticated();
+        }
+      }
     } catch (_) {
-      // New user / chat screens handle unreachable server / auth errors.
+      // Chat screen handles unreachable server / auth errors for returning users.
     }
     if (!mounted) return;
     setState(() {
