@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:js_interop';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:web/web.dart' as web;
@@ -8,10 +7,10 @@ import 'package:web/web.dart' as web;
 /// Lifts [child] above the virtual keyboard in mobile webviews that overlay
 /// the keyboard without informing Flutter (e.g. Instagram in-app browser).
 ///
-/// On regular Chrome / Safari the visual viewport overlap is already exposed
-/// via `MediaQuery.viewInsets.bottom`, and `Scaffold.resizeToAvoidBottomInset`
-/// handles the inset. We only apply the *residual* lift Flutter has not already
-/// accounted for, so we never double-pad in normal browsers.
+/// Invariant: the bottom of [child] must not extend below the visual viewport
+/// (`visualViewport.height + offsetTop`). We compare the full Flutter view's
+/// size — not the local `MediaQuery`, which is already shrunk by the Scaffold —
+/// so we never apply a lift Flutter has already handled.
 class WebKeyboardInset extends StatefulWidget {
   const WebKeyboardInset({
     super.key,
@@ -31,7 +30,10 @@ class _WebKeyboardInsetState extends State<WebKeyboardInset> {
   static const _openThreshold = 8.0;
   static const _focusLossDebounce = Duration(milliseconds: 150);
 
-  double _visualOverlap = 0;
+  /// Visible bottom of the visual viewport, in CSS/logical pixels.
+  /// Defaults to [double.infinity] so that the initial frame (before the first
+  /// `_sync`) yields zero lift.
+  double _visibleBottom = double.infinity;
   Timer? _focusLossTimer;
   bool _focusedSnapshot = false;
   late final web.EventListener _onViewportChange = _handleViewportChange.toJS;
@@ -56,7 +58,6 @@ class _WebKeyboardInsetState extends State<WebKeyboardInset> {
       oldWidget.focusNode.removeListener(_onFocusChanged);
       widget.focusNode.addListener(_onFocusChanged);
       _focusedSnapshot = widget.focusNode.hasFocus;
-      _sync();
     }
   }
 
@@ -95,13 +96,9 @@ class _WebKeyboardInsetState extends State<WebKeyboardInset> {
     final vv = web.window.visualViewport;
     if (vv == null) return;
 
-    final overlap = math.max(
-      0.0,
-      web.window.innerHeight.toDouble() - vv.height - vv.offsetTop,
-    );
-
-    if ((overlap - _visualOverlap).abs() > 0.5) {
-      setState(() => _visualOverlap = overlap);
+    final visibleBottom = vv.height + vv.offsetTop;
+    if ((visibleBottom - _visibleBottom).abs() > 0.5) {
+      setState(() => _visibleBottom = visibleBottom);
     }
   }
 
@@ -115,13 +112,25 @@ class _WebKeyboardInsetState extends State<WebKeyboardInset> {
 
   @override
   Widget build(BuildContext context) {
-    final flutterInset = MediaQuery.viewInsetsOf(context).bottom;
-    // Only the part of the visual-viewport overlap Flutter hasn't already
-    // accounted for. In normal browsers this is 0, so we add nothing on top
-    // of Scaffold.resizeToAvoidBottomInset.
-    final residual = math.max(0.0, _visualOverlap - flutterInset);
-    final lift = (_focusedSnapshot && residual > _openThreshold)
-        ? residual + _gap
+    // Use the full Flutter view's logical size, NOT the local MediaQuery.
+    // Inside a Scaffold the local MediaQuery has already been shrunk by
+    // viewInsets.bottom; subtracting the visual viewport from that would
+    // give a residual of zero in every browser, including overlay webviews.
+    //
+    // The view-level size reflects what the Flutter engine actually painted —
+    // if Flutter shrank the canvas to dodge the keyboard, this size shrinks
+    // along with it, so the comparison stays accurate.
+    final view = View.of(context);
+    final viewHeight = view.physicalSize.height / view.devicePixelRatio;
+
+    // How far the Flutter canvas extends below the visible visual viewport.
+    // - Normal browser (Flutter shrinks canvas, OR no keyboard at all):
+    //     canvas bottom <= visible bottom, overlap is 0.
+    // - Overlay webview (canvas full, visualViewport shrunk by keyboard):
+    //     canvas bottom > visible bottom, overlap = keyboard height.
+    final overlap = viewHeight - _visibleBottom;
+    final lift = (_focusedSnapshot && overlap > _openThreshold)
+        ? overlap + _gap
         : 0.0;
 
     return Padding(
