@@ -869,6 +869,7 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             ),
             WebKeyboardInset(
+              focusNode: _inputFocus,
               child: ChatInputBar(
                 controller: _input,
                 focusNode: _inputFocus,

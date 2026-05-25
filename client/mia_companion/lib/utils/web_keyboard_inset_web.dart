@@ -7,9 +7,14 @@ import 'package:web/web.dart' as web;
 /// Lifts [child] above overlay keyboards in mobile webviews (e.g. Instagram)
 /// where the layout viewport does not shrink when the IME opens.
 class WebKeyboardInset extends StatefulWidget {
-  const WebKeyboardInset({super.key, required this.child});
+  const WebKeyboardInset({
+    super.key,
+    required this.child,
+    required this.focusNode,
+  });
 
   final Widget child;
+  final FocusNode focusNode;
 
   @override
   State<WebKeyboardInset> createState() => _WebKeyboardInsetState();
@@ -31,8 +36,27 @@ class _WebKeyboardInsetState extends State<WebKeyboardInset> {
   void initState() {
     super.initState();
     _baselineWindowHeight = _windowHeight;
+    widget.focusNode.addListener(_onFocusChanged);
     _attachListeners();
     WidgetsBinding.instance.addPostFrameCallback((_) => _sync());
+  }
+
+  @override
+  void didUpdateWidget(covariant WebKeyboardInset oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.focusNode != widget.focusNode) {
+      oldWidget.focusNode.removeListener(_onFocusChanged);
+      widget.focusNode.addListener(_onFocusChanged);
+      _sync();
+    }
+  }
+
+  void _onFocusChanged() {
+    if (!widget.focusNode.hasFocus) {
+      if (_lift != 0 && mounted) setState(() => _lift = 0);
+      return;
+    }
+    _sync();
   }
 
   double get _windowHeight => web.window.innerHeight.toDouble();
@@ -50,6 +74,11 @@ class _WebKeyboardInsetState extends State<WebKeyboardInset> {
   }
 
   void _sync() {
+    if (!widget.focusNode.hasFocus) {
+      if (_lift != 0 && mounted) setState(() => _lift = 0);
+      return;
+    }
+
     final vv = web.window.visualViewport;
     if (vv == null) return;
 
@@ -75,13 +104,14 @@ class _WebKeyboardInsetState extends State<WebKeyboardInset> {
 
   @override
   void dispose() {
+    widget.focusNode.removeListener(_onFocusChanged);
     _detachListeners();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_lift <= 0) return widget.child;
+    // Keep a stable wrapper so focus is not lost when lift becomes non-zero.
     return Padding(
       padding: EdgeInsets.only(bottom: _lift),
       child: widget.child,
