@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:record/record.dart';
 
@@ -11,6 +12,7 @@ import '../models/voice_upload.dart';
 import '../utils/chat_dates.dart';
 import '../utils/human_presence.dart';
 import '../services/api_service.dart';
+import '../services/disappearing_messages_controller.dart';
 import '../services/session_expired.dart';
 import '../services/voice_recording_platform.dart';
 import '../theme/mia_theme.dart';
@@ -23,9 +25,13 @@ import '../widgets/empty_chat.dart';
 import '../widgets/mia_presence_row.dart';
 import '../widgets/mia_chat_header.dart';
 import '../widgets/intimacy_unlock_sheet.dart';
+import '../theme/theme_controller.dart';
 import '../widgets/scroll_to_bottom_button.dart';
+import '../widgets/mia_bottom_sheet.dart';
+import '../widgets/theme_options_sheet.dart';
 import '../models/intimacy.dart';
 import 'mia_profile_screen.dart';
+import 'user_profile_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -76,19 +82,42 @@ class _ChatScreenState extends State<ChatScreen> {
 
   int _unlockedIntimacyLevel = 1;
   bool _pageViewTracked = false;
+  Timer? _expiryRefreshTimer;
+  final _disappearing = DisappearingMessagesController.instance;
+
+  List<ChatMessage> get _visibleMessages =>
+      _disappearing.filterMessages(_messages);
 
   @override
   void initState() {
     super.initState();
     _input.addListener(_onInputChanged);
     _scroll.addListener(_onScroll);
+    _disappearing.addListener(_onDisappearingMessagesChanged);
+    _scheduleExpiryRefresh();
     _load();
+  }
+
+  void _onDisappearingMessagesChanged() {
+    _scheduleExpiryRefresh();
+    if (mounted) setState(() {});
+  }
+
+  void _scheduleExpiryRefresh() {
+    _expiryRefreshTimer?.cancel();
+    if (!_disappearing.enabled) return;
+    unawaited(_disappearing.markExpiredMessages(_messages));
+    _expiryRefreshTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      unawaited(_disappearing.markExpiredMessages(_messages));
+    });
   }
 
   @override
   void dispose() {
     _replyTimer?.cancel();
     _recordDurationTimer?.cancel();
+    _expiryRefreshTimer?.cancel();
+    _disappearing.removeListener(_onDisappearingMessagesChanged);
     _stopAmplitudeListener();
     _input.removeListener(_onInputChanged);
     _scroll.removeListener(_onScroll);
@@ -117,7 +146,7 @@ class _ChatScreenState extends State<ChatScreen> {
   bool get _showScrollToBottom =>
       !_loading &&
       !_pinnedToBottom &&
-      (_messages.isNotEmpty || _showMiaActivity);
+      (_visibleMessages.isNotEmpty || _showMiaActivity);
 
   void _onInputChanged() {
     if (_input.text.isNotEmpty) {
@@ -184,6 +213,7 @@ class _ChatScreenState extends State<ChatScreen> {
         }
         _loading = false;
       });
+      await _disappearing.markExpiredMessages(_messages);
       _trackPageViewedOnce();
       _scrollToBottom(force: true);
     } catch (e) {
@@ -249,18 +279,19 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
-  int get _listItemCount => _messages.length + (_showMiaActivity ? 1 : 0);
+  int get _listItemCount =>
+      _visibleMessages.length + (_showMiaActivity ? 1 : 0);
 
   int? _messageIndexForListIndex(int index) {
     final pendingOffset = _showMiaActivity ? 1 : 0;
     if (_showMiaActivity && index == 0) return null;
-    return _messages.length - 1 - (index - pendingOffset);
+    return _visibleMessages.length - 1 - (index - pendingOffset);
   }
 
   Widget _buildListItem(BuildContext context, int index) {
     if (_showMiaActivity && index == 0) {
-      final compact =
-          _messages.isNotEmpty && _messages.last.role == 'assistant';
+      final compact = _visibleMessages.isNotEmpty &&
+          _visibleMessages.last.role == 'assistant';
       final kind = _miaActivity == _MiaActivity.recording
           ? MiaPresenceKind.recording
           : MiaPresenceKind.typing;
@@ -270,7 +301,7 @@ class _ChatScreenState extends State<ChatScreen> {
     }
 
     final msgIndex = _messageIndexForListIndex(index)!;
-    final msg = _messages[msgIndex];
+    final msg = _visibleMessages[msgIndex];
 
     return RepaintBoundary(
       key: ValueKey(msg.id),
@@ -755,14 +786,14 @@ class _ChatScreenState extends State<ChatScreen> {
 
   bool _showDateHeader(int index) {
     return ChatDates.isFirstMessageOfDay(
-      _messages.map((m) => m.createdAt).toList(),
+      _visibleMessages.map((m) => m.createdAt).toList(),
       index,
     );
   }
 
   bool _sameSenderAsPrevious(int index) {
     if (index <= 0) return false;
-    return _messages[index].role == _messages[index - 1].role;
+    return _visibleMessages[index].role == _visibleMessages[index - 1].role;
   }
 
   bool _compactTop(int index) {
@@ -799,36 +830,102 @@ class _ChatScreenState extends State<ChatScreen> {
 
   void _openMenuSheet() {
     _dismissKeyboard();
-    showModalBottomSheet<void>(
+    showMiaBottomSheet<void>(
       context: context,
-      backgroundColor: MiaColors.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 8),
-            Container(
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: MiaColors.miaBubble,
-                borderRadius: BorderRadius.circular(2),
-              ),
+      builder: (ctx) => ListenableBuilder(
+        listenable: Listenable.merge([
+          DisappearingMessagesController.instance,
+          ThemeController.instance,
+        ]),
+        builder: (context, _) {
+          final disappearing = DisappearingMessagesController.instance.enabled;
+          final isDark = ThemeController.instance.isDark;
+          return SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 8),
+                Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: MiaColors.miaBubble,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                ListTile(
+                  leading: Icon(
+                    Icons.person_outline_rounded,
+                    color: MiaColors.accentDeep,
+                  ),
+                  title: Text(
+                    'Profile',
+                    style: GoogleFonts.inter(color: MiaColors.textPrimary),
+                  ),
+                  trailing: Icon(
+                    Icons.chevron_right_rounded,
+                    color: MiaColors.textMuted.withValues(alpha: 0.8),
+                  ),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const UserProfileScreen(),
+                      ),
+                    );
+                  },
+                ),
+                ListTile(
+                  leading: Icon(
+                    Icons.palette_outlined,
+                    color: MiaColors.accentDeep,
+                  ),
+                  title: Text(
+                    'Theme',
+                    style: GoogleFonts.inter(color: MiaColors.textPrimary),
+                  ),
+                  subtitle: Text(
+                    isDark ? 'Dark theme' : 'Light theme',
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      color: MiaColors.textMuted,
+                    ),
+                  ),
+                  trailing: Icon(
+                    Icons.chevron_right_rounded,
+                    color: MiaColors.textMuted.withValues(alpha: 0.8),
+                  ),
+                  onTap: () => showThemeOptionsSheet(ctx),
+                ),
+                Divider(height: 1, color: MiaColors.miaBubble.withValues(alpha: 0.6)),
+                SwitchListTile(
+                  secondary: Icon(
+                    Icons.timer_outlined,
+                    color: MiaColors.accentDeep,
+                  ),
+                  title: Text(
+                    'Disappearing messages',
+                    style: GoogleFonts.inter(
+                      fontWeight: FontWeight.w500,
+                      color: MiaColors.textPrimary,
+                    ),
+                  ),
+                  subtitle: Text(
+                    'Messages will disappear after 24 Hrs',
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      color: MiaColors.textMuted,
+                    ),
+                  ),
+                  value: disappearing,
+                  activeThumbColor: MiaColors.accentDeep,
+                  onChanged: DisappearingMessagesController.instance.setEnabled,
+                ),
+                const SizedBox(height: 8),
+              ],
             ),
-            ListTile(
-              leading: const Icon(Icons.refresh_rounded),
-              title: const Text('refresh chat'),
-              onTap: () {
-                Navigator.pop(ctx);
-                _load();
-              },
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
+          );
+        },
       ),
     ).whenComplete(() {
       if (!mounted) return;
@@ -865,13 +962,13 @@ class _ChatScreenState extends State<ChatScreen> {
                   clipBehavior: Clip.none,
                   children: [
                     _loading
-                        ? const Center(
+                        ? Center(
                             child: CircularProgressIndicator(
                               color: MiaColors.accent,
                               strokeWidth: 2.5,
                             ),
                           )
-                        : _messages.isEmpty && !_showMiaActivity
+                        : _visibleMessages.isEmpty && !_showMiaActivity
                         ? const EmptyChat()
                         : RefreshIndicator(
                             color: MiaColors.accent,

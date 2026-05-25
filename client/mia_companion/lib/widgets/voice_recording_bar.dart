@@ -75,7 +75,7 @@ class _LockedRecordingBar extends StatelessWidget {
             child: InkWell(
               onTap: onCancelTap,
               borderRadius: BorderRadius.circular(22),
-              child: const Padding(
+              child: Padding(
                 padding: EdgeInsets.all(8),
                 child: Icon(
                   Icons.delete_outline,
@@ -266,7 +266,7 @@ class _RecordingDotState extends State<_RecordingDot>
       child: Container(
         width: 10,
         height: 10,
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           color: MiaColors.accentDeep,
           shape: BoxShape.circle,
         ),

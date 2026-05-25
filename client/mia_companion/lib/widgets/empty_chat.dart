@@ -29,7 +29,7 @@ class EmptyChat extends StatelessWidget {
                   ),
                 ],
               ),
-              child: const Icon(
+              child: Icon(
                 Icons.favorite_outline,
                 color: MiaColors.accentDeep,
                 size: 36,

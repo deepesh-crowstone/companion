@@ -23,6 +23,12 @@ Future<void> markStartedChatting() async {
   await prefs.setBool(_startedChattingKey, true);
 }
 
+/// Clears the welcome flag so the user sees onboarding again.
+Future<void> clearStartedChatting() async {
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.remove(_startedChattingKey);
+}
+
 class NewUserScreen extends StatefulWidget {
   const NewUserScreen({super.key, required this.onStarted});
 

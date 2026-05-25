@@ -16,7 +16,7 @@ class ChatPatternBackground extends StatelessWidget {
       color: MiaColors.chatBackground,
       child: CustomPaint(
         painter: _ChatPatternPainter(
-          color: MiaColors.accent.withValues(alpha: 0.065),
+          color: MiaColors.accent.withValues(alpha: MiaColors.patternAccentAlpha),
         ),
         child: child,
       ),

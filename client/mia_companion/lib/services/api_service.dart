@@ -20,6 +20,7 @@ class ApiService {
   static const _tokenKey = 'mia_auth_token';
   static const _usernameKey = 'mia_username';
   static const _guestPasswordKey = 'mia_guest_password';
+  static const _startedChattingKey = 'mia_started_chatting';
   static const _guestAdjectives = [
     'happy',
     'lucky',
@@ -73,6 +74,14 @@ class ApiService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_tokenKey);
     await prefs.remove(_usernameKey);
+  }
+
+  /// Clears all local account/session data (logout + guest creds + welcome flag).
+  Future<void> clearLocalAccountData() async {
+    await logout();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_guestPasswordKey);
+    await prefs.remove(_startedChattingKey);
   }
 
   /// Ensures a valid session exists, registering a guest user in the background if needed.

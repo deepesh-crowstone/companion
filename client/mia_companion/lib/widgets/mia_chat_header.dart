@@ -117,7 +117,7 @@ class _StatusLine extends StatelessWidget {
         Container(
           width: 8,
           height: 8,
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             color: MiaColors.online,
             shape: BoxShape.circle,
           ),

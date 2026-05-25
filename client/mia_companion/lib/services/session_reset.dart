@@ -1,0 +1,31 @@
+import 'package:flutter/material.dart';
+
+import '../services/api_service.dart';
+import 'disappearing_messages_controller.dart';
+
+typedef SessionResetHandler = Future<void> Function();
+
+/// Bridges profile actions back to the app root bootstrap state.
+class SessionReset {
+  SessionReset._();
+
+  static SessionResetHandler? onLogout;
+  static SessionResetHandler? onDeleteAccount;
+
+  static Future<void> logout(BuildContext context) async {
+    await ApiService.instance.logout();
+    if (context.mounted) {
+      Navigator.of(context).popUntil((route) => route.isFirst);
+    }
+    await onLogout?.call();
+  }
+
+  static Future<void> deleteAccount(BuildContext context) async {
+    await ApiService.instance.clearLocalAccountData();
+    await DisappearingMessagesController.instance.clearPermanentHidden();
+    if (context.mounted) {
+      Navigator.of(context).popUntil((route) => route.isFirst);
+    }
+    await onDeleteAccount?.call();
+  }
+}
