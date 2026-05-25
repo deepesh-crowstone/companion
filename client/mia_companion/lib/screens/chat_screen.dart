@@ -8,6 +8,9 @@ import 'package:record/record.dart';
 import '../config.dart';
 import '../data/mia_profile.dart';
 import '../models/chat_message.dart';
+import '../models/disappearing_messages_toggle_update.dart';
+import '../models/mood_change_update.dart';
+import '../models/zara_mood.dart';
 import '../models/voice_upload.dart';
 import '../utils/chat_dates.dart';
 import '../utils/human_presence.dart';
@@ -29,6 +32,9 @@ import '../widgets/intimacy_unlock_sheet.dart';
 import '../theme/theme_controller.dart';
 import '../widgets/scroll_to_bottom_button.dart';
 import '../widgets/mia_bottom_sheet.dart';
+import '../widgets/date_separator.dart';
+import '../widgets/disappearing_messages_banner.dart';
+import '../widgets/mood_change_banner.dart';
 import '../widgets/mood_options_sheet.dart';
 import '../widgets/theme_options_sheet.dart';
 import '../models/intimacy.dart';
@@ -73,7 +79,7 @@ class _ChatScreenState extends State<ChatScreen> {
   List<double> _recordingLevels = [];
   int? _playingId;
   StreamSubscription<PlayerState>? _playerSub;
-  String _statusText = 'online now';
+  String _statusText = 'Active';
 
   final List<String> _textOutbox = [];
   final List<int> _pendingOptimisticIds = [];
@@ -87,6 +93,11 @@ class _ChatScreenState extends State<ChatScreen> {
   Timer? _expiryRefreshTimer;
   final _disappearing = DisappearingMessagesController.instance;
 
+  final List<MoodChangeUpdate> _moodUpdates = [];
+  final List<DisappearingMessagesToggleUpdate> _disappearingToggleUpdates = [];
+  ZaraMood? _trackedMood;
+  bool? _trackedDisappearingEnabled;
+
   List<ChatMessage> get _visibleMessages =>
       _disappearing.filterMessages(_messages);
 
@@ -98,11 +109,49 @@ class _ChatScreenState extends State<ChatScreen> {
     _disappearing.addListener(_onDisappearingMessagesChanged);
     _scheduleExpiryRefresh();
     _load();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _trackedMood = MoodController.instance.mood;
+      _trackedDisappearingEnabled = _disappearing.enabled;
+      MoodController.instance.addListener(_onMoodChanged);
+    });
+  }
+
+  void _onMoodChanged() {
+    final mood = MoodController.instance.mood;
+    if (_trackedMood == mood) return;
+    _trackedMood = mood;
+    if (!mounted) return;
+    setState(() {
+      _moodUpdates.add(
+        MoodChangeUpdate(
+          id: DateTime.now().millisecondsSinceEpoch,
+          mood: mood,
+          createdAt: DateTime.now(),
+        ),
+      );
+    });
+    _scrollToBottom(force: true);
   }
 
   void _onDisappearingMessagesChanged() {
+    final enabled = _disappearing.enabled;
+    var shouldScroll = false;
+    if (_trackedDisappearingEnabled != null &&
+        _trackedDisappearingEnabled != enabled) {
+      _disappearingToggleUpdates.add(
+        DisappearingMessagesToggleUpdate(
+          id: DateTime.now().millisecondsSinceEpoch,
+          enabled: enabled,
+          createdAt: DateTime.now(),
+        ),
+      );
+      shouldScroll = true;
+    }
+    _trackedDisappearingEnabled = enabled;
     _scheduleExpiryRefresh();
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    setState(() {});
+    if (shouldScroll) _scrollToBottom(force: true);
   }
 
   void _scheduleExpiryRefresh() {
@@ -119,6 +168,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _replyTimer?.cancel();
     _recordDurationTimer?.cancel();
     _expiryRefreshTimer?.cancel();
+    MoodController.instance.removeListener(_onMoodChanged);
     _disappearing.removeListener(_onDisappearingMessagesChanged);
     _stopAmplitudeListener();
     _input.removeListener(_onInputChanged);
@@ -148,7 +198,7 @@ class _ChatScreenState extends State<ChatScreen> {
   bool get _showScrollToBottom =>
       !_loading &&
       !_pinnedToBottom &&
-      (_visibleMessages.isNotEmpty || _showMiaActivity);
+      (_timeline.isNotEmpty || _showMiaActivity);
 
   void _onInputChanged() {
     if (_input.text.isNotEmpty) {
@@ -158,7 +208,7 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  String _statusWhenIdle() => 'online now';
+  String _statusWhenIdle() => 'Active';
 
   void _abortMiaReply() {
     _replyGeneration++;
@@ -281,20 +331,31 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
-  int get _listItemCount =>
-      _visibleMessages.length + (_showMiaActivity ? 1 : 0);
+  List<_ChatTimelineEntry> get _timeline {
+    final entries = <_ChatTimelineEntry>[
+      for (final message in _visibleMessages)
+        _ChatTimelineEntry.message(message),
+      for (final update in _moodUpdates)
+        _ChatTimelineEntry.moodUpdate(update),
+      for (final update in _disappearingToggleUpdates)
+        _ChatTimelineEntry.disappearingToggle(update),
+    ];
+    entries.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    return entries;
+  }
 
-  int? _messageIndexForListIndex(int index) {
+  int get _listItemCount => _timeline.length + (_showMiaActivity ? 1 : 0);
+
+  int _timelineIndexForListIndex(int index) {
     final pendingOffset = _showMiaActivity ? 1 : 0;
-    if (_showMiaActivity && index == 0) return null;
-    return _visibleMessages.length - 1 - (index - pendingOffset);
+    return _timeline.length - 1 - (index - pendingOffset);
   }
 
   Widget _buildListItem(BuildContext context, int index) {
     if (_showMiaActivity && index == 0) {
       final compact =
-          _visibleMessages.isNotEmpty &&
-          _visibleMessages.last.role == 'assistant';
+          _timeline.isNotEmpty &&
+          _timeline.last.message?.role == 'assistant';
       final kind = _miaActivity == _MiaActivity.recording
           ? MiaPresenceKind.recording
           : MiaPresenceKind.typing;
@@ -303,15 +364,47 @@ class _ChatScreenState extends State<ChatScreen> {
       );
     }
 
-    final msgIndex = _messageIndexForListIndex(index)!;
-    final msg = _visibleMessages[msgIndex];
+    final timelineIndex = _timelineIndexForListIndex(index);
+    final entry = _timeline[timelineIndex];
+
+    if (entry.moodUpdate != null) {
+      final update = entry.moodUpdate!;
+      return RepaintBoundary(
+        key: ValueKey('mood-${update.id}'),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_showDateHeader(timelineIndex))
+              DateSeparator(date: update.createdAt),
+            MoodChangeBanner(mood: update.mood),
+          ],
+        ),
+      );
+    }
+
+    if (entry.disappearingToggleUpdate != null) {
+      final update = entry.disappearingToggleUpdate!;
+      return RepaintBoundary(
+        key: ValueKey('disappearing-${update.id}'),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_showDateHeader(timelineIndex))
+              DateSeparator(date: update.createdAt),
+            DisappearingMessagesBanner(enabled: update.enabled),
+          ],
+        ),
+      );
+    }
+
+    final msg = entry.message!;
 
     return RepaintBoundary(
       key: ValueKey(msg.id),
       child: ChatMessageTile(
         message: msg,
-        showDateHeader: _showDateHeader(msgIndex),
-        compactTop: _compactTop(msgIndex),
+        showDateHeader: _showDateHeader(timelineIndex),
+        compactTop: _compactTop(timelineIndex),
         isPlaying: _playingId == msg.id,
         onPlayAudio: msg.isAudio ? () => _playAudio(msg) : null,
         receiptStatus: msg.isUser ? _receiptStatuses[msg.id] : null,
@@ -793,21 +886,24 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  bool _showDateHeader(int index) {
+  bool _showDateHeader(int timelineIndex) {
     return ChatDates.isFirstMessageOfDay(
-      _visibleMessages.map((m) => m.createdAt).toList(),
-      index,
+      _timeline.map((entry) => entry.createdAt).toList(),
+      timelineIndex,
     );
   }
 
-  bool _sameSenderAsPrevious(int index) {
-    if (index <= 0) return false;
-    return _visibleMessages[index].role == _visibleMessages[index - 1].role;
+  bool _sameSenderAsPrevious(int timelineIndex) {
+    if (timelineIndex <= 0) return false;
+    final current = _timeline[timelineIndex].message;
+    final previous = _timeline[timelineIndex - 1].message;
+    if (current == null || previous == null) return false;
+    return previous.role == current.role;
   }
 
-  bool _compactTop(int index) {
-    if (_showDateHeader(index)) return false;
-    return _sameSenderAsPrevious(index);
+  bool _compactTop(int timelineIndex) {
+    if (_showDateHeader(timelineIndex)) return false;
+    return _sameSenderAsPrevious(timelineIndex);
   }
 
   void _dismissKeyboard() {
@@ -979,7 +1075,7 @@ class _ChatScreenState extends State<ChatScreen> {
                               strokeWidth: 2.5,
                             ),
                           )
-                        : _visibleMessages.isEmpty && !_showMiaActivity
+                        : _timeline.isEmpty && !_showMiaActivity
                         ? const EmptyChat()
                         : RefreshIndicator(
                             color: MiaColors.accent,
@@ -1033,4 +1129,41 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
     );
   }
+}
+
+class _ChatTimelineEntry {
+  const _ChatTimelineEntry._({
+    required this.createdAt,
+    this.message,
+    this.moodUpdate,
+    this.disappearingToggleUpdate,
+  });
+
+  factory _ChatTimelineEntry.message(ChatMessage message) {
+    return _ChatTimelineEntry._(
+      createdAt: message.createdAt,
+      message: message,
+    );
+  }
+
+  factory _ChatTimelineEntry.moodUpdate(MoodChangeUpdate update) {
+    return _ChatTimelineEntry._(
+      createdAt: update.createdAt,
+      moodUpdate: update,
+    );
+  }
+
+  factory _ChatTimelineEntry.disappearingToggle(
+    DisappearingMessagesToggleUpdate update,
+  ) {
+    return _ChatTimelineEntry._(
+      createdAt: update.createdAt,
+      disappearingToggleUpdate: update,
+    );
+  }
+
+  final DateTime createdAt;
+  final ChatMessage? message;
+  final MoodChangeUpdate? moodUpdate;
+  final DisappearingMessagesToggleUpdate? disappearingToggleUpdate;
 }

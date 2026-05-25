@@ -80,7 +80,7 @@ class _OnlineStatus extends StatelessWidget {
         ),
         const SizedBox(width: 6),
         Text(
-          'online now',
+          'Active',
           style: GoogleFonts.inter(
             fontSize: 13,
             color: MiaColors.textMuted,
