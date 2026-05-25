@@ -17,9 +17,11 @@ class MiaProfile {
   static const avatarAsset = 'assets/images/mia_profile.png';
   static const tagline = 'soft chaos, sharp timing, good coffee';
 
-  /// Photos shown in the gallery section on Zara's profile screen.
-  /// Drop more images into `assets/images/zara_gallery/` and list them here.
+  /// Four photos shown in the about-me image grid (2×2).
   static const galleryAssets = <String>[
+    'assets/images/mia_profile.png',
+    'assets/images/mia_profile.png',
+    'assets/images/mia_profile.png',
     'assets/images/mia_profile.png',
   ];
 
@@ -39,30 +41,24 @@ class MiaProfile {
     'dramatic 2000s bollywood',
   ];
 
-  static const socialLinks = [
+  static const followLinks = [
     MiaSocialLink(
       platform: 'Instagram',
       handle: '@zara.vibes',
       url: 'https://instagram.com/',
-      icon: '📸',
-    ),
-    MiaSocialLink(
-      platform: 'TikTok',
-      handle: '@itszara',
-      url: 'https://tiktok.com/',
-      icon: '🎵',
-    ),
-    MiaSocialLink(
-      platform: 'Spotify',
-      handle: 'zara — late night',
-      url: 'https://open.spotify.com/',
-      icon: '🎧',
+      icon: 'instagram',
     ),
     MiaSocialLink(
       platform: 'X',
       handle: '@zaraonline',
       url: 'https://x.com/',
-      icon: '✨',
+      icon: 'x',
+    ),
+    MiaSocialLink(
+      platform: 'Facebook',
+      handle: 'zara.vibes',
+      url: 'https://facebook.com/',
+      icon: 'facebook',
     ),
   ];
 }

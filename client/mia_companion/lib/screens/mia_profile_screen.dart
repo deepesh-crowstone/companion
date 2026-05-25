@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -17,28 +18,15 @@ class MiaProfileScreen extends StatelessWidget {
       body: SafeArea(
         child: Column(
           children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              child: Row(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.arrow_back_ios_new, size: 20),
-                    color: MiaColors.textPrimary,
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
-                  Expanded(
-                    child: Text(
-                      'profile',
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.inter(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: MiaColors.textPrimary,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 48),
-                ],
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Padding(
+                padding: const EdgeInsets.only(left: 8, top: 4),
+                child: IconButton(
+                  icon: const Icon(Icons.arrow_back_ios_new, size: 20),
+                  color: MiaColors.textPrimary,
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
               ),
             ),
             Expanded(
@@ -57,23 +45,17 @@ class MiaProfileScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 16),
                     Text(MiaProfile.name, style: MiaTheme.serifTitle(size: 32)),
-                    const SizedBox(height: 6),
-                    Text(
-                      MiaProfile.tagline,
-                      style: GoogleFonts.inter(
-                        fontSize: 14,
-                        color: MiaColors.statusPink,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
+                    const SizedBox(height: 10),
+                    const _FollowMeRow(),
                     const SizedBox(height: 24),
-                    _SectionCard(
-                      title: 'about me',
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
                       child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           Text(
                             MiaProfile.about,
+                            textAlign: TextAlign.center,
                             style: GoogleFonts.inter(
                               fontSize: 15,
                               height: 1.5,
@@ -81,7 +63,10 @@ class MiaProfileScreen extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(height: 16),
+                          _PhotoGrid(assets: MiaProfile.galleryAssets),
+                          const SizedBox(height: 16),
                           Wrap(
+                            alignment: WrapAlignment.center,
                             spacing: 8,
                             runSpacing: 8,
                             children: MiaProfile.hobbies.map((h) {
@@ -110,24 +95,6 @@ class MiaProfileScreen extends StatelessWidget {
                         ],
                       ),
                     ),
-                    const SizedBox(height: 16),
-                    if (MiaProfile.galleryAssets.isNotEmpty) ...[
-                      _SectionCard(
-                        title: 'gallery',
-                        child: _GalleryGrid(
-                          assets: MiaProfile.galleryAssets,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                    ],
-                    _SectionCard(
-                      title: 'social',
-                      child: Column(
-                        children: MiaProfile.socialLinks.map((link) {
-                          return _SocialTile(link: link);
-                        }).toList(),
-                      ),
-                    ),
                   ],
                 ),
               ),
@@ -139,24 +106,88 @@ class MiaProfileScreen extends StatelessWidget {
   }
 }
 
-class _GalleryGrid extends StatelessWidget {
-  const _GalleryGrid({required this.assets});
+class _FollowMeRow extends StatelessWidget {
+  const _FollowMeRow();
 
-  final List<String> assets;
+  Future<void> _open(BuildContext context, MiaSocialLink link) async {
+    final uri = Uri.parse(link.url);
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      if (context.mounted) {
+        MiaTheme.showMessage(context, 'could not open ${link.platform}');
+      }
+    }
+  }
+
+  FaIconData _iconFor(MiaSocialLink link) {
+    switch (link.icon) {
+      case 'instagram':
+        return FontAwesomeIcons.instagram;
+      case 'x':
+        return FontAwesomeIcons.xTwitter;
+      case 'facebook':
+        return FontAwesomeIcons.facebook;
+      default:
+        return FontAwesomeIcons.link;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          'Follow me on',
+          style: GoogleFonts.inter(
+            fontSize: 13,
+            color: MiaColors.textMuted,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(width: 8),
+        for (var i = 0; i < MiaProfile.followLinks.length; i++) ...[
+          if (i > 0) const SizedBox(width: 2.5),
+          InkWell(
+            onTap: () => _open(context, MiaProfile.followLinks[i]),
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              padding: const EdgeInsets.all(5),
+              child: FaIcon(
+                _iconFor(MiaProfile.followLinks[i]),
+                size: 20,
+                color: MiaColors.accentDeep,
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _PhotoGrid extends StatelessWidget {
+  const _PhotoGrid({required this.assets});
+
+  final List<String> assets;
+
+  static const _spacing = 8.0;
+  static const _columns = 2;
+  static const _photoCount = 4;
+
+  @override
+  Widget build(BuildContext context) {
+    final photos = assets.take(_photoCount).toList();
+    if (photos.isEmpty) return const SizedBox.shrink();
+
     return LayoutBuilder(
       builder: (context, constraints) {
-        const spacing = 8.0;
-        const columns = 3;
-        final tileSize =
-            (constraints.maxWidth - spacing * (columns - 1)) / columns;
+        final tileSize = (constraints.maxWidth - _spacing) / _columns;
         return Wrap(
-          spacing: spacing,
-          runSpacing: spacing,
+          spacing: _spacing,
+          runSpacing: _spacing,
           children: [
-            for (var i = 0; i < assets.length; i++)
+            for (var i = 0; i < photos.length; i++)
               SizedBox(
                 width: tileSize,
                 height: tileSize,
@@ -167,11 +198,11 @@ class _GalleryGrid extends StatelessWidget {
                     child: InkWell(
                       onTap: () => MiaProfilePhotoViewer.open(
                         context,
-                        assets: assets,
+                        assets: photos,
                         initialIndex: i,
                       ),
                       child: Image.asset(
-                        assets[i],
+                        photos[i],
                         fit: BoxFit.cover,
                         errorBuilder: (context, error, stackTrace) => Center(
                           child: Icon(
@@ -188,114 +219,6 @@ class _GalleryGrid extends StatelessWidget {
           ],
         );
       },
-    );
-  }
-}
-
-class _SectionCard extends StatelessWidget {
-  const _SectionCard({required this.title, required this.child});
-
-  final String title;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: MiaColors.surface,
-        borderRadius: BorderRadius.circular(22),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: GoogleFonts.inter(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.6,
-              color: MiaColors.accentDeep,
-            ),
-          ),
-          const SizedBox(height: 12),
-          child,
-        ],
-      ),
-    );
-  }
-}
-
-class _SocialTile extends StatelessWidget {
-  const _SocialTile({required this.link});
-
-  final MiaSocialLink link;
-
-  Future<void> _open(BuildContext context) async {
-    final uri = Uri.parse(link.url);
-    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-      if (context.mounted) {
-        MiaTheme.showMessage(context, 'could not open ${link.platform}');
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Material(
-        color: MiaColors.background,
-        borderRadius: BorderRadius.circular(16),
-        child: InkWell(
-          onTap: () => _open(context),
-          borderRadius: BorderRadius.circular(16),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            child: Row(
-              children: [
-                Text(link.icon, style: const TextStyle(fontSize: 22)),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        link.platform,
-                        style: GoogleFonts.inter(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: MiaColors.miaText,
-                        ),
-                      ),
-                      Text(
-                        link.handle,
-                        style: GoogleFonts.inter(
-                          fontSize: 13,
-                          color: MiaColors.textMuted,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Icon(
-                  Icons.open_in_new_rounded,
-                  size: 18,
-                  color: MiaColors.textMuted.withValues(alpha: 0.8),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

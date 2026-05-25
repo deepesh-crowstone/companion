@@ -25,6 +25,7 @@ dependencies:
   http_parser: ^4.1.2
   web: ^1.1.1
   flutter_cashfree_pg_sdk: ^2.4.0+52
+  font_awesome_flutter: ^11.0.0
 
 dev_dependencies:
   flutter_test:
