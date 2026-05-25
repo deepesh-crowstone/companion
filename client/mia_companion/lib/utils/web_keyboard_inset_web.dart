@@ -1,14 +1,16 @@
+import 'dart:async';
 import 'dart:js_interop';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:web/web.dart' as web;
 
-/// Lifts [child] above the virtual keyboard on mobile web.
+/// Lifts [child] above the virtual keyboard in mobile webviews that overlay
+/// the keyboard instead of resizing the layout (e.g. Instagram in-app browser).
 ///
-/// Overlay webviews (e.g. Instagram) do not shrink the layout viewport, so we
-/// read [VisualViewport]. Browsers that resize the layout report keyboard height
-/// via [MediaQuery.viewInsets] instead — never combine both.
+/// On regular Chrome/Safari the layout viewport shrinks and Flutter's
+/// `Scaffold.resizeToAvoidBottomInset` already handles the inset — in that case
+/// this widget stays a no-op so we never apply the inset twice.
 class WebKeyboardInset extends StatefulWidget {
   const WebKeyboardInset({
     super.key,
@@ -26,9 +28,11 @@ class WebKeyboardInset extends StatefulWidget {
 class _WebKeyboardInsetState extends State<WebKeyboardInset> {
   static const _gap = 10.0;
   static const _openThreshold = 8.0;
+  static const _focusLossDebounce = Duration(milliseconds: 120);
 
-  double _overlayOverlap = 0;
+  double _overlayLift = 0;
   double _baselineWindowHeight = 0;
+  Timer? _clearTimer;
   late final web.EventListener _onViewportChange = _handleViewportChange.toJS;
 
   void _handleViewportChange(web.Event _) {
@@ -55,13 +59,18 @@ class _WebKeyboardInsetState extends State<WebKeyboardInset> {
   }
 
   void _onFocusChanged() {
-    if (!widget.focusNode.hasFocus) {
-      if (_overlayOverlap != 0 && mounted) {
-        setState(() => _overlayOverlap = 0);
-      }
+    if (widget.focusNode.hasFocus) {
+      _clearTimer?.cancel();
+      _clearTimer = null;
+      _sync();
       return;
     }
-    _sync();
+    // Debounce focus loss so refocusing right after sending doesn't flicker.
+    _clearTimer?.cancel();
+    _clearTimer = Timer(_focusLossDebounce, () {
+      if (!mounted || widget.focusNode.hasFocus) return;
+      if (_overlayLift != 0) setState(() => _overlayLift = 0);
+    });
   }
 
   double get _windowHeight => web.window.innerHeight.toDouble();
@@ -79,12 +88,7 @@ class _WebKeyboardInsetState extends State<WebKeyboardInset> {
   }
 
   void _sync() {
-    if (!widget.focusNode.hasFocus) {
-      if (_overlayOverlap != 0 && mounted) {
-        setState(() => _overlayOverlap = 0);
-      }
-      return;
-    }
+    if (!mounted) return;
 
     final vv = web.window.visualViewport;
     if (vv == null) return;
@@ -99,18 +103,23 @@ class _WebKeyboardInsetState extends State<WebKeyboardInset> {
       _baselineWindowHeight = windowHeight;
     }
 
+    // If the layout viewport shrank by roughly the keyboard height, the
+    // browser is in resize mode — Flutter already adjusts via viewInsets, so
+    // we must not add our own lift on top of that.
     final shrink = _baselineWindowHeight - windowHeight;
-    final nextOverlap = overlap > _openThreshold && shrink < overlap * 0.35
-        ? overlap
-        : 0.0;
+    final isOverlayKeyboard =
+        overlap > _openThreshold && shrink < overlap * 0.35;
 
-    if ((nextOverlap - _overlayOverlap).abs() > 0.5 && mounted) {
-      setState(() => _overlayOverlap = nextOverlap);
+    final nextLift = isOverlayKeyboard ? overlap + _gap : 0.0;
+
+    if ((nextLift - _overlayLift).abs() > 0.5) {
+      setState(() => _overlayLift = nextLift);
     }
   }
 
   @override
   void dispose() {
+    _clearTimer?.cancel();
     widget.focusNode.removeListener(_onFocusChanged);
     _detachListeners();
     super.dispose();
@@ -118,15 +127,9 @@ class _WebKeyboardInsetState extends State<WebKeyboardInset> {
 
   @override
   Widget build(BuildContext context) {
-    final flutterInset = widget.focusNode.hasFocus
-        ? MediaQuery.viewInsetsOf(context).bottom
-        : 0.0;
-    final inset = math.max(flutterInset, _overlayOverlap);
-    final padding = inset > _openThreshold ? inset + _gap : 0.0;
-
-    // Stable wrapper so focus is not lost when padding changes.
+    // Stable wrapper so focus is preserved when the lift changes.
     return Padding(
-      padding: EdgeInsets.only(bottom: padding),
+      padding: EdgeInsets.only(bottom: _overlayLift),
       child: widget.child,
     );
   }
