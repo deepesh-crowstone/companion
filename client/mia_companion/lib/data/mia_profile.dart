@@ -19,10 +19,10 @@ class MiaProfile {
 
   /// Four photos shown in the about-me image grid (2×2).
   static const galleryAssets = <String>[
-    'assets/images/mia_profile.png',
-    'assets/images/mia_profile.png',
-    'assets/images/mia_profile.png',
-    'assets/images/mia_profile.png',
+    'assets/images/zara_gallery/photo_1.jpg',
+    'assets/images/zara_gallery/photo_2.jpg',
+    'assets/images/zara_gallery/photo_3.jpg',
+    'assets/images/zara_gallery/photo_4.jpg',
   ];
 
   static const about =
