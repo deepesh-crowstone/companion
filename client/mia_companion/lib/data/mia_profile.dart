@@ -17,6 +17,12 @@ class MiaProfile {
   static const avatarAsset = 'assets/images/mia_profile.png';
   static const tagline = 'soft chaos, sharp timing, good coffee';
 
+  /// Photos shown in the gallery section on Zara's profile screen.
+  /// Drop more images into `assets/images/zara_gallery/` and list them here.
+  static const galleryAssets = <String>[
+    'assets/images/mia_profile.png',
+  ];
+
   static const about =
       "hey — i'm zara. brand/content girl, accidental night owl, "
       "and professional overthinker of tiny message tones. i like good coffee, "

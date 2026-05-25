@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../data/mia_profile.dart';
 import '../theme/mia_theme.dart';
 import '../widgets/mia_avatar.dart';
+import '../widgets/mia_profile_photo_viewer.dart';
 
 class MiaProfileScreen extends StatelessWidget {
   const MiaProfileScreen({super.key});
@@ -45,7 +46,15 @@ class MiaProfileScreen extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(24, 8, 24, 32),
                 child: Column(
                   children: [
-                    const MiaAvatar(size: 108, showBorder: true, borderWidth: 3),
+                    MiaAvatar(
+                      size: 108,
+                      showBorder: true,
+                      borderWidth: 3,
+                      onTap: () => MiaProfilePhotoViewer.open(
+                        context,
+                        asset: MiaProfile.avatarAsset,
+                      ),
+                    ),
                     const SizedBox(height: 16),
                     Text(MiaProfile.name, style: MiaTheme.serifTitle(size: 32)),
                     const SizedBox(height: 6),
@@ -101,6 +110,15 @@ class MiaProfileScreen extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 16),
+                    if (MiaProfile.galleryAssets.isNotEmpty) ...[
+                      _SectionCard(
+                        title: 'gallery',
+                        child: _GalleryGrid(
+                          assets: MiaProfile.galleryAssets,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
                     _SectionCard(
                       title: 'social',
                       child: Column(
@@ -116,6 +134,59 @@ class MiaProfileScreen extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _GalleryGrid extends StatelessWidget {
+  const _GalleryGrid({required this.assets});
+
+  final List<String> assets;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const spacing = 8.0;
+        const columns = 3;
+        final tileSize =
+            (constraints.maxWidth - spacing * (columns - 1)) / columns;
+        return Wrap(
+          spacing: spacing,
+          runSpacing: spacing,
+          children: [
+            for (var i = 0; i < assets.length; i++)
+              SizedBox(
+                width: tileSize,
+                height: tileSize,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: Material(
+                    color: MiaColors.miaBubble,
+                    child: InkWell(
+                      onTap: () => MiaProfilePhotoViewer.open(
+                        context,
+                        assets: assets,
+                        initialIndex: i,
+                      ),
+                      child: Image.asset(
+                        assets[i],
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) => Center(
+                          child: Icon(
+                            Icons.image_not_supported_outlined,
+                            color: MiaColors.textMuted,
+                            size: 24,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 }
