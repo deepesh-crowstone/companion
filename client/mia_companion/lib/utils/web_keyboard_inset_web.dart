@@ -4,8 +4,11 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:web/web.dart' as web;
 
-/// Lifts [child] above overlay keyboards in mobile webviews (e.g. Instagram)
-/// where the layout viewport does not shrink when the IME opens.
+/// Lifts [child] above the virtual keyboard on mobile web.
+///
+/// Overlay webviews (e.g. Instagram) do not shrink the layout viewport, so we
+/// read [VisualViewport]. Browsers that resize the layout report keyboard height
+/// via [MediaQuery.viewInsets] instead — never combine both.
 class WebKeyboardInset extends StatefulWidget {
   const WebKeyboardInset({
     super.key,
@@ -24,7 +27,7 @@ class _WebKeyboardInsetState extends State<WebKeyboardInset> {
   static const _gap = 10.0;
   static const _openThreshold = 8.0;
 
-  double _lift = 0;
+  double _overlayOverlap = 0;
   double _baselineWindowHeight = 0;
   late final web.EventListener _onViewportChange = _handleViewportChange.toJS;
 
@@ -53,7 +56,9 @@ class _WebKeyboardInsetState extends State<WebKeyboardInset> {
 
   void _onFocusChanged() {
     if (!widget.focusNode.hasFocus) {
-      if (_lift != 0 && mounted) setState(() => _lift = 0);
+      if (_overlayOverlap != 0 && mounted) {
+        setState(() => _overlayOverlap = 0);
+      }
       return;
     }
     _sync();
@@ -75,7 +80,9 @@ class _WebKeyboardInsetState extends State<WebKeyboardInset> {
 
   void _sync() {
     if (!widget.focusNode.hasFocus) {
-      if (_lift != 0 && mounted) setState(() => _lift = 0);
+      if (_overlayOverlap != 0 && mounted) {
+        setState(() => _overlayOverlap = 0);
+      }
       return;
     }
 
@@ -93,12 +100,12 @@ class _WebKeyboardInsetState extends State<WebKeyboardInset> {
     }
 
     final shrink = _baselineWindowHeight - windowHeight;
-    final manualLift = overlap > _openThreshold && shrink < overlap * 0.35
-        ? overlap + _gap
+    final nextOverlap = overlap > _openThreshold && shrink < overlap * 0.35
+        ? overlap
         : 0.0;
 
-    if ((manualLift - _lift).abs() > 0.5 && mounted) {
-      setState(() => _lift = manualLift);
+    if ((nextOverlap - _overlayOverlap).abs() > 0.5 && mounted) {
+      setState(() => _overlayOverlap = nextOverlap);
     }
   }
 
@@ -111,9 +118,15 @@ class _WebKeyboardInsetState extends State<WebKeyboardInset> {
 
   @override
   Widget build(BuildContext context) {
-    // Keep a stable wrapper so focus is not lost when lift becomes non-zero.
+    final flutterInset = widget.focusNode.hasFocus
+        ? MediaQuery.viewInsetsOf(context).bottom
+        : 0.0;
+    final inset = math.max(flutterInset, _overlayOverlap);
+    final padding = inset > _openThreshold ? inset + _gap : 0.0;
+
+    // Stable wrapper so focus is not lost when padding changes.
     return Padding(
-      padding: EdgeInsets.only(bottom: _lift),
+      padding: EdgeInsets.only(bottom: padding),
       child: widget.child,
     );
   }
