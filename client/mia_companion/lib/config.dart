@@ -4,7 +4,7 @@
 /// `flutter run --dart-define=API_BASE_URL=http://10.0.2.2:3000`
 const String apiBaseUrl = String.fromEnvironment(
   'API_BASE_URL',
-  defaultValue: 'https://companion-production-850d.up.railway.app',
+  defaultValue: 'https://api.chatlife.online',
 );
 
 /// Normalized base URL (no trailing slash).
@@ -16,4 +16,5 @@ String get resolvedApiBaseUrl {
 
 bool get isProductionApi =>
     resolvedApiBaseUrl.startsWith('https://') &&
-    resolvedApiBaseUrl.contains('railway.app');
+    (resolvedApiBaseUrl.contains('railway.app') ||
+        resolvedApiBaseUrl.contains('chatlife.online'));
