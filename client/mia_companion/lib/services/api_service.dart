@@ -85,6 +85,22 @@ class ApiService {
     await prefs.remove(_startedChattingKey);
   }
 
+  static const userConnectionErrorMessage =
+      "Can't connect to Zara right now. Check your internet connection and try again.";
+
+  static bool isConnectionFailure(String message) {
+    return message.contains('Cannot reach server') ||
+        message.contains('Connection timed out') ||
+        message.contains('SocketException') ||
+        message.contains(userConnectionErrorMessage);
+  }
+
+  static String friendlyErrorMessage(Object error) {
+    final msg = error.toString().replaceFirst('Exception: ', '');
+    if (isConnectionFailure(msg)) return userConnectionErrorMessage;
+    return msg;
+  }
+
   /// Ensures a valid session exists, registering a guest user in the background if needed.
   Future<void> ensureAuthenticated() async {
     await loadSession();

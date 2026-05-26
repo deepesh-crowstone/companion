@@ -52,6 +52,14 @@ class _NewUserScreenState extends State<NewUserScreen> {
     });
 
     try {
+      final reachable = await ApiService.instance.checkHealth().timeout(
+        const Duration(seconds: 12),
+        onTimeout: () => false,
+      );
+      if (!reachable) {
+        throw Exception(ApiService.userConnectionErrorMessage);
+      }
+
       await ApiService.instance.ensureAuthenticated();
 
       final eventTime = DateTime.now();
@@ -69,7 +77,7 @@ class _NewUserScreenState extends State<NewUserScreen> {
       if (!mounted) return;
       setState(() {
         _starting = false;
-        _error = e.toString().replaceFirst('Exception: ', '');
+        _error = ApiService.friendlyErrorMessage(e);
       });
     }
   }
@@ -95,24 +103,25 @@ class _NewUserScreenState extends State<NewUserScreen> {
               ),
             ),
           if (_error != null)
-            SafeArea(
-              child: _ErrorState(
+            Positioned(
+              left: 24,
+              right: 24,
+              bottom: MediaQuery.paddingOf(context).bottom + 96,
+              child: _ConnectionErrorBanner(
                 message: _error!,
-                onRetry: () => setState(() => _error = null),
+                onDismiss: () => setState(() => _error = null),
               ),
             ),
         ],
       ),
-      bottomNavigationBar: _error == null
-          ? Material(
-              color: Colors.transparent,
-              elevation: 0,
-              child: StartChattingCard(
-                loading: _starting,
-                onStart: _onStartChatting,
-              ),
-            )
-          : null,
+      bottomNavigationBar: Material(
+        color: Colors.transparent,
+        elevation: 0,
+        child: StartChattingCard(
+          loading: _starting,
+          onStart: _onStartChatting,
+        ),
+      ),
     );
   }
 }
@@ -233,27 +242,55 @@ class _PitchRow extends StatelessWidget {
   }
 }
 
-class _ErrorState extends StatelessWidget {
-  const _ErrorState({required this.message, required this.onRetry});
+class _ConnectionErrorBanner extends StatelessWidget {
+  const _ConnectionErrorBanner({
+    required this.message,
+    required this.onDismiss,
+  });
 
   final String message;
-  final VoidCallback onRetry;
+  final VoidCallback onDismiss;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(28),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            message,
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-          const SizedBox(height: 20),
-          FilledButton(onPressed: onRetry, child: const Text('try again')),
-        ],
+    return Material(
+      color: Colors.black.withValues(alpha: 0.72),
+      borderRadius: BorderRadius.circular(16),
+      clipBehavior: Clip.antiAlias,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(
+              Icons.wifi_off_rounded,
+              color: Colors.white,
+              size: 22,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                message,
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  height: 1.4,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+            IconButton(
+              onPressed: onDismiss,
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+              icon: Icon(
+                Icons.close_rounded,
+                color: Colors.white.withValues(alpha: 0.85),
+                size: 20,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

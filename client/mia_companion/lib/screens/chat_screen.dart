@@ -90,6 +90,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   int _unlockedIntimacyLevel = 1;
   bool _pageViewTracked = false;
+  bool _didAutoFocusInput = false;
   Timer? _expiryRefreshTimer;
   final _disappearing = DisappearingMessagesController.instance;
 
@@ -265,12 +266,14 @@ class _ChatScreenState extends State<ChatScreen> {
         }
         _loading = false;
       });
+      _maybeAutoFocusInputOnLanding();
       await _disappearing.markExpiredMessages(_messages);
       _trackPageViewedOnce();
       _scrollToBottom(force: true);
     } catch (e) {
       if (!mounted) return;
       setState(() => _loading = false);
+      _maybeAutoFocusInputOnLanding();
       _trackPageViewedOnce();
       _handleError(e);
     }
@@ -913,10 +916,16 @@ class _ChatScreenState extends State<ChatScreen> {
 
   void _keepInputFocused() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && !_recording) {
+      if (mounted && !_recording && !_loading) {
         _inputFocus.requestFocus();
       }
     });
+  }
+
+  void _maybeAutoFocusInputOnLanding() {
+    if (_didAutoFocusInput) return;
+    _didAutoFocusInput = true;
+    _keepInputFocused();
   }
 
   void _onCallPressed() {
