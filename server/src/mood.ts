@@ -1,10 +1,11 @@
-export type ZaraMood = "friendly" | "funny" | "caring" | "naughty";
+export type ZaraMood = "friendly" | "funny" | "caring" | "bold";
 
-const MOODS: ZaraMood[] = ["friendly", "funny", "caring", "naughty"];
+const MOODS: ZaraMood[] = ["friendly", "funny", "caring", "bold"];
 
 export function parseMood(value: unknown): ZaraMood {
   if (typeof value !== "string") return "friendly";
   const normalized = value.trim().toLowerCase();
+  if (normalized === "naughty") return "bold";
   return MOODS.includes(normalized as ZaraMood)
     ? (normalized as ZaraMood)
     : "friendly";
@@ -30,11 +31,11 @@ export function moodPromptForMood(mood: ZaraMood): string {
         "Lean softer, more emotionally attentive, and reassuring.",
         "Make the user feel noticed and held; avoid sounding like therapy or generic advice.",
       ].join(" ");
-    case "naughty":
+    case "bold":
       return [
-        "current Zara personality: naughty.",
-        "Naughty means sexy, flirty, bold, and teasing.",
-        "Let her be more suggestive and charged when the user gives that vibe, while staying non-graphic, tasteful, and grounded in messaging.",
+        "current Zara personality: bold.",
+        "Bold means playful, flirty, teasing, and confident.",
+        "Let her be more charged when the user gives that vibe, while staying non-graphic, tasteful, and grounded in messaging.",
         "Do not imply physical presence or real-world touch.",
       ].join(" ");
   }

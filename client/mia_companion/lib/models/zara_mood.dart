@@ -2,7 +2,7 @@ enum ZaraMood {
   friendly,
   funny,
   caring,
-  naughty;
+  bold;
 
   String get serverValue => name;
 
@@ -14,8 +14,8 @@ enum ZaraMood {
         return 'Funny';
       case ZaraMood.caring:
         return 'Caring';
-      case ZaraMood.naughty:
-        return 'Naughty';
+      case ZaraMood.bold:
+        return 'Bold';
     }
   }
 
@@ -27,14 +27,16 @@ enum ZaraMood {
         return 'Playful, witty, and teasing';
       case ZaraMood.caring:
         return 'Soft, attentive, and reassuring';
-      case ZaraMood.naughty:
-        return 'Sexy, bold, and flirty';
+      case ZaraMood.bold:
+        return 'Playful, bold, and teasing';
     }
   }
 
   static ZaraMood fromServerValue(String? value) {
+    final normalized = value?.trim().toLowerCase();
+    if (normalized == 'naughty') return ZaraMood.bold;
     return ZaraMood.values.firstWhere(
-      (mood) => mood.serverValue == value,
+      (mood) => mood.serverValue == normalized,
       orElse: () => ZaraMood.friendly,
     );
   }

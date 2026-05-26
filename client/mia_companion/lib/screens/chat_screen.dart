@@ -28,7 +28,6 @@ import '../widgets/chat_message_tile.dart';
 import '../widgets/empty_chat.dart';
 import '../widgets/mia_presence_row.dart';
 import '../widgets/mia_chat_header.dart';
-import '../widgets/intimacy_unlock_sheet.dart';
 import '../theme/theme_controller.dart';
 import '../widgets/scroll_to_bottom_button.dart';
 import '../widgets/mia_bottom_sheet.dart';
@@ -37,7 +36,6 @@ import '../widgets/disappearing_messages_banner.dart';
 import '../widgets/mood_change_banner.dart';
 import '../widgets/mood_options_sheet.dart';
 import '../widgets/theme_options_sheet.dart';
-import '../models/intimacy.dart';
 import 'mia_profile_screen.dart';
 import 'user_profile_screen.dart';
 
@@ -88,7 +86,6 @@ class _ChatScreenState extends State<ChatScreen> {
   final Map<int, MessageReceiptStatus> _receiptStatuses = {};
   final Map<int, DateTime> _receiptSentAt = {};
 
-  int _unlockedIntimacyLevel = 1;
   bool _pageViewTracked = false;
   bool _didAutoFocusInput = false;
   Timer? _expiryRefreshTimer;
@@ -252,18 +249,9 @@ class _ChatScreenState extends State<ChatScreen> {
         await ApiService.instance.ensureAuthenticated();
       }
       final messages = await ApiService.instance.fetchMessages();
-      IntimacyStatus? intimacy;
-      try {
-        intimacy = await ApiService.instance.fetchIntimacyStatus();
-      } catch (_) {
-        intimacy = null;
-      }
       if (!mounted) return;
       setState(() {
         _messages = messages;
-        if (intimacy != null) {
-          _unlockedIntimacyLevel = intimacy.unlockedLevel;
-        }
         _loading = false;
       });
       _maybeAutoFocusInputOnLanding();
@@ -288,32 +276,6 @@ class _ChatScreenState extends State<ChatScreen> {
         eventTime: DateTime.now(),
         anonymous: true,
       ),
-    );
-  }
-
-  void _onIntimacyUnlocked(IntimacyStatus status) {
-    setState(() => _unlockedIntimacyLevel = status.unlockedLevel);
-    MiaTheme.showMessage(
-      context,
-      '${status.tiers.firstWhere((t) => t.level == status.unlockedLevel).label} unlocked — go ahead 😊',
-    );
-  }
-
-  Future<void> _maybeShowIntimacyNudge(IntimacyNudge? nudge) async {
-    if (nudge == null || !mounted) return;
-    if (nudge.requiredLevel <= _unlockedIntimacyLevel) return;
-    await Future<void>.delayed(const Duration(milliseconds: 400));
-    if (!mounted) return;
-    unawaited(
-      ApiService.instance.trackEvent(
-        'intimacy_detected',
-        eventTime: DateTime.now(),
-      ),
-    );
-    await showIntimacyUnlockSheet(
-      context: context,
-      nudge: nudge,
-      onUnlocked: _onIntimacyUnlocked,
     );
   }
 
@@ -552,7 +514,6 @@ class _ChatScreenState extends State<ChatScreen> {
         });
         _scrollToBottom(animate: true);
       }
-      unawaited(_maybeShowIntimacyNudge(result.intimacyNudge));
     } catch (e) {
       if (!mounted || generation != _replyGeneration) return;
       setState(() {
@@ -845,7 +806,6 @@ class _ChatScreenState extends State<ChatScreen> {
       });
       await discardVoiceRecordingOutput(path);
       _scrollToBottom(force: true, animate: true);
-      unawaited(_maybeShowIntimacyNudge(result.intimacyNudge));
     } catch (e) {
       await discardVoiceRecordingOutput(path);
       if (!mounted) return;

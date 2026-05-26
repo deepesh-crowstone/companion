@@ -57,7 +57,7 @@ Data retention
 We retain conversation data while your account is active so Zara can maintain context. If you delete your account from the app, we remove associated local credentials and request deletion of server-side account data where supported.
 
 Sharing
-We do not sell personal data. We may use trusted infrastructure providers (hosting, analytics, payment processors where applicable) strictly to operate the service.
+We do not sell personal data. We may use trusted infrastructure providers (hosting, analytics) strictly to operate the service.
 
 Your choices
 You can log out, delete your account from Profile → Account, or contact us to request data access or deletion.
@@ -79,9 +79,6 @@ You agree not to misuse the app, attempt to break security, harass others, or up
 
 Accounts
 You are responsible for activity on your account. You may log out or delete your account at any time from Profile → Account.
-
-Payments
-Some features may require payment. All fees, refunds, and billing terms shown at purchase time apply.
 
 Disclaimer
 The app is provided "as is" without warranties. To the maximum extent permitted by law, Crowstone is not liable for indirect or consequential damages arising from use of the app.

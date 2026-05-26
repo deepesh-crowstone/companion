@@ -447,6 +447,7 @@ export type ChatWithMiaOptions = {
   /** Voice notes: model may embed TTS delivery tags in the reply. */
   expressiveTts?: boolean;
   mood?: ZaraMood;
+  intimacyLevel?: IntimacyLevel;
 };
 
 function ttsProvider(): string {
@@ -527,11 +528,12 @@ export async function chatWithMia(
   }
 
   const moodLine = moodPromptForMood(options?.mood ?? "friendly");
+  const intimacyLevel = options?.intimacyLevel ?? 1;
   const systemPrompt = `${
     options?.expressiveTts
       ? `${MIA_VOICE_SYSTEM_PROMPT}\n${voiceTtsInstructions()}`
       : MIA_VOICE_SYSTEM_PROMPT
-  }\n\n${moodLine}\n\n${currentIndiaTimeContext()}`;
+  }\n\n${intimacyPromptForLevel(intimacyLevel)}\n\n${moodLine}\n\n${currentIndiaTimeContext()}`;
 
   const messages: { role: string; content: string }[] = [
     { role: "system", content: systemPrompt },
@@ -692,8 +694,11 @@ output format:
 
 export async function chatWithMiaTextAsVoice(
   history: DbMessage[],
-  options?: { mood?: ZaraMood },
+  options?: { mood?: ZaraMood; intimacyLevel?: IntimacyLevel },
 ): Promise<string> {
-  const textSegments = await chatWithMiaText(history, { mood: options?.mood });
+  const textSegments = await chatWithMiaText(history, {
+    mood: options?.mood,
+    intimacyLevel: options?.intimacyLevel,
+  });
   return addVoiceDeliveryToTextReply(textSegments.join(" "));
 }

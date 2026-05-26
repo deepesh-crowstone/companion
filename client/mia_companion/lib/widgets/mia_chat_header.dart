@@ -190,7 +190,7 @@ class _MoodPill extends StatelessWidget {
         return Icons.theater_comedy_outlined;
       case ZaraMood.caring:
         return Icons.favorite_border_rounded;
-      case ZaraMood.naughty:
+      case ZaraMood.bold:
         return Icons.local_fire_department_outlined;
     }
   }

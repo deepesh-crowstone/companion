@@ -19,13 +19,7 @@ import {
   transcribeAudio,
   voiceReplyPipeline,
 } from "../xai.js";
-import {
-  buildIntimacyNudge,
-  classifyIntimacyLevel,
-  generateIntimacyTeaser,
-  getUserIntimacyLevel,
-  type IntimacyNudgePayload,
-} from "../intimacy.js";
+import { classifyIntimacyLevel } from "../intimacy.js";
 import { parseMood, type ZaraMood } from "../mood.js";
 
 const upload = multer({
@@ -153,39 +147,30 @@ function openingGreetingReply(): string[] {
 }
 
 async function buildTextReply(
-  userId: number,
   history: DbMessage[],
   userMsgs: DbMessage[],
   mood: ZaraMood,
-): Promise<{
-  assistantMsgs: DbMessage[];
-  intimacyNudge: IntimacyNudgePayload | null;
-}> {
+): Promise<{ assistantMsgs: DbMessage[] }> {
   const lastUserText = userMsgs[userMsgs.length - 1]?.content ?? "";
-  const classified = await classifyIntimacyLevel(lastUserText);
-  const unlockedLevel = await getUserIntimacyLevel(userId);
-  const intimacyNudge = buildIntimacyNudge(classified.level, unlockedLevel);
-
-  if (intimacyNudge) {
-    const teaser = await generateIntimacyTeaser(lastUserText, classified.level);
-    const assistantMsgs = await insertAssistantTextMessages(userId, [teaser]);
-    return { assistantMsgs, intimacyNudge };
-  }
 
   if (isFirstMessageSimpleGreeting(history, lastUserText)) {
     const assistantMsgs = await insertAssistantTextMessages(
-      userId,
+      userMsgs[0].user_id,
       openingGreetingReply(),
     );
-    return { assistantMsgs, intimacyNudge: null };
+    return { assistantMsgs };
   }
 
+  const classified = await classifyIntimacyLevel(lastUserText);
   const replySegments = await chatWithMiaText([...history, ...userMsgs], {
     intimacyLevel: classified.level,
     mood,
   });
-  const assistantMsgs = await insertAssistantTextMessages(userId, replySegments);
-  return { assistantMsgs, intimacyNudge: null };
+  const assistantMsgs = await insertAssistantTextMessages(
+    userMsgs[0].user_id,
+    replySegments,
+  );
+  return { assistantMsgs };
 }
 
 messagesRouter.get("/", async (req, res) => {
@@ -222,12 +207,7 @@ messagesRouter.post("/text", async (req, res) => {
     const history = await listMessages(auth.userId);
     const userMsg = await insertMessage(auth.userId, "user", trimmed, "text");
 
-    const { assistantMsgs, intimacyNudge } = await buildTextReply(
-      auth.userId,
-      history,
-      [userMsg],
-      mood,
-    );
+    const { assistantMsgs } = await buildTextReply(history, [userMsg], mood);
     const assistantMessages = await Promise.all(
       assistantMsgs.map((m) => toPublicMessage(m)),
     );
@@ -236,7 +216,6 @@ messagesRouter.post("/text", async (req, res) => {
       userMessage: await toPublicMessage(userMsg),
       assistantMessage: combinedAssistantFallback(assistantMessages),
       assistantMessages,
-      ...(intimacyNudge ? { intimacyNudge } : {}),
     });
   } catch (e) {
     console.error(e);
@@ -281,12 +260,7 @@ messagesRouter.post("/text/batch", async (req, res) => {
       userMsgs.push(await insertMessage(auth.userId, "user", text, "text"));
     }
 
-    const { assistantMsgs, intimacyNudge } = await buildTextReply(
-      auth.userId,
-      history,
-      userMsgs,
-      mood,
-    );
+    const { assistantMsgs } = await buildTextReply(history, userMsgs, mood);
     const assistantMessages = await Promise.all(
       assistantMsgs.map((m) => toPublicMessage(m)),
     );
@@ -297,7 +271,6 @@ messagesRouter.post("/text/batch", async (req, res) => {
       ),
       assistantMessage: combinedAssistantFallback(assistantMessages),
       assistantMessages,
-      ...(intimacyNudge ? { intimacyNudge } : {}),
     });
   } catch (e) {
     console.error(e);
@@ -368,19 +341,18 @@ messagesRouter.post("/voice", upload.single("audio"), async (req, res) => {
     );
 
     const classified = await classifyIntimacyLevel(transcript);
-    const unlockedLevel = await getUserIntimacyLevel(auth.userId);
-    const intimacyNudge = buildIntimacyNudge(classified.level, unlockedLevel);
-
-    let replyForTts: string;
-    if (intimacyNudge) {
-      replyForTts = await generateIntimacyTeaser(transcript, classified.level);
-    } else {
-      const voiceHistory = [...history, userMsg];
-      replyForTts =
-        voiceReplyPipeline() === "text_tagged"
-          ? await chatWithMiaTextAsVoice(voiceHistory, { mood })
-          : await chatWithMia(voiceHistory, { expressiveTts: true, mood });
-    }
+    const voiceHistory = [...history, userMsg];
+    const replyForTts =
+      voiceReplyPipeline() === "text_tagged"
+        ? await chatWithMiaTextAsVoice(voiceHistory, {
+            mood,
+            intimacyLevel: classified.level,
+          })
+        : await chatWithMia(voiceHistory, {
+            expressiveTts: true,
+            mood,
+            intimacyLevel: classified.level,
+          });
 
     const displayReply = stripSpeechTagsForDisplay(replyForTts);
     const mp3Buffer = await synthesizeSpeech(replyForTts);
@@ -402,7 +374,6 @@ messagesRouter.post("/voice", upload.single("audio"), async (req, res) => {
     res.json({
       userMessage: await toPublicMessage(userMsg),
       assistantMessage: await toPublicMessage(assistantMsg),
-      ...(intimacyNudge ? { intimacyNudge } : {}),
     });
   } catch (e) {
     console.error(e);
