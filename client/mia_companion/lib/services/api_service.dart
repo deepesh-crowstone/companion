@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config.dart';
 import '../models/chat_message.dart';
+import '../models/personality_access.dart';
 import '../models/zara_mood.dart';
 import '../models/voice_upload.dart';
 import 'session_expired.dart';
@@ -343,6 +344,48 @@ class ApiService {
     } on http.ClientException catch (e) {
       throw Exception(_connectionError(detail: e.message));
     }
+  }
+
+  Future<PersonalityAccess> fetchPersonalityAccess() async {
+    final res = await _get(
+      Uri.parse('$resolvedApiBaseUrl/personalities/status'),
+      headers: _authHeaders,
+    );
+    _guardAuth(res);
+    if (res.statusCode >= 400) {
+      throw Exception(_errorFrom(res));
+    }
+    return PersonalityAccess.fromJson(
+      jsonDecode(res.body) as Map<String, dynamic>,
+    );
+  }
+
+  Future<PersonalityPaymentOrder> createPersonalityOrder() async {
+    final res = await _post(
+      Uri.parse('$resolvedApiBaseUrl/personalities/orders'),
+      headers: _authHeaders,
+    );
+    _guardAuth(res);
+    if (res.statusCode >= 400) {
+      throw Exception(_errorFrom(res));
+    }
+    return PersonalityPaymentOrder.fromJson(
+      jsonDecode(res.body) as Map<String, dynamic>,
+    );
+  }
+
+  Future<PersonalityVerifyResult> verifyPersonalityOrder(String orderId) async {
+    final res = await _post(
+      Uri.parse('$resolvedApiBaseUrl/personalities/orders/$orderId/verify'),
+      headers: _authHeaders,
+    );
+    _guardAuth(res);
+    if (res.statusCode >= 400) {
+      throw Exception(_errorFrom(res));
+    }
+    return PersonalityVerifyResult.fromJson(
+      jsonDecode(res.body) as Map<String, dynamic>,
+    );
   }
 
   /// Records a product analytics event. Failures are swallowed so UI is not blocked.

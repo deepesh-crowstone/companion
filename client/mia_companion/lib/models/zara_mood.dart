@@ -40,4 +40,6 @@ enum ZaraMood {
       orElse: () => ZaraMood.friendly,
     );
   }
+
+  bool get requiresPass => this != ZaraMood.friendly;
 }

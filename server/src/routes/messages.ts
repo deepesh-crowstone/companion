@@ -20,6 +20,7 @@ import {
   voiceReplyPipeline,
 } from "../xai.js";
 import { classifyIntimacyLevel } from "../intimacy.js";
+import { resolveMoodForUser } from "../personalities.js";
 import { parseMood, type ZaraMood } from "../mood.js";
 
 const upload = multer({
@@ -195,7 +196,7 @@ messagesRouter.get("/", async (req, res) => {
 messagesRouter.post("/text", async (req, res) => {
   const auth = getAuth(req);
   const { text, mood: moodRaw } = req.body as { text?: string; mood?: string };
-  const mood = parseMood(moodRaw);
+  const mood = await resolveMoodForUser(auth.userId, parseMood(moodRaw));
   const trimmed = text?.trim();
 
   if (!trimmed) {
@@ -243,7 +244,7 @@ messagesRouter.post("/text/batch", async (req, res) => {
     texts?: string[];
     mood?: string;
   };
-  const mood = parseMood(moodRaw);
+  const mood = await resolveMoodForUser(auth.userId, parseMood(moodRaw));
   const trimmed = (texts ?? [])
     .map((t) => (typeof t === "string" ? t.trim() : ""))
     .filter((t) => t.length > 0);
@@ -319,7 +320,10 @@ messagesRouter.post("/voice", upload.single("audio"), async (req, res) => {
   const { writeFileSync, unlinkSync } = await import("fs");
   const tmpPath = path.join(os.tmpdir(), `mia-${localName}`);
   writeFileSync(tmpPath, file.buffer);
-  const mood = parseMood(req.body?.mood);
+  const mood = await resolveMoodForUser(
+    auth.userId,
+    parseMood(req.body?.mood),
+  );
 
   try {
     const history = await listMessages(auth.userId);

@@ -249,6 +249,7 @@ class _ChatScreenState extends State<ChatScreen> {
         await ApiService.instance.ensureAuthenticated();
       }
       final messages = await ApiService.instance.fetchMessages();
+      unawaited(MoodController.instance.refreshAccess());
       if (!mounted) return;
       setState(() {
         _messages = messages;
