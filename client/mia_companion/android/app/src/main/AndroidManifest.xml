@@ -1,7 +1,10 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
+    <!-- Required when Play Console declares advertising ID usage (AppsFlyer attribution). -->
+    <uses-permission android:name="com.google.android.gms.permission.AD_ID"/>
     <application
         android:label="Zara"
         android:usesCleartextTraffic="true"
@@ -25,9 +28,30 @@
               android:name="io.flutter.embedding.android.NormalTheme"
               android:resource="@style/NormalTheme"
               />
+            <!-- Let AppsFlyer handle OneLink / deep links (Flutter 3.27+). -->
+            <meta-data
+                android:name="flutter_deeplinking_enabled"
+                android:value="false" />
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+            <!-- AppsFlyer OneLink App Links (https://chatlife.onelink.me/...) -->
+            <intent-filter android:autoVerify="true"
+                tools:targetApi="m">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="chatlife.onelink.me" />
+            </intent-filter>
+            <!-- AppsFlyer OneLink URI scheme fallback (zara://...) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="zara" />
             </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.

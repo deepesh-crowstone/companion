@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'models/app_deep_link.dart';
+import 'navigation/deep_link_navigation.dart';
 import 'screens/chat_screen.dart';
 import 'screens/new_user_screen.dart';
+import 'services/appsflyer_service.dart';
 import 'services/api_service.dart';
 import 'services/disappearing_messages_controller.dart';
 import 'services/mood_controller.dart';
@@ -15,6 +18,7 @@ void main() async {
   await ThemeController.instance.load();
   await DisappearingMessagesController.instance.load();
   await MoodController.instance.load();
+  await AppsFlyerService.instance.init();
   runApp(const MiaApp());
 }
 
@@ -58,6 +62,7 @@ class _MiaAppState extends State<MiaApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: rootNavigatorKey,
       title: 'Zara',
       debugShowCheckedModeBanner: false,
       theme: MiaTheme.light(),
@@ -83,6 +88,7 @@ class _BootstrapState extends State<_Bootstrap> {
   @override
   void initState() {
     super.initState();
+    AppsFlyerService.instance.pendingDeepLink.addListener(_onDeepLinkChanged);
     SessionReset.onLogout = _handleLogout;
     SessionReset.onDeleteAccount = _handleDeleteAccount;
     _init();
@@ -90,9 +96,33 @@ class _BootstrapState extends State<_Bootstrap> {
 
   @override
   void dispose() {
+    AppsFlyerService.instance.pendingDeepLink.removeListener(_onDeepLinkChanged);
     SessionReset.onLogout = null;
     SessionReset.onDeleteAccount = null;
     super.dispose();
+  }
+
+  void _onDeepLinkChanged() {
+    final link = AppsFlyerService.instance.pendingDeepLink.value;
+    if (link == null || !_ready) return;
+    _handleDeepLink(link);
+  }
+
+  void _handleDeepLink(PendingAppDeepLink link) {
+    switch (link.destination) {
+      case AppDeepLinkDestination.onboarding:
+        setState(() => _showNewUser = true);
+      case AppDeepLinkDestination.chat:
+        setState(() => _showNewUser = false);
+      case AppDeepLinkDestination.zaraProfile:
+      case AppDeepLinkDestination.userProfile:
+      case AppDeepLinkDestination.voiceCall:
+        setState(() => _showNewUser = false);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          applyAppDeepLink(link);
+        });
+    }
+    AppsFlyerService.instance.clearPendingDeepLink();
   }
 
   Future<void> _handleLogout() async {
@@ -139,6 +169,7 @@ class _BootstrapState extends State<_Bootstrap> {
       _ready = true;
       _showNewUser = showNewUser;
     });
+    _onDeepLinkChanged();
   }
 
   void _onStartedChatting() {
