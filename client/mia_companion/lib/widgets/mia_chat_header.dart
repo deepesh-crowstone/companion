@@ -7,7 +7,7 @@ import '../services/mood_controller.dart';
 import '../theme/mia_theme.dart';
 import 'mia_avatar.dart';
 
-/// Full-width chat header: avatar + name/status (left), personality (center), call & menu (right).
+/// Full-width chat header: avatar + name/status (left), personality (center), menu (right).
 class MiaChatHeader extends StatelessWidget implements PreferredSizeWidget {
   const MiaChatHeader({
     super.key,
@@ -88,13 +88,6 @@ class MiaChatHeader extends StatelessWidget implements PreferredSizeWidget {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    IconButton(
-                      icon: const Icon(Icons.phone_outlined, size: 22),
-                      color: MiaColors.textPrimary,
-                      tooltip: 'voice call',
-                      onPressed: onCall,
-                      visualDensity: VisualDensity.compact,
-                    ),
                     IconButton(
                       icon: const Icon(Icons.more_vert, size: 22),
                       color: MiaColors.textPrimary,

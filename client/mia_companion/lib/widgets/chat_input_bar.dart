@@ -1,4 +1,6 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../data/mia_profile.dart';
@@ -75,9 +77,40 @@ class _ChatInputBarState extends State<ChatInputBar> {
     if (next != _hasText) setState(() => _hasText = next);
   }
 
+  bool get _canSendText => _hasText && widget.enabled && !widget.recording;
+
+  // On desktop/web a physical Enter key should send the message, while
+  // Shift+Enter inserts a newline. On mobile the soft-keyboard return key
+  // continues to insert a newline (it doesn't emit a hardware key event).
+  bool get _enterSendsMessage => switch (defaultTargetPlatform) {
+    TargetPlatform.macOS ||
+    TargetPlatform.windows ||
+    TargetPlatform.linux => true,
+    TargetPlatform.android ||
+    TargetPlatform.iOS ||
+    TargetPlatform.fuchsia => false,
+  };
+
+  KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    if (!_enterSendsMessage || event is! KeyDownEvent) {
+      return KeyEventResult.ignored;
+    }
+    final isEnter =
+        event.logicalKey == LogicalKeyboardKey.enter ||
+        event.logicalKey == LogicalKeyboardKey.numpadEnter;
+    if (!isEnter) return KeyEventResult.ignored;
+    // Let Shift+Enter fall through so the TextField inserts a newline.
+    if (HardwareKeyboard.instance.isShiftPressed) {
+      return KeyEventResult.ignored;
+    }
+    if (_canSendText) widget.onSend();
+    // Consume the event so no newline is inserted (web calls preventDefault).
+    return KeyEventResult.handled;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final canSendText = _hasText && widget.enabled && !widget.recording;
+    final canSendText = _canSendText;
     final holdActive = widget.recording && !widget.recordingLocked;
     final showLockedSend = widget.recording && widget.recordingLocked;
     final showMic = !_hasText && widget.enabled && !showLockedSend;
@@ -126,39 +159,48 @@ class _ChatInputBarState extends State<ChatInputBar> {
                               onTap: widget.onEmojiToggle!,
                             ),
                           Expanded(
-                            child: TextField(
-                              controller: widget.controller,
-                              focusNode: widget.focusNode,
-                              enabled: widget.enabled,
-                              scrollPadding: const EdgeInsets.only(bottom: 120),
-                              minLines: 1,
-                              maxLines: 4,
-                              textAlignVertical: TextAlignVertical.center,
-                              textCapitalization: TextCapitalization.sentences,
-                              style: GoogleFonts.inter(
-                                fontSize: 15,
-                                height: 1.35,
-                                color: MiaColors.textPrimary,
-                              ),
-                              decoration: InputDecoration(
-                                hintText: 'message ${MiaProfile.name}...',
-                                hintStyle: GoogleFonts.inter(
-                                  color: _iconGrey,
+                            child: Focus(
+                              canRequestFocus: false,
+                              skipTraversal: true,
+                              onKeyEvent: _handleKeyEvent,
+                              child: TextField(
+                                controller: widget.controller,
+                                focusNode: widget.focusNode,
+                                enabled: widget.enabled,
+                                scrollPadding: const EdgeInsets.only(
+                                  bottom: 120,
+                                ),
+                                minLines: 1,
+                                maxLines: 4,
+                                textAlignVertical: TextAlignVertical.center,
+                                textCapitalization:
+                                    TextCapitalization.sentences,
+                                style: GoogleFonts.inter(
                                   fontSize: 15,
                                   height: 1.35,
-                                  fontWeight: FontWeight.w400,
+                                  color: MiaColors.textPrimary,
                                 ),
-                                border: InputBorder.none,
-                                isCollapsed: true,
-                                contentPadding: EdgeInsets.fromLTRB(
-                                  widget.onEmojiToggle == null ? 18 : 4,
-                                  12,
-                                  18,
-                                  12,
+                                decoration: InputDecoration(
+                                  hintText: 'message ${MiaProfile.name}...',
+                                  hintStyle: GoogleFonts.inter(
+                                    color: _iconGrey,
+                                    fontSize: 15,
+                                    height: 1.35,
+                                    fontWeight: FontWeight.w400,
+                                  ),
+                                  border: InputBorder.none,
+                                  isCollapsed: true,
+                                  contentPadding: EdgeInsets.fromLTRB(
+                                    widget.onEmojiToggle == null ? 18 : 4,
+                                    12,
+                                    18,
+                                    12,
+                                  ),
                                 ),
+                                onSubmitted: canSendText
+                                    ? (_) => widget.onSend()
+                                    : null,
                               ),
-                              onSubmitted:
-                                  canSendText ? (_) => widget.onSend() : null,
                             ),
                           ),
                         ],
@@ -167,10 +209,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
             ),
             const SizedBox(width: 10),
             if (showLockedSend)
-              _SendButton(
-                canSend: true,
-                onSend: widget.onHoldSend,
-              )
+              _SendButton(canSend: true, onSend: widget.onHoldSend)
             else if (showMic)
               VoiceNoteMicButton(
                 enabled: widget.enabled,
@@ -182,10 +221,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
                 onSlideUpdate: widget.onSlideUpdate,
               )
             else
-              _SendButton(
-                canSend: canSendText,
-                onSend: widget.onSend,
-              ),
+              _SendButton(canSend: canSendText, onSend: widget.onSend),
           ],
         ),
       ),
@@ -247,10 +283,7 @@ class _EmojiToggleButton extends StatelessWidget {
 }
 
 class _SendButton extends StatelessWidget {
-  const _SendButton({
-    required this.canSend,
-    required this.onSend,
-  });
+  const _SendButton({required this.canSend, required this.onSend});
 
   final bool canSend;
   final VoidCallback onSend;
@@ -270,24 +303,21 @@ class _SendButton extends StatelessWidget {
           onTap: canSend ? onSend : null,
           customBorder: const CircleBorder(),
           child: Container(
-          width: 44,
-          height: 44,
-          decoration: BoxDecoration(
-            color: bg,
-            shape: BoxShape.circle,
-          ),
-          child: Transform.rotate(
-            angle: -0.35,
-            child: Icon(
-              Icons.send_rounded,
-              color: canSend
-                  ? MiaColors.accentDeep
-                  : MiaColors.accentDeep.withValues(alpha: 0.4),
-              size: 21,
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
+            child: Transform.rotate(
+              angle: -0.35,
+              child: Icon(
+                Icons.send_rounded,
+                color: canSend
+                    ? MiaColors.accentDeep
+                    : MiaColors.accentDeep.withValues(alpha: 0.4),
+                size: 21,
+              ),
             ),
           ),
         ),
-      ),
       ),
     );
   }
