@@ -1,5 +1,9 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_web_plugins/url_strategy.dart';
 
 import 'models/app_deep_link.dart';
 import 'navigation/deep_link_navigation.dart';
@@ -15,6 +19,8 @@ import 'theme/theme_controller.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Clean path-based URLs on web (no `#`), so the chat interface is /chat/.
+  usePathUrlStrategy();
   await ThemeController.instance.load();
   await DisappearingMessagesController.instance.load();
   await MoodController.instance.load();
@@ -68,13 +74,26 @@ class _MiaAppState extends State<MiaApp> {
       theme: MiaTheme.light(),
       darkTheme: MiaTheme.dark(),
       themeMode: _theme.mode,
-      home: const _Bootstrap(),
+      // Web uses real paths (e.g. /chat/). Route every entry through the
+      // bootstrap, which decides between the landing page and chat interface.
+      onGenerateInitialRoutes: (initialRoute) => <Route<dynamic>>[
+        MaterialPageRoute<dynamic>(
+          builder: (_) => _Bootstrap(initialPath: initialRoute),
+        ),
+      ],
+      onGenerateRoute: (settings) => MaterialPageRoute<dynamic>(
+        builder: (_) => const _Bootstrap(),
+        settings: settings,
+      ),
     );
   }
 }
 
 class _Bootstrap extends StatefulWidget {
-  const _Bootstrap();
+  const _Bootstrap({this.initialPath = '/'});
+
+  /// Path the web app was opened at (e.g. `/chat/`); `/` on other platforms.
+  final String initialPath;
 
   @override
   State<_Bootstrap> createState() => _BootstrapState();
@@ -102,6 +121,40 @@ class _BootstrapState extends State<_Bootstrap> {
     super.dispose();
   }
 
+  /// The chat interface lives at `/chat/`, the landing page at `/`.
+  static bool _pathIsChat(String path) => path == '/chat' || path == '/chat/';
+
+  /// Web only: keep the browser address bar in sync with the visible screen.
+  void _syncBrowserUrl() {
+    if (!kIsWeb) return;
+    final onChatUrl = _pathIsChat(Uri.base.path);
+    if (_showNewUser && onChatUrl) {
+      SystemNavigator.routeInformationUpdated(
+        uri: Uri.parse('/'),
+        replace: true,
+      );
+    } else if (!_showNewUser && !onChatUrl) {
+      SystemNavigator.routeInformationUpdated(
+        uri: Uri.parse('/chat/'),
+        replace: true,
+      );
+    }
+  }
+
+  /// Web only: records a visit to the landing page (chatlife.online/).
+  /// Anonymous so it fires for first-time visitors before any account exists.
+  void _trackSiteVisited() {
+    if (!kIsWeb) return;
+    unawaited(
+      ApiService.instance.trackEvent(
+        siteExploredEventName,
+        eventTime: DateTime.now(),
+        properties: const {'exploration_type': siteExploredTypeVisited},
+        anonymous: true,
+      ),
+    );
+  }
+
   void _onDeepLinkChanged() {
     final link = AppsFlyerService.instance.pendingDeepLink.value;
     if (link == null || !_ready) return;
@@ -122,6 +175,7 @@ class _BootstrapState extends State<_Bootstrap> {
           applyAppDeepLink(link);
         });
     }
+    _syncBrowserUrl();
     AppsFlyerService.instance.clearPendingDeepLink();
   }
 
@@ -135,6 +189,7 @@ class _BootstrapState extends State<_Bootstrap> {
       _ready = true;
       _chatScreenKey = UniqueKey();
     });
+    _syncBrowserUrl();
   }
 
   Future<void> _handleDeleteAccount() async {
@@ -146,12 +201,14 @@ class _BootstrapState extends State<_Bootstrap> {
       _showNewUser = true;
       _ready = true;
     });
+    _syncBrowserUrl();
   }
 
   Future<void> _init() async {
+    final startOnChat = kIsWeb && _pathIsChat(widget.initialPath);
     var showNewUser = false;
     try {
-      showNewUser = !await hasStartedChatting();
+      showNewUser = startOnChat ? false : !await hasStartedChatting();
       if (!showNewUser) {
         final reachable = await ApiService.instance.checkHealth().timeout(
           const Duration(seconds: 8),
@@ -169,11 +226,16 @@ class _BootstrapState extends State<_Bootstrap> {
       _ready = true;
       _showNewUser = showNewUser;
     });
+    _syncBrowserUrl();
+    if (showNewUser) {
+      _trackSiteVisited();
+    }
     _onDeepLinkChanged();
   }
 
   void _onStartedChatting() {
     setState(() => _showNewUser = false);
+    _syncBrowserUrl();
   }
 
   @override

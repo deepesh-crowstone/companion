@@ -40,6 +40,7 @@ export type DbUserEvent = {
   user_id: number | null;
   event_name: string;
   event_time: Date;
+  properties: Record<string, string | number | boolean | null> | null;
 };
 
 export async function initDb(): Promise<void> {
@@ -121,6 +122,9 @@ export async function initDb(): Promise<void> {
 
       ALTER TABLE user_events
         ALTER COLUMN user_id DROP NOT NULL;
+
+      ALTER TABLE user_events
+        ADD COLUMN IF NOT EXISTS properties JSONB;
     `);
   } finally {
     client.release();

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -11,6 +12,11 @@ import '../widgets/start_chatting_card.dart';
 
 const _startedChattingKey = 'mia_started_chatting';
 const startChattingEventName = 'start_chatting_with_zara';
+
+/// Web-only `site_explored` analytics event and its `exploration_type` values.
+const siteExploredEventName = 'site_explored';
+const siteExploredTypeVisited = 'visited';
+const siteExploredTypeClickedTalkButton = 'clicked_on_talk_with_zara_button';
 
 /// Returns whether the user has already tapped through the welcome screen.
 Future<bool> hasStartedChatting() async {
@@ -50,6 +56,21 @@ class _NewUserScreenState extends State<NewUserScreen> {
       _starting = true;
       _error = null;
     });
+
+    // Fire as soon as the button is tapped so the click is captured even if the
+    // connection/auth step below fails. Web only (chatlife.online).
+    if (kIsWeb) {
+      unawaited(
+        ApiService.instance.trackEvent(
+          siteExploredEventName,
+          eventTime: DateTime.now(),
+          properties: const {
+            'exploration_type': siteExploredTypeClickedTalkButton,
+          },
+          anonymous: true,
+        ),
+      );
+    }
 
     try {
       final reachable = await ApiService.instance.checkHealth().timeout(

@@ -395,6 +395,7 @@ class ApiService {
   Future<void> trackEvent(
     String eventName, {
     DateTime? eventTime,
+    Map<String, Object?>? properties,
     bool anonymous = false,
   }) async {
     try {
@@ -407,6 +408,8 @@ class ApiService {
           'eventName': eventName,
           if (eventTime != null)
             'eventTime': eventTime.toUtc().toIso8601String(),
+          if (properties != null && properties.isNotEmpty)
+            'eventProperties': properties,
         }),
       );
       if (!anonymous && res.statusCode == 401) {
