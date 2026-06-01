@@ -24,6 +24,8 @@ class ChatInputBar extends StatefulWidget {
     required this.onHoldSend,
     required this.onHoldCancel,
     required this.onSlideUpdate,
+    this.emojiPickerOpen = false,
+    this.onEmojiToggle,
     this.enabled = true,
   });
 
@@ -37,6 +39,8 @@ class ChatInputBar extends StatefulWidget {
   final double slideOffset;
   final bool sending;
   final bool enabled;
+  final bool emojiPickerOpen;
+  final VoidCallback? onEmojiToggle;
   final VoidCallback onSend;
   final Future<void> Function() onTapStartAndLock;
   final Future<void> Function() onHoldStart;
@@ -112,36 +116,52 @@ class _ChatInputBarState extends State<ChatInputBar> {
                             ? widget.onHoldCancel
                             : null,
                       )
-                    : TextField(
-                        controller: widget.controller,
-                        focusNode: widget.focusNode,
-                        enabled: widget.enabled,
-                        scrollPadding: const EdgeInsets.only(bottom: 120),
-                        minLines: 1,
-                        maxLines: 4,
-                        textAlignVertical: TextAlignVertical.center,
-                        textCapitalization: TextCapitalization.sentences,
-                        style: GoogleFonts.inter(
-                          fontSize: 15,
-                          height: 1.35,
-                          color: MiaColors.textPrimary,
-                        ),
-                        decoration: InputDecoration(
-                          hintText: 'message ${MiaProfile.name}...',
-                          hintStyle: GoogleFonts.inter(
-                            color: _iconGrey,
-                            fontSize: 15,
-                            height: 1.35,
-                            fontWeight: FontWeight.w400,
+                    : Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          if (widget.onEmojiToggle != null)
+                            _EmojiToggleButton(
+                              isPickerOpen: widget.emojiPickerOpen,
+                              enabled: widget.enabled,
+                              onTap: widget.onEmojiToggle!,
+                            ),
+                          Expanded(
+                            child: TextField(
+                              controller: widget.controller,
+                              focusNode: widget.focusNode,
+                              enabled: widget.enabled,
+                              scrollPadding: const EdgeInsets.only(bottom: 120),
+                              minLines: 1,
+                              maxLines: 4,
+                              textAlignVertical: TextAlignVertical.center,
+                              textCapitalization: TextCapitalization.sentences,
+                              style: GoogleFonts.inter(
+                                fontSize: 15,
+                                height: 1.35,
+                                color: MiaColors.textPrimary,
+                              ),
+                              decoration: InputDecoration(
+                                hintText: 'message ${MiaProfile.name}...',
+                                hintStyle: GoogleFonts.inter(
+                                  color: _iconGrey,
+                                  fontSize: 15,
+                                  height: 1.35,
+                                  fontWeight: FontWeight.w400,
+                                ),
+                                border: InputBorder.none,
+                                isCollapsed: true,
+                                contentPadding: EdgeInsets.fromLTRB(
+                                  widget.onEmojiToggle == null ? 18 : 4,
+                                  12,
+                                  18,
+                                  12,
+                                ),
+                              ),
+                              onSubmitted:
+                                  canSendText ? (_) => widget.onSend() : null,
+                            ),
                           ),
-                          border: InputBorder.none,
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 18,
-                            vertical: 12,
-                          ),
-                        ),
-                        onSubmitted:
-                            canSendText ? (_) => widget.onSend() : null,
+                        ],
                       ),
               ),
             ),
@@ -167,6 +187,59 @@ class _ChatInputBarState extends State<ChatInputBar> {
                 onSend: widget.onSend,
               ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EmojiToggleButton extends StatelessWidget {
+  const _EmojiToggleButton({
+    required this.isPickerOpen,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  final bool isPickerOpen;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    const iconGrey = Color(0xFFA89FA3);
+    final color = enabled ? iconGrey : iconGrey.withValues(alpha: 0.5);
+
+    return Focus(
+      canRequestFocus: false,
+      skipTraversal: true,
+      child: Semantics(
+        button: true,
+        label: isPickerOpen ? 'Show keyboard' : 'Choose emoji',
+        child: InkResponse(
+          onTap: enabled ? onTap : null,
+          radius: 22,
+          containedInkWell: false,
+          child: SizedBox(
+            width: 44,
+            height: 44,
+            child: Center(
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 140),
+                transitionBuilder: (child, anim) => ScaleTransition(
+                  scale: anim,
+                  child: FadeTransition(opacity: anim, child: child),
+                ),
+                child: Icon(
+                  isPickerOpen
+                      ? Icons.keyboard_alt_outlined
+                      : Icons.emoji_emotions_outlined,
+                  key: ValueKey<bool>(isPickerOpen),
+                  size: 24,
+                  color: color,
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );
