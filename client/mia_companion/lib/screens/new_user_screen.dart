@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../services/ads_conversion_service.dart';
 import '../services/api_service.dart';
 import '../theme/mia_theme.dart';
 import '../widgets/onboarding_video_background.dart';
@@ -90,6 +91,10 @@ class _NewUserScreenState extends State<NewUserScreen> {
           eventTime: eventTime,
         ),
       );
+
+      // Mirror this activation to Google Ads as a conversion (web only; inert
+      // until a conversion label is set in AdsConversionService).
+      AdsConversionService.instance.trackStartChatting();
 
       await markStartedChatting();
       if (!mounted) return;
