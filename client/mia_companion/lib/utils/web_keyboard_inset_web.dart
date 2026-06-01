@@ -112,25 +112,28 @@ class _WebKeyboardInsetState extends State<WebKeyboardInset> {
 
   @override
   Widget build(BuildContext context) {
-    // Use the full Flutter view's logical size, NOT the local MediaQuery.
-    // Inside a Scaffold the local MediaQuery has already been shrunk by
-    // viewInsets.bottom; subtracting the visual viewport from that would
-    // give a residual of zero in every browser, including overlay webviews.
-    //
-    // The view-level size reflects what the Flutter engine actually painted —
-    // if Flutter shrank the canvas to dodge the keyboard, this size shrinks
-    // along with it, so the comparison stays accurate.
+    // Work in the full Flutter view's logical pixels (raw view, not the local
+    // MediaQuery, which a parent Scaffold may have already shrunk).
     final view = View.of(context);
-    final viewHeight = view.physicalSize.height / view.devicePixelRatio;
+    final dpr = view.devicePixelRatio;
+    final viewHeight = view.physicalSize.height / dpr;
 
-    // How far the Flutter canvas extends below the visible visual viewport.
-    // - Normal browser (Flutter shrinks canvas, OR no keyboard at all):
-    //     canvas bottom <= visible bottom, overlap is 0.
-    // - Overlay webview (canvas full, visualViewport shrunk by keyboard):
-    //     canvas bottom > visible bottom, overlap = keyboard height.
+    // Keyboard inset the Flutter engine already reports and the Scaffold has
+    // therefore already lifted the input by. This is 0 in overlay webviews that
+    // hide the keyboard from the engine, but on modern mobile browsers the
+    // engine reports the real keyboard height here.
+    final handledInset = view.viewInsets.bottom / dpr;
+
+    // How far the painted canvas extends below the visible visual viewport,
+    // i.e. the total keyboard overlap over the full canvas.
     final overlap = viewHeight - _visibleBottom;
-    final lift = (_focusedSnapshot && overlap > _openThreshold)
-        ? overlap + _gap
+
+    // Only add the overlap Flutter has NOT already handled. Without subtracting
+    // [handledInset] we would lift a second time on top of the Scaffold's own
+    // resize and push the input far above the keyboard (double lift).
+    final residual = overlap - handledInset;
+    final lift = (_focusedSnapshot && residual > _openThreshold)
+        ? residual + _gap
         : 0.0;
 
     return Padding(
