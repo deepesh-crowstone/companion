@@ -1,13 +1,9 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
-import 'package:flutter_cashfree_pg_sdk/api/cfpayment/cfwebcheckoutpayment.dart';
-import 'package:flutter_cashfree_pg_sdk/api/cfpaymentgateway/cfpaymentgatewayservice.dart';
-import 'package:flutter_cashfree_pg_sdk/api/cfsession/cfsession.dart';
-import 'package:flutter_cashfree_pg_sdk/utils/cfenums.dart';
-import 'package:flutter_cashfree_pg_sdk/utils/cfexceptions.dart';
-
-import 'api_service.dart';
+import 'personality_payment_service_stub.dart'
+    if (dart.library.js_interop) 'personality_payment_service_web.dart'
+    if (dart.library.io) 'personality_payment_service_native.dart'
+    as platform;
 
 typedef PaymentVerifyCallback = Future<void> Function(String orderId);
 
@@ -15,66 +11,25 @@ class PersonalityPaymentService {
   PersonalityPaymentService._();
   static final instance = PersonalityPaymentService._();
 
-  final _gateway = CFPaymentGatewayService();
-
+  /// Starts the personality pass checkout for the given Cashfree order.
+  ///
+  /// On mobile this drives the native Cashfree SDK; on web it falls back to the
+  /// Cashfree JS SDK using the same [paymentSessionId]. Either way [onVerify] is
+  /// invoked once the gateway reports a completed attempt so the backend can be
+  /// asked for the authoritative payment status.
   Future<void> startCheckout({
     required String orderId,
     required String paymentSessionId,
     required String environment,
     required PaymentVerifyCallback onVerify,
     required void Function(String message) onError,
-  }) async {
-    if (kIsWeb) {
-      onError('Payments work in the Android app. Please use the mobile app.');
-      return;
-    }
-
-    final completer = Completer<void>();
-
-    _gateway.setCallback((verifiedOrderId) async {
-      try {
-        await onVerify(verifiedOrderId);
-        if (!completer.isCompleted) completer.complete();
-      } catch (e) {
-        if (!completer.isCompleted) {
-          completer.completeError(e);
-        }
-        onError(e.toString());
-      }
-    }, (errorResponse, failedOrderId) {
-      final message = errorResponse.getMessage() ?? 'Payment cancelled';
-      onError(message);
-      if (!completer.isCompleted) {
-        completer.completeError(Exception(message));
-      }
-    });
-
-    try {
-      final cfEnv = environment == 'production'
-          ? CFEnvironment.PRODUCTION
-          : CFEnvironment.SANDBOX;
-
-      final session = CFSessionBuilder()
-          .setEnvironment(cfEnv)
-          .setOrderId(orderId)
-          .setPaymentSessionId(paymentSessionId)
-          .build();
-
-      final checkout = CFWebCheckoutPaymentBuilder()
-          .setSession(session)
-          .build();
-
-      _gateway.doPayment(checkout);
-      unawaited(
-        ApiService.instance.trackEvent(
-          'personality_pay_clicked',
-          eventTime: DateTime.now(),
-        ),
-      );
-      await completer.future;
-    } on CFException catch (e) {
-      onError(e.message);
-      rethrow;
-    }
+  }) {
+    return platform.startCheckout(
+      orderId: orderId,
+      paymentSessionId: paymentSessionId,
+      environment: environment,
+      onVerify: onVerify,
+      onError: onError,
+    );
   }
 }
