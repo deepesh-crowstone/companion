@@ -5,8 +5,6 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:record/record.dart';
 
-import '../config.dart';
-import '../data/mia_profile.dart';
 import '../models/chat_message.dart';
 import '../models/disappearing_messages_toggle_update.dart';
 import '../models/mood_change_update.dart';
@@ -387,8 +385,8 @@ class _ChatScreenState extends State<ChatScreen> {
       final msg = e.toString().replaceFirst('Exception: ', '');
       MiaTheme.showMessage(
         context,
-        msg.contains('Cannot reach server')
-            ? 'can\'t reach ${MiaProfile.name.toLowerCase()}\'s server. open $resolvedApiBaseUrl/health in your browser.'
+        ApiService.isConnectionFailure(msg)
+            ? ApiService.userConnectionErrorMessage
             : 'couldn\'t restore your session. try refresh chat.',
       );
     }
@@ -405,10 +403,7 @@ class _ChatScreenState extends State<ChatScreen> {
       unawaited(_recoverSession());
       return;
     }
-    final short = msg.contains('Cannot reach server')
-        ? 'can\'t reach ${MiaProfile.name.toLowerCase()}\'s server. open $resolvedApiBaseUrl/health in your phone browser, then reinstall the app with the production API URL.'
-        : msg;
-    MiaTheme.showMessage(context, short);
+    MiaTheme.showMessage(context, ApiService.friendlyErrorMessage(e));
   }
 
   Future<void> _sendText() async {

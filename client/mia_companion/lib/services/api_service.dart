@@ -43,6 +43,8 @@ class ApiService {
     'spark',
   ];
   static const _timeout = Duration(seconds: 30);
+  // Text replies wait on the LLM, which can take well over the default 30s.
+  static const _replyTimeout = Duration(seconds: 90);
   static const _voiceTimeout = Duration(seconds: 90);
   static const _healthTimeout = Duration(seconds: 45);
 
@@ -266,6 +268,7 @@ class ApiService {
         'texts': texts,
         if (mood != null) 'mood': mood.serverValue,
       }),
+      timeout: _replyTimeout,
     );
     _guardAuth(res);
     if (res.statusCode >= 400) {
@@ -441,13 +444,20 @@ class ApiService {
     Uri uri, {
     Map<String, String>? headers,
     Object? body,
+    Duration? timeout,
   }) {
-    return _wrap(() => _client.post(uri, headers: headers, body: body));
+    return _wrap(
+      () => _client.post(uri, headers: headers, body: body),
+      timeout: timeout,
+    );
   }
 
-  Future<http.Response> _wrap(Future<http.Response> Function() request) async {
+  Future<http.Response> _wrap(
+    Future<http.Response> Function() request, {
+    Duration? timeout,
+  }) async {
     try {
-      return await request().timeout(_timeout);
+      return await request().timeout(timeout ?? _timeout);
     } on TimeoutException {
       throw Exception(_connectionError());
     } on http.ClientException catch (e) {
