@@ -14,6 +14,7 @@ import { buildClientSecretRequest } from "./realtime-session.js";
 import type { DbMessage } from "./db.js";
 import { intimacyPromptForLevel, type IntimacyLevel } from "./intimacy.js";
 import { moodPromptForMood, type ZaraMood } from "./mood.js";
+import { xaiChatCompletion } from "./xai-client.js";
 
 const XAI_BASE = "https://api.x.ai/v1";
 const ELEVENLABS_BASE = "https://api.elevenlabs.io/v1";
@@ -476,10 +477,8 @@ async function rewriteToDevanagariHindi(
     ? "Preserve any existing TTS delivery tags exactly as-is, including square-bracket tags like [laughs], [sighs], [teasing], [pauses], [light chuckle], and any <whisper>...</whisper> tags. Only rewrite the human-readable words around them."
     : "Do not add speech tags or markup.";
 
-  const res = await fetch(`${XAI_BASE}/chat/completions`, {
-    method: "POST",
-    headers: headers(),
-    body: JSON.stringify({
+  const rewritten = await xaiChatCompletion(
+    {
       model: XAI_CHAT_MODEL,
       reasoning_effort: "none",
       temperature: 0.2,
@@ -500,21 +499,9 @@ Rules:
         },
         { role: "user", content: text },
       ],
-    }),
-  });
-
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Devanagari rewrite failed: ${res.status} ${err}`);
-  }
-
-  const data = (await res.json()) as {
-    choices?: { message?: { content?: string } }[];
-  };
-  const rewritten = data.choices?.[0]?.message?.content?.trim();
-  if (!rewritten) {
-    throw new Error("Empty Devanagari rewrite from xAI");
-  }
+    },
+    { label: "Devanagari rewrite" },
+  );
 
   return normalizeRespectfulUserGrammar(rewritten);
 }
@@ -546,30 +533,12 @@ export async function chatWithMia(
     });
   }
 
-  const res = await fetch(`${XAI_BASE}/chat/completions`, {
-    method: "POST",
-    headers: headers(),
-    body: JSON.stringify({
-      model: XAI_CHAT_MODEL,
-      reasoning_effort: "none",
-      messages,
-      temperature: MIA_CHAT_TEMPERATURE,
-    }),
+  const reply = await xaiChatCompletion({
+    model: XAI_CHAT_MODEL,
+    reasoning_effort: "none",
+    messages,
+    temperature: MIA_CHAT_TEMPERATURE,
   });
-
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Chat failed: ${res.status} ${err}`);
-  }
-
-  const data = (await res.json()) as {
-    choices?: { message?: { content?: string } }[];
-  };
-
-  const reply = data.choices?.[0]?.message?.content?.trim();
-  if (!reply) {
-    throw new Error("Empty response from xAI");
-  }
 
   const voiceReply = options?.expressiveTts ? stripEmojis(reply) : reply;
   const rewritten = await rewriteToDevanagariHindi(
@@ -586,10 +555,8 @@ async function addVoiceDeliveryToTextReply(textReply: string): Promise<string> {
     throw new Error("Empty text reply for voice delivery");
   }
 
-  const res = await fetch(`${XAI_BASE}/chat/completions`, {
-    method: "POST",
-    headers: headers(),
-    body: JSON.stringify({
+  const tagged = await xaiChatCompletion(
+    {
       model: XAI_CHAT_MODEL,
       reasoning_effort: "none",
       temperature: 0.35,
@@ -607,21 +574,9 @@ Rules:
         },
         { role: "user", content: cleanReply },
       ],
-    }),
-  });
-
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Voice delivery tagging failed: ${res.status} ${err}`);
-  }
-
-  const data = (await res.json()) as {
-    choices?: { message?: { content?: string } }[];
-  };
-  const tagged = data.choices?.[0]?.message?.content?.trim();
-  if (!tagged) {
-    throw new Error("Empty voice delivery tagging response from xAI");
-  }
+    },
+    { label: "Voice delivery tagging" },
+  );
 
   return rewriteToDevanagariHindi(stripEmojis(tagged), true);
 }
@@ -664,30 +619,12 @@ output format:
     });
   }
 
-  const res = await fetch(`${XAI_BASE}/chat/completions`, {
-    method: "POST",
-    headers: headers(),
-    body: JSON.stringify({
-      model: XAI_CHAT_MODEL,
-      reasoning_effort: "none",
-      messages,
-      temperature: MIA_CHAT_TEMPERATURE,
-    }),
+  const reply = await xaiChatCompletion({
+    model: XAI_CHAT_MODEL,
+    reasoning_effort: "none",
+    messages,
+    temperature: MIA_CHAT_TEMPERATURE,
   });
-
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Chat failed: ${res.status} ${err}`);
-  }
-
-  const data = (await res.json()) as {
-    choices?: { message?: { content?: string } }[];
-  };
-
-  const reply = data.choices?.[0]?.message?.content?.trim();
-  if (!reply) {
-    throw new Error("Empty response from xAI");
-  }
 
   return parseTextReplySegments(reply);
 }

@@ -1,6 +1,5 @@
 import { XAI_CHAT_MODEL } from "./mia.js";
-
-const XAI_BASE = "https://api.x.ai/v1";
+import { xaiChatCompletion } from "./xai-client.js";
 
 export type IntimacyLevel = 1 | 2 | 3;
 
@@ -8,15 +7,6 @@ export type IntimacyClassification = {
   level: IntimacyLevel;
   confidence: number;
 };
-
-function xaiHeaders(): Record<string, string> {
-  const key = process.env.XAI_API_KEY?.trim().replace(/^['"]|['"]$/g, "");
-  if (!key) throw new Error("XAI_API_KEY is not set");
-  return {
-    Authorization: `Bearer ${key}`,
-    "Content-Type": "application/json",
-  };
-}
 
 export function intimacyPromptForLevel(level: IntimacyLevel): string {
   switch (level) {
@@ -72,10 +62,8 @@ function parseClassification(raw: string): IntimacyClassification {
 export async function classifyIntimacyLevel(
   text: string,
 ): Promise<IntimacyClassification> {
-  const res = await fetch(`${XAI_BASE}/chat/completions`, {
-    method: "POST",
-    headers: xaiHeaders(),
-    body: JSON.stringify({
+  const content = await xaiChatCompletion(
+    {
       model: XAI_CHAT_MODEL,
       reasoning_effort: "none",
       temperature: 0.1,
@@ -97,18 +85,21 @@ Rules:
         },
         { role: "user", content: text },
       ],
-    }),
-  });
+    },
+    {
+      // Classification runs before every reply, so it must never hang or fail
+      // the reply: short timeout, no retry, default to level 1 on any error.
+      timeoutMs: 12_000,
+      retries: 0,
+      label: "Intimacy classification",
+    },
+  ).catch(() => null);
 
-  if (!res.ok) {
-    console.warn("Conversation depth classification failed, defaulting to level 1");
+  if (!content) {
+    console.warn(
+      "Conversation depth classification failed, defaulting to level 1",
+    );
     return { level: 1, confidence: 0.5 };
   }
-
-  const data = (await res.json()) as {
-    choices?: { message?: { content?: string } }[];
-  };
-  const content = data.choices?.[0]?.message?.content?.trim();
-  if (!content) return { level: 1, confidence: 0.5 };
   return parseClassification(content);
 }
