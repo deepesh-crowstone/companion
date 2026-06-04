@@ -86,27 +86,15 @@ class StartChattingCard extends StatelessWidget {
                             color: Colors.white.withValues(alpha: 0.9),
                           ),
                         )
-                      : DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.25),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 5.6,
-                              vertical: 3.2,
-                            ),
-                            child: Text(
-                              'Existing User',
-                              style: GoogleFonts.inter(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.white,
-                                decoration: TextDecoration.underline,
-                                decorationColor:
-                                    Colors.white.withValues(alpha: 0.85),
-                              ),
-                            ),
+                      : Text(
+                          'Existing User',
+                          style: GoogleFonts.inter(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white.withValues(alpha: 0.65),
+                            decoration: TextDecoration.underline,
+                            decorationColor:
+                                Colors.white.withValues(alpha: 0.5),
                           ),
                         ),
                 ),
