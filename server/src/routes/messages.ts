@@ -197,12 +197,16 @@ async function insertAssistantImageMessage(
   });
 }
 
+function userShowsRomanticIntent(level: 1 | 2 | 3): boolean {
+  return level === 2 || level === 3;
+}
+
 async function buildTextReply(
   history: DbMessage[],
   userMsgs: DbMessage[],
   mood: ZaraMood,
   privateMode: boolean,
-): Promise<{ assistantMsgs: DbMessage[] }> {
+): Promise<{ assistantMsgs: DbMessage[]; suggestPrivateMode: boolean }> {
   const userId = userMsgs[0].user_id;
   const lastUserText = userMsgs[userMsgs.length - 1]?.content ?? "";
 
@@ -211,16 +215,21 @@ async function buildTextReply(
       userId,
       openingGreetingReply(),
     );
-    return { assistantMsgs };
+    return { assistantMsgs, suggestPrivateMode: false };
   }
 
   const classified = privateMode
     ? { level: 3 as const }
     : await classifyIntimacyLevel(lastUserText);
+
+  const suggestPrivateMode =
+    !privateMode && userShowsRomanticIntent(classified.level);
+
   const replySegments = await chatWithMiaText([...history, ...userMsgs], {
     intimacyLevel: classified.level,
     mood,
     privateMode,
+    invitePrivateMode: suggestPrivateMode,
   });
   const assistantMsgs = await insertAssistantTextMessages(
     userId,
@@ -247,7 +256,7 @@ async function buildTextReply(
     );
   }
 
-  return { assistantMsgs };
+  return { assistantMsgs, suggestPrivateMode };
 }
 
 messagesRouter.get("/", async (req, res) => {
@@ -290,7 +299,7 @@ messagesRouter.post("/text", async (req, res) => {
     const history = await listMessages(auth.userId);
     const userMsg = await insertMessage(auth.userId, "user", trimmed, "text");
 
-    const { assistantMsgs } = await buildTextReply(
+    const { assistantMsgs, suggestPrivateMode } = await buildTextReply(
       history,
       [userMsg],
       mood,
@@ -304,6 +313,7 @@ messagesRouter.post("/text", async (req, res) => {
       userMessage: await toPublicMessage(userMsg),
       assistantMessage: combinedAssistantFallback(assistantMessages),
       assistantMessages,
+      suggestPrivateMode,
     });
   } catch (e) {
     console.error(e);
@@ -354,7 +364,7 @@ messagesRouter.post("/text/batch", async (req, res) => {
       userMsgs.push(await insertMessage(auth.userId, "user", text, "text"));
     }
 
-    const { assistantMsgs } = await buildTextReply(
+    const { assistantMsgs, suggestPrivateMode } = await buildTextReply(
       history,
       userMsgs,
       mood,
@@ -370,6 +380,7 @@ messagesRouter.post("/text/batch", async (req, res) => {
       ),
       assistantMessage: combinedAssistantFallback(assistantMessages),
       assistantMessages,
+      suggestPrivateMode,
     });
   } catch (e) {
     console.error(e);

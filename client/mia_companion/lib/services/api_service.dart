@@ -317,6 +317,7 @@ class ApiService {
       List<ChatMessage> users,
       ChatMessage assistant,
       List<ChatMessage> assistants,
+      bool suggestPrivateMode,
     })
   >
   sendTextBatch(List<String> texts, {ZaraMood? mood}) async {
@@ -353,6 +354,7 @@ class ApiService {
         data['assistantMessage'] as Map<String, dynamic>,
       ),
       assistants: assistants,
+      suggestPrivateMode: data['suggestPrivateMode'] as bool? ?? false,
     );
   }
 

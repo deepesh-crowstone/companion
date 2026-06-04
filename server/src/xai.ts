@@ -18,7 +18,10 @@ import {
   moodPromptForMood,
   type ZaraMood,
 } from "./mood.js";
-import { privateModeRomanticPrompt } from "./private-mode.js";
+import {
+  privateModeInvitePrompt,
+  privateModeRomanticPrompt,
+} from "./private-mode.js";
 import { xaiChatCompletion } from "./xai-client.js";
 
 const XAI_BASE = "https://api.x.ai/v1";
@@ -227,39 +230,76 @@ function parseTextReplySegments(raw: string): string[] {
   return parsed.slice(0, MAX_TEXT_REPLY_SEGMENTS);
 }
 
-type TextLanguageMode = "english" | "hinglish" | "mixed";
+type TextLanguageMode =
+  | "english"
+  | "hinglish"
+  | "mixed"
+  | "hindi_devanagari";
+
+const DEVANAGARI_RE = /[\u0900-\u097F]/;
 
 const HINGLISH_LANGUAGE_TOKEN_RE =
-  /\b(?:haan|han|nahi|nahin|kya|kyun|kyu|kaise|aisa|waisa|raha|rahi|rahe|yaar|thoda|bas|aaj|ajeeb|matlab|samajh|tum|tumhe|tumhara|tumhari|bina|wajah|dil|arre|arey|acha|accha|hoon|hun|hai|ho|aa)\b/gi;
+  /\b(?:haan|han|hain|nahi|nahin|na|kya|kyun|kyu|kaise|kaisa|aisa|waisa|raha|rahi|rahe|rha|rhi|yaar|yrr|yr|thoda|bas|aaj|abhi|ajeeb|matlab|samajh|suno|dekho|batao|btao|bhejo|tum|tumhe|tumhara|tumhari|mera|meri|bina|wajah|dil|arre|arey|acha|accha|theek|thik|hoon|hun|hai|ho|aa|ji|pls|please|miss|love|flirt|romantic|pyaar|ishq)\b/gi;
+
+function containsDevanagari(text: string): boolean {
+  return DEVANAGARI_RE.test(text);
+}
 
 function detectTextLanguageMode(text: string): TextLanguageMode {
-  const words = text.match(/[A-Za-z]+/g) ?? [];
-  if (words.length === 0) return "english";
-  const hinglishMatches = text.match(HINGLISH_LANGUAGE_TOKEN_RE) ?? [];
+  const trimmed = text.trim();
+  if (!trimmed) return "hinglish";
+
+  if (containsDevanagari(trimmed)) {
+    return "hindi_devanagari";
+  }
+
+  const words = trimmed.match(/[A-Za-z]+/g) ?? [];
+  if (words.length === 0) return "hinglish";
+
+  const hinglishMatches = trimmed.match(HINGLISH_LANGUAGE_TOKEN_RE) ?? [];
   const ratio = hinglishMatches.length / words.length;
-  if (hinglishMatches.length >= 2 || ratio >= 0.18) return "hinglish";
-  if (hinglishMatches.length === 1 && ratio >= 0.08) return "mixed";
-  return "english";
+
+  if (hinglishMatches.length >= 2 || ratio >= 0.14) return "hinglish";
+  if (hinglishMatches.length >= 1 || ratio >= 0.05) return "mixed";
+
+  const hasEnglishCue =
+    /\b(?:i|you|we|the|and|what|how|why|hey|hi|hello|my|your|are|is|am)\b/i.test(
+      trimmed,
+    );
+  const looksMostlyEnglish =
+    words.length >= 4 && hinglishMatches.length === 0 && hasEnglishCue;
+
+  if (looksMostlyEnglish) return "english";
+
+  return "hinglish";
 }
 
 function latestUserLanguageInstruction(history: DbMessage[]): string {
-  const latestUserText = history[history.length - 1]?.content ?? "";
+  const latestUserText =
+    [...history].reverse().find((m) => m.role === "user")?.content ?? "";
   const mode = detectTextLanguageMode(latestUserText);
+  if (mode === "hindi_devanagari") {
+    return `latest user language mode: Hindi (Devanagari script in user message).
+- Reply in natural Latin-script Hinglish (romanized Hindi + light English). Do not use Devanagari in text chat.
+- Match the user's Hindi tone and vocabulary. Prefer Hinglish over pure English.
+- Use respectful tum-grammar in romanized form (tum, tumhe, batao — never tu/tujhe).`;
+  }
   if (mode === "hinglish") {
     return `latest user language mode: Hinglish / romanized Hindi.
-- The next Zara text reply must switch into natural Latin-script Hinglish.
+- The next Zara text reply must be in natural Latin-script Hinglish.
 - Do not answer with mostly-English chunks.
-- Each message chunk should include a natural Hinglish cue through romanized Hindi words, grammar, or phrasing.`;
+- Include natural Hinglish words, grammar, and phrasing (tum-form, batao, yaar, etc.).`;
   }
   if (mode === "mixed") {
     return `latest user language mode: mixed English + Hinglish.
-- Mirror the user's rough English/Hinglish mix in the next Zara text reply.
-- Keep the script Latin-only.`;
+- Lean Hinglish: at least half the reply should feel like casual Indian texting in romanized Hindi.
+- Mirror the user's mix; do not switch to fully English unless they clearly wrote in English only.
+- Keep the script Latin-only (no Devanagari).`;
   }
   return `latest user language mode: English.
-- The next Zara text reply must be English.
-- Do not use Hinglish/Hindi filler or romanized Hindi grammar in this reply.
-- This language rule also applies to flirt, romance, intimacy, banter, and emotional support.`;
+- The user wrote mostly in English. Reply in English for this turn.
+- Do not use Hinglish filler or romanized Hindi grammar unless the user mixes it in.
+- If the user switches to Hinglish or Hindi on the next message, switch immediately.`;
 }
 
 function apiKey(): string {
@@ -596,6 +636,7 @@ export async function chatWithMiaText(
     intimacyLevel?: IntimacyLevel;
     mood?: ZaraMood;
     privateMode?: boolean;
+    invitePrivateMode?: boolean;
   },
 ): Promise<string[]> {
   if (history.length === 0 || history[history.length - 1]?.role !== "user") {
@@ -603,13 +644,18 @@ export async function chatWithMiaText(
   }
 
   const privateMode = options?.privateMode ?? false;
+  const invitePrivateMode = options?.invitePrivateMode ?? false;
   const mood = privateMode ? "bold" : (options?.mood ?? "friendly");
   const intimacyLevel = privateMode
     ? 3
-    : effectiveIntimacyLevel(mood, options?.intimacyLevel ?? 1);
+    : invitePrivateMode
+      ? 1
+      : effectiveIntimacyLevel(mood, options?.intimacyLevel ?? 1);
   const privateLine = privateMode
     ? `\n\n${privateModeRomanticPrompt()}`
-    : "";
+    : invitePrivateMode
+      ? `\n\n${privateModeInvitePrompt()}`
+      : "";
   const systemPrompt = `${MIA_TEXT_SYSTEM_PROMPT}
 
 ${intimacyPromptForLevel(intimacyLevel)}

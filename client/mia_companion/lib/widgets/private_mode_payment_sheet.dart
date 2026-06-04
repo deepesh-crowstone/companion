@@ -30,6 +30,8 @@ class _PrivateModePaymentSheet extends StatefulWidget {
 class _PrivateModePaymentSheetState extends State<_PrivateModePaymentSheet> {
   static const _ctaColor = Color(0xFF5F269F);
   static const _offerDuration = Duration(minutes: 5);
+  static const _ageRequiredMessage =
+      'Please confirm that you are 18+ years old to continue.';
 
   bool _paying = false;
   bool _confirmed18 = false;
@@ -69,7 +71,11 @@ class _PrivateModePaymentSheetState extends State<_PrivateModePaymentSheet> {
   }
 
   Future<void> _pay() async {
-    if (_paying || !_confirmed18) return;
+    if (_paying) return;
+    if (!_confirmed18) {
+      setState(() => _error = _ageRequiredMessage);
+      return;
+    }
     unawaited(
       ApiService.instance.trackEvent('private_mode_pay_clicked'),
     );
@@ -200,7 +206,12 @@ class _PrivateModePaymentSheetState extends State<_PrivateModePaymentSheet> {
             value: _confirmed18,
             onChanged: _paying
                 ? null
-                : (v) => setState(() => _confirmed18 = v ?? false),
+                : (v) => setState(() {
+                    _confirmed18 = v ?? false;
+                    if (_confirmed18 && _error == _ageRequiredMessage) {
+                      _error = null;
+                    }
+                  }),
             contentPadding: EdgeInsets.zero,
             controlAffinity: ListTileControlAffinity.leading,
             title: Text(
@@ -221,10 +232,10 @@ class _PrivateModePaymentSheetState extends State<_PrivateModePaymentSheet> {
             const SizedBox(height: 10),
           ],
           FilledButton(
-            onPressed: (_paying || !_confirmed18) ? null : _pay,
+            onPressed: _paying ? null : _pay,
             style: FilledButton.styleFrom(
               backgroundColor: _ctaColor,
-              disabledBackgroundColor: _ctaColor.withValues(alpha: 0.55),
+              disabledBackgroundColor: _ctaColor.withValues(alpha: 0.7),
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(vertical: 18),
               shape: RoundedRectangleBorder(
@@ -304,13 +315,6 @@ class _PrivateModePaymentSheetState extends State<_PrivateModePaymentSheet> {
                 ),
               ),
             ],
-          ),
-          TextButton(
-            onPressed: _paying ? null : () => Navigator.of(context).pop(false),
-            child: Text(
-              'Not now',
-              style: GoogleFonts.inter(color: MiaColors.textMuted),
-            ),
           ),
         ],
       ),

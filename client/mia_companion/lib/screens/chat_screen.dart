@@ -8,6 +8,7 @@ import 'package:record/record.dart';
 import '../models/chat_message.dart';
 import '../models/disappearing_messages_toggle_update.dart';
 import '../models/mood_change_update.dart';
+import '../models/private_mode_upsell_update.dart';
 import '../models/zara_mood.dart';
 import '../models/voice_upload.dart';
 import '../utils/chat_dates.dart';
@@ -39,6 +40,7 @@ import '../widgets/private_mode_payment_sheet.dart';
 import '../widgets/private_mode_romantic_banner.dart';
 import '../widgets/private_mode_setup_sheet.dart';
 import '../widgets/private_mode_strip.dart';
+import '../widgets/private_mode_upsell_banner.dart';
 import '../widgets/mia_confirm_dialog.dart';
 import '../widgets/theme_options_sheet.dart';
 import 'mia_profile_screen.dart';
@@ -98,6 +100,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   final List<MoodChangeUpdate> _moodUpdates = [];
   final List<DisappearingMessagesToggleUpdate> _disappearingToggleUpdates = [];
+  final List<PrivateModeUpsellUpdate> _privateModeUpsells = [];
   ZaraMood? _trackedMood;
   bool? _trackedDisappearingEnabled;
 
@@ -122,6 +125,9 @@ class _ChatScreenState extends State<ChatScreen> {
 
   void _onPrivateModeChanged() {
     if (!mounted) return;
+    if (PrivateModeController.instance.privateModeActive) {
+      setState(() => _privateModeUpsells.clear());
+    }
     setState(() => _statusText = _statusWhenIdle());
   }
 
@@ -288,6 +294,23 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  Future<void> _onTalkPrivatelyFromUpsell() async {
+    unawaited(ApiService.instance.trackEvent('private_mode_upsell_tap'));
+    if (PrivateModeController.instance.passActive) {
+      await _onEnterPrivateMode();
+      return;
+    }
+    final paid = await showPrivateModePaymentSheet(context);
+    if (!mounted) return;
+    if (paid) {
+      await PrivateModeController.instance.refreshAccess();
+      await showPrivateModeSetupSheet(context);
+      if (mounted) {
+        setState(() => _privateModeUpsells.clear());
+      }
+    }
+  }
+
   Future<void> _onRomanticBannerTap() async {
     unawaited(ApiService.instance.trackEvent('private_mode_banner_tap'));
     final paid = await showPrivateModePaymentSheet(context);
@@ -372,6 +395,8 @@ class _ChatScreenState extends State<ChatScreen> {
         _ChatTimelineEntry.moodUpdate(update),
       for (final update in _disappearingToggleUpdates)
         _ChatTimelineEntry.disappearingToggle(update),
+      for (final update in _privateModeUpsells)
+        _ChatTimelineEntry.privateModeUpsell(update),
     ];
     entries.sort((a, b) => a.createdAt.compareTo(b.createdAt));
     return entries;
@@ -425,6 +450,21 @@ class _ChatScreenState extends State<ChatScreen> {
             if (_showDateHeader(timelineIndex))
               DateSeparator(date: update.createdAt),
             DisappearingMessagesBanner(enabled: update.enabled),
+          ],
+        ),
+      );
+    }
+
+    if (entry.privateModeUpsell != null) {
+      final update = entry.privateModeUpsell!;
+      return RepaintBoundary(
+        key: ValueKey('private-upsell-${update.id}'),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_showDateHeader(timelineIndex))
+              DateSeparator(date: update.createdAt),
+            PrivateModeUpsellBanner(onTalkPrivately: _onTalkPrivatelyFromUpsell),
           ],
         ),
       );
@@ -576,6 +616,24 @@ class _ChatScreenState extends State<ChatScreen> {
           _statusText = i == assistants.length - 1
               ? _statusWhenIdle()
               : 'typing...';
+        });
+        _scrollToBottom(animate: true);
+      }
+
+      if (result.suggestPrivateMode &&
+          !PrivateModeController.instance.privateModeActive) {
+        final upsellAt = assistants.isNotEmpty
+            ? assistants.last.createdAt.add(const Duration(milliseconds: 1))
+            : DateTime.now();
+        setState(() {
+          _privateModeUpsells
+            ..clear()
+            ..add(
+              PrivateModeUpsellUpdate(
+                id: -DateTime.now().millisecondsSinceEpoch,
+                createdAt: upsellAt,
+              ),
+            );
         });
         _scrollToBottom(animate: true);
       }
@@ -1190,6 +1248,7 @@ class _ChatTimelineEntry {
     this.message,
     this.moodUpdate,
     this.disappearingToggleUpdate,
+    this.privateModeUpsell,
   });
 
   factory _ChatTimelineEntry.message(ChatMessage message) {
@@ -1215,8 +1274,18 @@ class _ChatTimelineEntry {
     );
   }
 
+  factory _ChatTimelineEntry.privateModeUpsell(
+    PrivateModeUpsellUpdate update,
+  ) {
+    return _ChatTimelineEntry._(
+      createdAt: update.createdAt,
+      privateModeUpsell: update,
+    );
+  }
+
   final DateTime createdAt;
   final ChatMessage? message;
   final MoodChangeUpdate? moodUpdate;
   final DisappearingMessagesToggleUpdate? disappearingToggleUpdate;
+  final PrivateModeUpsellUpdate? privateModeUpsell;
 }
