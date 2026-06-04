@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import '../services/android_pip_service.dart';
 import '../services/api_service.dart';
 import '../services/realtime_call_service.dart';
 import '../theme/mia_theme.dart';
@@ -18,7 +19,7 @@ class VoiceCallScreen extends StatefulWidget {
 }
 
 class _VoiceCallScreenState extends State<VoiceCallScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   final _call = RealtimeCallService();
   Timer? _timer;
   int _seconds = 0;
@@ -35,6 +36,7 @@ class _VoiceCallScreenState extends State<VoiceCallScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _pulse = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2200),
@@ -130,7 +132,17 @@ class _VoiceCallScreenState extends State<VoiceCallScreen>
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!_connected) return;
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused) {
+      unawaited(AndroidPipService.enter());
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
     _pulse.dispose();
     _call.hangUp();

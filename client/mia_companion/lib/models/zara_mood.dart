@@ -15,7 +15,7 @@ enum ZaraMood {
       case ZaraMood.caring:
         return 'Caring';
       case ZaraMood.bold:
-        return 'Bold';
+        return 'Flirty & Bold';
     }
   }
 

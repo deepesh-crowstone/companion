@@ -15,7 +15,7 @@ class UserProfileScreen extends StatelessWidget {
   Future<void> _openSupportEmail(BuildContext context) async {
     final uri = Uri(
       scheme: 'mailto',
-      path: 'deepesh@crowstone.ai',
+      path: 'hello@crowstone.ai',
       queryParameters: const {'subject': 'Zara App Support'},
     );
     if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
@@ -126,7 +126,7 @@ class UserProfileScreen extends StatelessWidget {
                   _ProfileMenuTile(
                     icon: Icons.mail_outline_rounded,
                     title: 'Support',
-                    subtitle: 'deepesh@crowstone.ai',
+                    subtitle: 'hello@crowstone.ai',
                     onTap: () => _openSupportEmail(context),
                   ),
                   _ProfileMenuTile(

@@ -141,7 +141,7 @@ class _PersonalityUnlockSheetState extends State<_PersonalityUnlockSheet> {
           ),
           const SizedBox(height: 10),
           Text(
-            'Get Funny, Caring, and Bold personalities for $_passDays days. Friendly stays free.',
+            'Get Funny, Caring, and Flirty & Bold personalities for $_passDays days. Friendly stays free.',
             textAlign: TextAlign.center,
             style: GoogleFonts.inter(
               fontSize: 15,

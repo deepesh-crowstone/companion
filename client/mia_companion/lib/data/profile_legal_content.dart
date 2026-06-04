@@ -33,7 +33,7 @@ class ProfileLegalContent {
     LegalSection(
       title: 'How do I get help?',
       body:
-          'Go to Profile → Support to email our team at deepesh@crowstone.ai. '
+          'Go to Profile → Support to email our team at hello@crowstone.ai. '
           'We typically respond within one business day.',
     ),
   ];
@@ -65,7 +65,7 @@ Your choices
 You can log out, delete your account from Profile → Account, or contact us to request data access or deletion. On Android, you can limit ad personalization or reset your advertising ID in your device settings.
 
 Contact
-deepesh@crowstone.ai
+hello@crowstone.ai
 ''';
 
   static const termsAndConditions = '''
@@ -89,6 +89,6 @@ Changes
 We may update these Terms. Continued use after changes means you accept the updated Terms.
 
 Contact
-deepesh@crowstone.ai
+hello@crowstone.ai
 ''';
 }
