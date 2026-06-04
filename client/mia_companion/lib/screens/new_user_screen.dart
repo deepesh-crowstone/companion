@@ -136,35 +136,43 @@ class _NewUserScreenState extends State<NewUserScreen> {
         children: [
           OnboardingVideoBackground(isMuted: _videoMuted),
           if (_error == null) const _OnboardingPitch(),
-          if (_error == null)
-            Positioned(
-              right: 20,
-              bottom: MediaQuery.paddingOf(context).bottom + 96,
-              child: _OnboardingMuteButton(
-                muted: _videoMuted,
-                onTap: () => setState(() => _videoMuted = !_videoMuted),
-              ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (_error != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+                    child: _ConnectionErrorBanner(
+                      message: _error!,
+                      onDismiss: () => setState(() => _error = null),
+                    ),
+                  ),
+                if (_error == null)
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: Padding(
+                      padding: const EdgeInsets.only(right: 20, bottom: 12),
+                      child: _OnboardingMuteButton(
+                        muted: _videoMuted,
+                        onTap: () =>
+                            setState(() => _videoMuted = !_videoMuted),
+                      ),
+                    ),
+                  ),
+                StartChattingCard(
+                  loading: _starting,
+                  onStart: _onStartChatting,
+                  onLogin: _error == null ? _onLogin : null,
+                ),
+              ],
             ),
-          if (_error != null)
-            Positioned(
-              left: 24,
-              right: 24,
-              bottom: MediaQuery.paddingOf(context).bottom + 96,
-              child: _ConnectionErrorBanner(
-                message: _error!,
-                onDismiss: () => setState(() => _error = null),
-              ),
-            ),
+          ),
         ],
-      ),
-      bottomNavigationBar: Material(
-        color: Colors.transparent,
-        elevation: 0,
-        child: StartChattingCard(
-          loading: _starting,
-          onStart: _onStartChatting,
-          onLogin: _onLogin,
-        ),
       ),
     );
   }

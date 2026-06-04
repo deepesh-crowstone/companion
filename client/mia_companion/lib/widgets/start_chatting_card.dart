@@ -69,27 +69,47 @@ class StartChattingCard extends StatelessWidget {
             ),
             if (onLogin != null) ...[
               const SizedBox(height: 10),
-              TextButton(
-                onPressed: (loading || loginLoading) ? null : onLogin,
-                child: loginLoading
-                    ? SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white.withValues(alpha: 0.9),
+              Center(
+                child: TextButton(
+                  onPressed: (loading || loginLoading) ? null : onLogin,
+                  style: TextButton.styleFrom(
+                    padding: EdgeInsets.zero,
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: loginLoading
+                      ? SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white.withValues(alpha: 0.9),
+                          ),
+                        )
+                      : DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.55),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 8,
+                            ),
+                            child: Text(
+                              'Login if existing user',
+                              style: GoogleFonts.inter(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
+                                decoration: TextDecoration.underline,
+                                decorationColor:
+                                    Colors.white.withValues(alpha: 0.85),
+                              ),
+                            ),
+                          ),
                         ),
-                      )
-                    : Text(
-                        'Login if existing user',
-                        style: GoogleFonts.inter(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white.withValues(alpha: 0.92),
-                          decoration: TextDecoration.underline,
-                          decorationColor: Colors.white.withValues(alpha: 0.7),
-                        ),
-                      ),
+                ),
               ),
             ],
           ],
