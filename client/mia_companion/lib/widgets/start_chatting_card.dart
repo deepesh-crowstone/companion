@@ -91,10 +91,9 @@ class StartChattingCard extends StatelessWidget {
                           style: GoogleFonts.inter(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
-                            color: Colors.white.withValues(alpha: 0.65),
+                            color: const Color(0xFF3D3D3D),
                             decoration: TextDecoration.underline,
-                            decorationColor:
-                                Colors.white.withValues(alpha: 0.5),
+                            decorationColor: const Color(0xFF3D3D3D),
                           ),
                         ),
                 ),
