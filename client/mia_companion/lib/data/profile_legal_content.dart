@@ -39,7 +39,7 @@ class ProfileLegalContent {
   ];
 
   static const privacyPolicy = '''
-Last updated: May 2026
+Last updated: June 2026
 
 Crowstone ("we", "us") operates the Zara companion app. This policy explains how we handle information when you use the app.
 
@@ -47,20 +47,22 @@ Information we collect
 • Account identifiers created when you use the app (such as a guest username).
 • Messages, voice notes, and interaction events needed to provide chat features.
 • Basic device and app diagnostics to keep the service reliable.
+• On Android, device or advertising identifiers (such as the advertising ID) collected by our attribution partner AppsFlyer to measure installs, campaign performance, and deep-link routing.
 
 How we use information
 • To deliver AI chat and voice features.
 • To improve product quality, safety, and support.
 • To respond to support requests you send us.
+• To measure marketing effectiveness and attribute app installs (via AppsFlyer).
 
 Data retention
 We retain conversation data while your account is active so Zara can maintain context. If you delete your account from the app, we remove associated local credentials and request deletion of server-side account data where supported.
 
 Sharing
-We do not sell personal data. We may use trusted infrastructure providers (hosting, analytics) strictly to operate the service.
+We do not sell personal data. We may use trusted infrastructure providers (hosting, analytics) strictly to operate the service. On Android, AppsFlyer may receive device or advertising identifiers for attribution and analytics as described above.
 
 Your choices
-You can log out, delete your account from Profile → Account, or contact us to request data access or deletion.
+You can log out, delete your account from Profile → Account, or contact us to request data access or deletion. On Android, you can limit ad personalization or reset your advertising ID in your device settings.
 
 Contact
 deepesh@crowstone.ai

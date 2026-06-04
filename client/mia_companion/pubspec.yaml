@@ -1,7 +1,7 @@
 name: mia_companion
 description: Zara AI companion — chat, voice notes, and realtime calls.
 publish_to: 'none'
-version: 1.0.0+6
+version: 1.0.0+8
 
 environment:
   sdk: ^3.11.4
