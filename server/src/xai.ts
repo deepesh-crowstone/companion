@@ -18,6 +18,7 @@ import {
   moodPromptForMood,
   type ZaraMood,
 } from "./mood.js";
+import { privateModeRomanticPrompt } from "./private-mode.js";
 import { xaiChatCompletion } from "./xai-client.js";
 
 const XAI_BASE = "https://api.x.ai/v1";
@@ -591,22 +592,29 @@ Rules:
 
 export async function chatWithMiaText(
   history: DbMessage[],
-  options?: { intimacyLevel?: IntimacyLevel; mood?: ZaraMood },
+  options?: {
+    intimacyLevel?: IntimacyLevel;
+    mood?: ZaraMood;
+    privateMode?: boolean;
+  },
 ): Promise<string[]> {
   if (history.length === 0 || history[history.length - 1]?.role !== "user") {
     throw new Error("Chat history must end with a user message");
   }
 
-  const mood = options?.mood ?? "friendly";
-  const intimacyLevel = effectiveIntimacyLevel(
-    mood,
-    options?.intimacyLevel ?? 1,
-  );
+  const privateMode = options?.privateMode ?? false;
+  const mood = privateMode ? "bold" : (options?.mood ?? "friendly");
+  const intimacyLevel = privateMode
+    ? 3
+    : effectiveIntimacyLevel(mood, options?.intimacyLevel ?? 1);
+  const privateLine = privateMode
+    ? `\n\n${privateModeRomanticPrompt()}`
+    : "";
   const systemPrompt = `${MIA_TEXT_SYSTEM_PROMPT}
 
 ${intimacyPromptForLevel(intimacyLevel)}
 
-${moodPromptForMood(mood)}
+${moodPromptForMood(mood)}${privateLine}
 
 ${currentIndiaTimeContext()}
 

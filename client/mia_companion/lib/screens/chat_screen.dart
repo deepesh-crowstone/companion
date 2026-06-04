@@ -15,6 +15,7 @@ import '../utils/human_presence.dart';
 import '../services/api_service.dart';
 import '../services/disappearing_messages_controller.dart';
 import '../services/mood_controller.dart';
+import '../services/private_mode_controller.dart';
 import '../services/session_expired.dart';
 import '../services/voice_recording_platform.dart';
 import '../theme/mia_theme.dart';
@@ -34,6 +35,11 @@ import '../widgets/disappearing_messages_banner.dart';
 import '../widgets/mood_change_banner.dart';
 import '../widgets/account_credentials_sheet.dart';
 import '../widgets/mood_options_sheet.dart';
+import '../widgets/private_mode_payment_sheet.dart';
+import '../widgets/private_mode_romantic_banner.dart';
+import '../widgets/private_mode_setup_sheet.dart';
+import '../widgets/private_mode_strip.dart';
+import '../widgets/mia_confirm_dialog.dart';
 import '../widgets/theme_options_sheet.dart';
 import 'mia_profile_screen.dart';
 import 'user_profile_screen.dart';
@@ -104,6 +110,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _input.addListener(_onInputChanged);
     _scroll.addListener(_onScroll);
     _disappearing.addListener(_onDisappearingMessagesChanged);
+    PrivateModeController.instance.addListener(_onPrivateModeChanged);
     _scheduleExpiryRefresh();
     _load();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -111,6 +118,11 @@ class _ChatScreenState extends State<ChatScreen> {
       _trackedDisappearingEnabled = _disappearing.enabled;
       MoodController.instance.addListener(_onMoodChanged);
     });
+  }
+
+  void _onPrivateModeChanged() {
+    if (!mounted) return;
+    setState(() => _statusText = _statusWhenIdle());
   }
 
   void _onMoodChanged() {
@@ -166,6 +178,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _recordDurationTimer?.cancel();
     _expiryRefreshTimer?.cancel();
     MoodController.instance.removeListener(_onMoodChanged);
+    PrivateModeController.instance.removeListener(_onPrivateModeChanged);
     _disappearing.removeListener(_onDisappearingMessagesChanged);
     _stopAmplitudeListener();
     _input.removeListener(_onInputChanged);
@@ -205,7 +218,8 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  String _statusWhenIdle() => 'Active';
+  String _statusWhenIdle() =>
+      PrivateModeController.instance.privateModeActive ? 'Private' : 'Active';
 
   void _abortMiaReply() {
     _replyGeneration++;
@@ -249,6 +263,7 @@ class _ChatScreenState extends State<ChatScreen> {
       }
       final messages = await ApiService.instance.fetchMessages();
       unawaited(MoodController.instance.refreshAccess());
+      unawaited(PrivateModeController.instance.refreshAccess());
       if (!mounted) return;
       setState(() {
         _messages = messages;
@@ -260,12 +275,62 @@ class _ChatScreenState extends State<ChatScreen> {
       _scrollToBottom(force: true);
       if (mounted) {
         await promptAccountCredentialsIfNeeded(context);
+        if (PrivateModeController.instance.needsSetup) {
+          await showPrivateModeSetupSheet(context);
+        }
       }
     } catch (e) {
       if (!mounted) return;
       setState(() => _loading = false);
       _maybeAutoFocusInputOnLanding();
       _trackPageViewedOnce();
+      _handleError(e);
+    }
+  }
+
+  Future<void> _onRomanticBannerTap() async {
+    unawaited(ApiService.instance.trackEvent('private_mode_banner_tap'));
+    final paid = await showPrivateModePaymentSheet(context);
+    if (!mounted) return;
+    if (paid) {
+      await PrivateModeController.instance.refreshAccess();
+      await showPrivateModeSetupSheet(context);
+      if (mounted) setState(() {});
+    }
+  }
+
+  Future<void> _onEnterPrivateMode() async {
+    if (PrivateModeController.instance.needsSetup) {
+      await showPrivateModeSetupSheet(context);
+      if (!mounted || PrivateModeController.instance.needsSetup) return;
+    }
+    try {
+      await PrivateModeController.instance.enterPrivateMode();
+      unawaited(ApiService.instance.trackEvent('private_mode_on'));
+      if (mounted) setState(() => _statusText = _statusWhenIdle());
+    } catch (e) {
+      _handleError(e);
+    }
+  }
+
+  Future<void> _onExitPrivateMode() async {
+    final confirmed = await showMiaConfirmDialog(
+      context: context,
+      title: 'Exit private mode?',
+      message:
+          'All private chats will disappear. Your normal chat will stay as before.',
+      confirmLabel: 'Exit',
+      destructive: true,
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await PrivateModeController.instance.exitPrivateMode();
+      unawaited(ApiService.instance.trackEvent('private_mode_off'));
+      if (mounted) {
+        setState(() => _statusText = _statusWhenIdle());
+        await _load();
+      }
+    } catch (e) {
       _handleError(e);
     }
   }
@@ -1020,6 +1085,7 @@ class _ChatScreenState extends State<ChatScreen> {
           children: [
             MiaChatHeader(
               statusText: _statusText,
+              showMoodPicker: false,
               onProfile: () {
                 Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const MiaProfileScreen()),
@@ -1028,6 +1094,24 @@ class _ChatScreenState extends State<ChatScreen> {
               onCall: _onCallPressed,
               onMood: () => showMoodOptionsSheet(context),
               onMenu: _openMenuSheet,
+            ),
+            ListenableBuilder(
+              listenable: PrivateModeController.instance,
+              builder: (context, _) {
+                final private = PrivateModeController.instance;
+                if (private.showRomanticBanner) {
+                  return PrivateModeRomanticBanner(
+                    onTap: _onRomanticBannerTap,
+                  );
+                }
+                if (private.showPrivateStrip) {
+                  return PrivateModeStrip(
+                    onEnter: _onEnterPrivateMode,
+                    onExit: _onExitPrivateMode,
+                  );
+                }
+                return const SizedBox.shrink();
+              },
             ),
             Expanded(
               child: GestureDetector(

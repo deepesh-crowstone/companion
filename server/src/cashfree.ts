@@ -66,6 +66,11 @@ export function buildPersonalityOrderId(userId: number): string {
   return `personality_u${userId}_${suffix}`;
 }
 
+export function buildPrivateModeOrderId(userId: number): string {
+  const suffix = uuidv4().replace(/-/g, "").slice(0, 12);
+  return `private_u${userId}_${suffix}`;
+}
+
 export async function createCashfreeOrder(options: {
   orderId: string;
   amountInr: number;

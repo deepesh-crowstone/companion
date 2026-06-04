@@ -29,7 +29,9 @@ export function verifyToken(token: string): AuthPayload {
 
 export async function findUserById(userId: number): Promise<DbUser | null> {
   const { rows } = await pool.query<DbUser>(
-    `SELECT id, username, password_hash, intimacy_level_unlocked, created_at FROM users WHERE id = $1`,
+    `SELECT id, username, password_hash, intimacy_level_unlocked, age,
+            COALESCE(private_mode_active, FALSE) AS private_mode_active, created_at
+     FROM users WHERE id = $1`,
     [userId],
   );
   return rows[0] ?? null;

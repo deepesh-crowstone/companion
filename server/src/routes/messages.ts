@@ -6,10 +6,12 @@ import { v4 as uuidv4 } from "uuid";
 import { authMiddleware, type AuthPayload } from "../auth.js";
 import { pool, type DbMessage } from "../db.js";
 import {
+  getPresignedPhotoUrl,
   getPresignedVoiceUrl,
   isBucketConfigured,
   uploadVoiceObject,
 } from "../storage.js";
+import { normalizePhotoStoredKey } from "../zara-photos.js";
 import { stripSpeechTagsForDisplay } from "../tts-speech.js";
 import {
   chatWithMia,
@@ -22,6 +24,12 @@ import {
 import { classifyIntimacyLevel } from "../intimacy.js";
 import { resolveMoodForUser } from "../personalities.js";
 import { parseMood, type ZaraMood } from "../mood.js";
+import {
+  getPrivateModeAccess,
+  isUserPrivateModeActive,
+} from "../private-mode.js";
+import { classifyPhotoRequest } from "../photo-request.js";
+import { pickZaraPhoto } from "../zara-photos.js";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -51,7 +59,8 @@ function apiErrorFromDb(e: unknown): { status: number; message: string } | null 
 
 async function listMessages(userId: number): Promise<DbMessage[]> {
   const { rows } = await pool.query<DbMessage>(
-    `SELECT id, user_id, role, content, message_type, audio_filename, created_at
+    `SELECT id, user_id, role, content, message_type, audio_filename, image_key,
+            COALESCE(is_private, FALSE) AS is_private, created_at
      FROM messages WHERE user_id = $1 ORDER BY created_at ASC, id ASC`,
     [userId],
   );
@@ -62,14 +71,28 @@ async function insertMessage(
   userId: number,
   role: "user" | "assistant",
   content: string,
-  messageType: "text" | "audio",
-  audioFilename: string | null = null,
+  messageType: "text" | "audio" | "image",
+  options?: {
+    audioFilename?: string | null;
+    imageKey?: string | null;
+    isPrivate?: boolean;
+  },
 ): Promise<DbMessage> {
+  const isPrivate = options?.isPrivate ?? (await isUserPrivateModeActive(userId));
   const { rows } = await pool.query<DbMessage>(
-    `INSERT INTO messages (user_id, role, content, message_type, audio_filename)
-     VALUES ($1, $2, $3, $4, $5)
-     RETURNING id, user_id, role, content, message_type, audio_filename, created_at`,
-    [userId, role, content, messageType, audioFilename],
+    `INSERT INTO messages (user_id, role, content, message_type, audio_filename, image_key, is_private)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     RETURNING id, user_id, role, content, message_type, audio_filename, image_key,
+               is_private, created_at`,
+    [
+      userId,
+      role,
+      content,
+      messageType,
+      options?.audioFilename ?? null,
+      options?.imageKey ?? null,
+      isPrivate,
+    ],
   );
   return rows[0];
 }
@@ -103,6 +126,19 @@ async function resolveAudioUrl(msg: DbMessage): Promise<string | null> {
   }
 }
 
+async function resolveImageUrl(msg: DbMessage): Promise<string | null> {
+  const key = msg.image_key;
+  if (key == null || !isBucketConfigured()) {
+    return null;
+  }
+  try {
+    return await getPresignedPhotoUrl(normalizePhotoStoredKey(key));
+  } catch (e) {
+    console.warn("Photo presign failed:", e);
+    return null;
+  }
+}
+
 async function toPublicMessage(msg: DbMessage) {
   return {
     id: msg.id,
@@ -110,6 +146,9 @@ async function toPublicMessage(msg: DbMessage) {
     content: msg.content,
     messageType: msg.message_type,
     audioUrl: await resolveAudioUrl(msg),
+    imageUrl: await resolveImageUrl(msg),
+    imageKey: msg.image_key,
+    isPrivate: msg.is_private,
     createdAt: toIsoTimestamp(msg.created_at),
   };
 }
@@ -147,30 +186,67 @@ function openingGreetingReply(): string[] {
   return ["hi", "kaise ho"];
 }
 
+async function insertAssistantImageMessage(
+  userId: number,
+  photo: ReturnType<typeof pickZaraPhoto>,
+  caption: string,
+): Promise<DbMessage> {
+  return insertMessage(userId, "assistant", caption, "image", {
+    imageKey: photo.objectKey,
+    isPrivate: true,
+  });
+}
+
 async function buildTextReply(
   history: DbMessage[],
   userMsgs: DbMessage[],
   mood: ZaraMood,
+  privateMode: boolean,
 ): Promise<{ assistantMsgs: DbMessage[] }> {
+  const userId = userMsgs[0].user_id;
   const lastUserText = userMsgs[userMsgs.length - 1]?.content ?? "";
 
-  if (isFirstMessageSimpleGreeting(history, lastUserText)) {
+  if (!privateMode && isFirstMessageSimpleGreeting(history, lastUserText)) {
     const assistantMsgs = await insertAssistantTextMessages(
-      userMsgs[0].user_id,
+      userId,
       openingGreetingReply(),
     );
     return { assistantMsgs };
   }
 
-  const classified = await classifyIntimacyLevel(lastUserText);
+  const classified = privateMode
+    ? { level: 3 as const }
+    : await classifyIntimacyLevel(lastUserText);
   const replySegments = await chatWithMiaText([...history, ...userMsgs], {
     intimacyLevel: classified.level,
     mood,
+    privateMode,
   });
   const assistantMsgs = await insertAssistantTextMessages(
-    userMsgs[0].user_id,
+    userId,
     replySegments,
   );
+
+  if (privateMode && isBucketConfigured()) {
+    const photoRequest = await classifyPhotoRequest(lastUserText);
+    if (photoRequest.wantsPhoto) {
+      const photo = pickZaraPhoto({
+        emotion: photoRequest.emotion,
+        clothingLevel: photoRequest.clothingLevel,
+      });
+      const imageMsg = await insertAssistantImageMessage(
+        userId,
+        photo,
+        "",
+      );
+      assistantMsgs.push(imageMsg);
+    }
+  } else if (privateMode) {
+    console.warn(
+      "Photo request skipped: Railway bucket not configured (run npm run seed:zara-photos after configuring bucket).",
+    );
+  }
+
   return { assistantMsgs };
 }
 
@@ -205,10 +281,21 @@ messagesRouter.post("/text", async (req, res) => {
   }
 
   try {
+    const access = await getPrivateModeAccess(auth.userId);
+    if (access.privateModeActive && !access.passActive) {
+      res.status(403).json({ error: "Private mode pass has expired" });
+      return;
+    }
+
     const history = await listMessages(auth.userId);
     const userMsg = await insertMessage(auth.userId, "user", trimmed, "text");
 
-    const { assistantMsgs } = await buildTextReply(history, [userMsg], mood);
+    const { assistantMsgs } = await buildTextReply(
+      history,
+      [userMsg],
+      mood,
+      access.privateModeActive,
+    );
     const assistantMessages = await Promise.all(
       assistantMsgs.map((m) => toPublicMessage(m)),
     );
@@ -255,13 +342,24 @@ messagesRouter.post("/text/batch", async (req, res) => {
   }
 
   try {
+    const access = await getPrivateModeAccess(auth.userId);
+    if (access.privateModeActive && !access.passActive) {
+      res.status(403).json({ error: "Private mode pass has expired" });
+      return;
+    }
+
     const history = await listMessages(auth.userId);
     const userMsgs: DbMessage[] = [];
     for (const text of trimmed) {
       userMsgs.push(await insertMessage(auth.userId, "user", text, "text"));
     }
 
-    const { assistantMsgs } = await buildTextReply(history, userMsgs, mood);
+    const { assistantMsgs } = await buildTextReply(
+      history,
+      userMsgs,
+      mood,
+      access.privateModeActive,
+    );
     const assistantMessages = await Promise.all(
       assistantMsgs.map((m) => toPublicMessage(m)),
     );
@@ -336,25 +434,31 @@ messagesRouter.post("/voice", upload.single("audio"), async (req, res) => {
 
     const userAudioKey = await uploadVoiceObject(localName, file.buffer, mime);
 
-    const userMsg = await insertMessage(
-      auth.userId,
-      "user",
-      transcript,
-      "audio",
-      userAudioKey,
-    );
+    const access = await getPrivateModeAccess(auth.userId);
+    if (access.privateModeActive && !access.passActive) {
+      res.status(403).json({ error: "Private mode pass has expired" });
+      return;
+    }
 
-    const classified = await classifyIntimacyLevel(transcript);
+    const userMsg = await insertMessage(auth.userId, "user", transcript, "audio", {
+      audioFilename: userAudioKey,
+      isPrivate: access.privateModeActive,
+    });
+
+    const classified = access.privateModeActive
+      ? { level: 3 as const }
+      : await classifyIntimacyLevel(transcript);
+    const voiceMood = access.privateModeActive ? ("bold" as const) : mood;
     const voiceHistory = [...history, userMsg];
     const replyForTts =
       voiceReplyPipeline() === "text_tagged"
         ? await chatWithMiaTextAsVoice(voiceHistory, {
-            mood,
+            mood: voiceMood,
             intimacyLevel: classified.level,
           })
         : await chatWithMia(voiceHistory, {
             expressiveTts: true,
-            mood,
+            mood: voiceMood,
             intimacyLevel: classified.level,
           });
 
@@ -372,7 +476,10 @@ messagesRouter.post("/voice", upload.single("audio"), async (req, res) => {
       "assistant",
       displayReply,
       "audio",
-      assistantAudioKey,
+      {
+        audioFilename: assistantAudioKey,
+        isPrivate: access.privateModeActive,
+      },
     );
 
     res.json({

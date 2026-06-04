@@ -16,6 +16,7 @@ class MiaChatHeader extends StatelessWidget implements PreferredSizeWidget {
     required this.onMood,
     required this.onProfile,
     this.statusText = 'Active',
+    this.showMoodPicker = true,
   });
 
   final VoidCallback onCall;
@@ -23,6 +24,7 @@ class MiaChatHeader extends StatelessWidget implements PreferredSizeWidget {
   final VoidCallback onMood;
   final VoidCallback onProfile;
   final String statusText;
+  final bool showMoodPicker;
 
   @override
   Size get preferredSize => const Size.fromHeight(80);
@@ -83,7 +85,7 @@ class MiaChatHeader extends StatelessWidget implements PreferredSizeWidget {
                   ],
                 ),
               ),
-              _MoodPill(onTap: onMood),
+              if (showMoodPicker) _MoodPill(onTap: onMood),
               Expanded(
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.end,

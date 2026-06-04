@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/api_service.dart';
 import 'disappearing_messages_controller.dart';
+import 'private_mode_controller.dart';
 
 typedef SessionResetHandler = Future<void> Function();
 
@@ -23,6 +24,7 @@ class SessionReset {
   static Future<void> deleteAccount(BuildContext context) async {
     await ApiService.instance.clearLocalAccountData();
     await DisappearingMessagesController.instance.clearPermanentHidden();
+    PrivateModeController.instance.clear();
     if (context.mounted) {
       Navigator.of(context).popUntil((route) => route.isFirst);
     }

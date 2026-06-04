@@ -8,6 +8,8 @@ class ChatMessage {
   final String content;
   final String messageType;
   final String? audioUrl;
+  final String? imageUrl;
+  final String? imageKey;
   final DateTime createdAt;
   final int? audioDurationSec;
 
@@ -17,12 +19,15 @@ class ChatMessage {
     required this.content,
     required this.messageType,
     this.audioUrl,
+    this.imageUrl,
+    this.imageKey,
     required this.createdAt,
     this.audioDurationSec,
   });
 
   bool get isUser => role == 'user';
   bool get isAudio => messageType == 'audio';
+  bool get isImage => messageType == 'image';
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
     return ChatMessage(
@@ -31,6 +36,8 @@ class ChatMessage {
       content: json['content'] as String,
       messageType: json['messageType'] as String? ?? 'text',
       audioUrl: json['audioUrl'] as String?,
+      imageUrl: json['imageUrl'] as String?,
+      imageKey: json['imageKey'] as String?,
       createdAt: ChatDates.parseCreatedAt(json['createdAt'] as String),
       audioDurationSec: json['audioDurationSec'] as int?,
     );
@@ -42,6 +49,8 @@ class ChatMessage {
     String? content,
     String? messageType,
     String? audioUrl,
+    String? imageUrl,
+    String? imageKey,
     DateTime? createdAt,
     int? audioDurationSec,
   }) {
@@ -51,6 +60,8 @@ class ChatMessage {
       content: content ?? this.content,
       messageType: messageType ?? this.messageType,
       audioUrl: audioUrl ?? this.audioUrl,
+      imageUrl: imageUrl ?? this.imageUrl,
+      imageKey: imageKey ?? this.imageKey,
       createdAt: createdAt ?? this.createdAt,
       audioDurationSec: audioDurationSec ?? this.audioDurationSec,
     );

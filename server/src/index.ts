@@ -5,6 +5,7 @@ import { authRouter } from "./routes/auth.js";
 import { messagesRouter } from "./routes/messages.js";
 import { realtimeRouter } from "./routes/realtime.js";
 import { personalitiesRouter } from "./routes/personalities.js";
+import { privateModeRouter } from "./routes/private-mode.js";
 import { eventsRouter } from "./routes/events.js";
 import { checkDbConnection, initDb } from "./db.js";
 import { checkBucketConnection, isBucketConfigured } from "./storage.js";
@@ -88,15 +89,18 @@ app.use("/auth", authRouter);
 app.use("/messages", messagesRouter);
 app.use("/realtime", realtimeRouter);
 app.use("/personalities", personalitiesRouter);
+app.use("/private-mode", privateModeRouter);
 app.use("/events", eventsRouter);
 
 async function main(): Promise<void> {
   await initDb();
   console.log("✓ PostgreSQL schema ready");
   if (isBucketConfigured()) {
-    console.log("✓ Voice storage: object bucket (presigned URLs)");
+    console.log("✓ Object storage: voice + Zara photos (presigned URLs)");
   } else {
-    console.warn("⚠ Voice notes disabled until bucket env vars are set");
+    console.warn(
+      "⚠ Voice notes and private photos disabled until bucket env vars are set",
+    );
   }
 
   app.listen(port, host, async () => {

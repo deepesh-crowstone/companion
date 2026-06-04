@@ -41,6 +41,10 @@ class MessageBubble extends StatelessWidget {
       return _buildAudioMessage(context, isUser);
     }
 
+    if (message.isImage) {
+      return _buildImageMessage(context, isUser);
+    }
+
     return Padding(
       padding: EdgeInsets.zero,
       child: Align(
@@ -75,6 +79,63 @@ class MessageBubble extends StatelessWidget {
 
   static String _formatTime(DateTime dt) {
     return DateFormat('h:mm a').format(dt).toLowerCase();
+  }
+
+  Widget _buildImageMessage(BuildContext context, bool isUser) {
+    final url = message.imageUrl;
+    return Align(
+      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        margin: _bubbleMargin,
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.sizeOf(context).width * 0.62,
+        ),
+        decoration: BoxDecoration(
+          borderRadius: MiaTheme.bubbleShape(isUser: isUser),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.08),
+              blurRadius: 10,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: MiaTheme.bubbleShape(isUser: isUser),
+          child: url != null && url.isNotEmpty
+              ? Image.network(
+                  url,
+                  fit: BoxFit.cover,
+                  loadingBuilder: (context, child, progress) {
+                    if (progress == null) return child;
+                    return _imagePlaceholder(loading: true);
+                  },
+                  errorBuilder: (context, error, stackTrace) =>
+                      _imagePlaceholder(),
+                )
+              : _imagePlaceholder(),
+        ),
+      ),
+    );
+  }
+
+  Widget _imagePlaceholder({bool loading = false}) {
+    return Container(
+      width: 200,
+      height: 240,
+      color: MiaColors.miaBubble,
+      alignment: Alignment.center,
+      child: loading
+          ? SizedBox(
+              width: 28,
+              height: 28,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.2,
+                color: MiaColors.accent,
+              ),
+            )
+          : Icon(Icons.image_outlined, color: MiaColors.textMuted, size: 40),
+    );
   }
 
   Widget _buildAudioMessage(BuildContext context, bool isUser) {

@@ -1,6 +1,7 @@
 import {
   GetObjectCommand,
   HeadBucketCommand,
+  HeadObjectCommand,
   PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
@@ -75,6 +76,11 @@ export function voiceObjectKey(filename: string): string {
   return filename.startsWith("voice/") ? filename : `voice/${filename}`;
 }
 
+/** Private-mode Zara photos live under `photos/` in the same Railway bucket as voice. */
+export function photoObjectKey(filename: string): string {
+  return filename.startsWith("photos/") ? filename : `photos/${filename}`;
+}
+
 export async function uploadVoiceObject(
   key: string,
   body: Buffer,
@@ -98,6 +104,56 @@ export async function uploadVoiceObject(
 export async function getPresignedVoiceUrl(storedKey: string): Promise<string> {
   const config = getConfig();
   const objectKey = voiceObjectKey(storedKey);
+
+  return getSignedUrl(
+    getClient(),
+    new GetObjectCommand({
+      Bucket: config.bucket,
+      Key: objectKey,
+    }),
+    { expiresIn: PRESIGN_TTL_SECONDS },
+  );
+}
+
+export async function uploadPhotoObject(
+  key: string,
+  body: Buffer,
+  contentType = "image/jpeg",
+): Promise<string> {
+  const config = getConfig();
+  const objectKey = photoObjectKey(key);
+
+  await getClient().send(
+    new PutObjectCommand({
+      Bucket: config.bucket,
+      Key: objectKey,
+      Body: body,
+      ContentType: contentType,
+    }),
+  );
+
+  return objectKey;
+}
+
+export async function photoObjectExists(storedKey: string): Promise<boolean> {
+  const config = getConfig();
+  const objectKey = photoObjectKey(storedKey);
+  try {
+    await getClient().send(
+      new HeadObjectCommand({
+        Bucket: config.bucket,
+        Key: objectKey,
+      }),
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function getPresignedPhotoUrl(storedKey: string): Promise<string> {
+  const config = getConfig();
+  const objectKey = photoObjectKey(storedKey);
 
   return getSignedUrl(
     getClient(),

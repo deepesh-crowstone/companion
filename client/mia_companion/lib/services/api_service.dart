@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../config.dart';
 import '../models/chat_message.dart';
 import '../models/personality_access.dart';
+import '../models/private_mode_access.dart';
 import '../models/zara_mood.dart';
 import '../models/voice_upload.dart';
 import 'session_expired.dart';
@@ -432,6 +433,89 @@ class ApiService {
     }
     return PersonalityPaymentOrder.fromJson(
       jsonDecode(res.body) as Map<String, dynamic>,
+    );
+  }
+
+  Future<PrivateModeAccess> fetchPrivateModeAccess() async {
+    final res = await _get(
+      Uri.parse('$resolvedApiBaseUrl/private-mode/status'),
+      headers: _authHeaders,
+    );
+    _guardAuth(res);
+    if (res.statusCode >= 400) {
+      throw Exception(_errorFrom(res));
+    }
+    return PrivateModeAccess.fromJson(
+      jsonDecode(res.body) as Map<String, dynamic>,
+    );
+  }
+
+  Future<PrivateModePaymentOrder> createPrivateModeOrder() async {
+    final res = await _post(
+      Uri.parse('$resolvedApiBaseUrl/private-mode/orders'),
+      headers: _authHeaders,
+    );
+    _guardAuth(res);
+    if (res.statusCode >= 400) {
+      throw Exception(_errorFrom(res));
+    }
+    return PrivateModePaymentOrder.fromJson(
+      jsonDecode(res.body) as Map<String, dynamic>,
+    );
+  }
+
+  Future<PrivateModeVerifyResult> verifyPrivateModeOrder(String orderId) async {
+    final res = await _post(
+      Uri.parse('$resolvedApiBaseUrl/private-mode/orders/$orderId/verify'),
+      headers: _authHeaders,
+    );
+    _guardAuth(res);
+    if (res.statusCode >= 400) {
+      throw Exception(_errorFrom(res));
+    }
+    return PrivateModeVerifyResult.fromJson(
+      jsonDecode(res.body) as Map<String, dynamic>,
+    );
+  }
+
+  Future<void> setUserAge(int age) async {
+    final res = await _patch(
+      Uri.parse('$resolvedApiBaseUrl/private-mode/age'),
+      headers: _authHeaders,
+      body: jsonEncode({'age': age}),
+    );
+    _guardAuth(res);
+    if (res.statusCode >= 400) {
+      throw Exception(_errorFrom(res));
+    }
+  }
+
+  Future<PrivateModeAccess> enterPrivateMode() async {
+    final res = await _post(
+      Uri.parse('$resolvedApiBaseUrl/private-mode/enter'),
+      headers: _authHeaders,
+    );
+    _guardAuth(res);
+    if (res.statusCode >= 400) {
+      throw Exception(_errorFrom(res));
+    }
+    return fetchPrivateModeAccess();
+  }
+
+  Future<({PrivateModeAccess access, int deletedMessageCount})> exitPrivateMode() async {
+    final res = await _post(
+      Uri.parse('$resolvedApiBaseUrl/private-mode/exit'),
+      headers: _authHeaders,
+    );
+    _guardAuth(res);
+    if (res.statusCode >= 400) {
+      throw Exception(_errorFrom(res));
+    }
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    final access = await fetchPrivateModeAccess();
+    return (
+      access: access,
+      deletedMessageCount: body['deletedMessageCount'] as int? ?? 0,
     );
   }
 

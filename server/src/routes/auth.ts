@@ -1,6 +1,7 @@
 import { Router } from "express";
 import {
   authMiddleware,
+  findUserById,
   loginUser,
   registerUser,
   updateUserCredentials,
@@ -10,9 +11,25 @@ import type { Request } from "express";
 
 export const authRouter = Router();
 
-authRouter.get("/me", authMiddleware, (req, res) => {
+authRouter.get("/me", authMiddleware, async (req, res) => {
   const auth = (req as Request & { auth: AuthPayload }).auth;
-  res.json({ user: { id: auth.userId, username: auth.username } });
+  try {
+    const user = await findUserById(auth.userId);
+    if (!user) {
+      res.status(401).json({ error: "Session expired. Please log in again." });
+      return;
+    }
+    res.json({
+      user: {
+        id: auth.userId,
+        username: auth.username,
+        age: user.age,
+      },
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Failed to load profile" });
+  }
 });
 
 authRouter.post("/register", async (req, res) => {
