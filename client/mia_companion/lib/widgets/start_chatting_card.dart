@@ -88,7 +88,7 @@ class StartChattingCard extends StatelessWidget {
                         )
                       : DecoratedBox(
                           decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.55),
+                            color: Colors.black.withValues(alpha: 0.35),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Padding(
@@ -97,7 +97,7 @@ class StartChattingCard extends StatelessWidget {
                               vertical: 8,
                             ),
                             child: Text(
-                              'Login if existing user',
+                              'Login',
                               style: GoogleFonts.inter(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w600,
