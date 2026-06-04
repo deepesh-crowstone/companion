@@ -13,7 +13,11 @@ import {
 import { buildClientSecretRequest } from "./realtime-session.js";
 import type { DbMessage } from "./db.js";
 import { intimacyPromptForLevel, type IntimacyLevel } from "./intimacy.js";
-import { moodPromptForMood, type ZaraMood } from "./mood.js";
+import {
+  effectiveIntimacyLevel,
+  moodPromptForMood,
+  type ZaraMood,
+} from "./mood.js";
 import { xaiChatCompletion } from "./xai-client.js";
 
 const XAI_BASE = "https://api.x.ai/v1";
@@ -514,8 +518,12 @@ export async function chatWithMia(
     throw new Error("Chat history must end with a user message");
   }
 
-  const moodLine = moodPromptForMood(options?.mood ?? "friendly");
-  const intimacyLevel = options?.intimacyLevel ?? 1;
+  const mood = options?.mood ?? "friendly";
+  const moodLine = moodPromptForMood(mood);
+  const intimacyLevel = effectiveIntimacyLevel(
+    mood,
+    options?.intimacyLevel ?? 1,
+  );
   const systemPrompt = `${
     options?.expressiveTts
       ? `${MIA_VOICE_SYSTEM_PROMPT}\n${voiceTtsInstructions()}`
@@ -589,8 +597,11 @@ export async function chatWithMiaText(
     throw new Error("Chat history must end with a user message");
   }
 
-  const intimacyLevel = options?.intimacyLevel ?? 1;
   const mood = options?.mood ?? "friendly";
+  const intimacyLevel = effectiveIntimacyLevel(
+    mood,
+    options?.intimacyLevel ?? 1,
+  );
   const systemPrompt = `${MIA_TEXT_SYSTEM_PROMPT}
 
 ${intimacyPromptForLevel(intimacyLevel)}

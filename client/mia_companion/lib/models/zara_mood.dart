@@ -28,7 +28,7 @@ enum ZaraMood {
       case ZaraMood.caring:
         return 'Soft, attentive, and reassuring';
       case ZaraMood.bold:
-        return 'Playful, bold, and teasing';
+        return 'Confident baddy energy — playful, spicy, all-in';
     }
   }
 
