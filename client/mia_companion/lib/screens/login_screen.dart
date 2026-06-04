@@ -81,7 +81,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 alignment: Alignment.centerLeft,
                 child: IconButton(
                   icon: const Icon(Icons.arrow_back_ios_new, size: 20),
-                  color: MiaColors.textPrimary,
+                  color: Colors.white,
                   onPressed: _loading ? null : () => Navigator.of(context).pop(),
                 ),
               ),
@@ -95,15 +95,38 @@ class _LoginScreenState extends State<LoginScreen> {
                     children: [
                       Text(
                         'Welcome back',
-                        style: MiaTheme.serifTitle(size: 36),
+                        style: MiaTheme.serifTitle(size: 36).copyWith(
+                          color: Colors.white,
+                          shadows: const [
+                            Shadow(
+                              blurRadius: 12,
+                              color: Colors.black54,
+                              offset: Offset(0, 2),
+                            ),
+                          ],
+                        ),
                       ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Log in with the username and password you set after unlocking personalities.',
-                        style: GoogleFonts.inter(
-                          fontSize: 15,
-                          height: 1.45,
-                          color: MiaColors.textMuted,
+                      const SizedBox(height: 10),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.5),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.14),
+                          ),
+                        ),
+                        child: Text(
+                          'Log in with the username and password you set after unlocking personalities.',
+                          style: GoogleFonts.inter(
+                            fontSize: 15,
+                            height: 1.45,
+                            color: Colors.white.withValues(alpha: 0.92),
+                          ),
                         ),
                       ),
                       const SizedBox(height: 28),
