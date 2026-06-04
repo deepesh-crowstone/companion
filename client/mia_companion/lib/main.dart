@@ -64,8 +64,14 @@ class _MiaAppState extends State<MiaApp> {
   }
 
   void _syncSystemChrome() {
+    final base =
+        _theme.isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark;
     SystemChrome.setSystemUIOverlayStyle(
-      _theme.isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
+      base.copyWith(
+        statusBarColor: Colors.transparent,
+        systemNavigationBarColor: Colors.transparent,
+        systemNavigationBarContrastEnforced: false,
+      ),
     );
   }
 
@@ -248,7 +254,11 @@ class _BootstrapState extends State<_Bootstrap> {
   Widget build(BuildContext context) {
     if (!_ready) {
       return Scaffold(
-        body: Center(child: CircularProgressIndicator(color: MiaColors.accent)),
+        body: SafeArea(
+          child: Center(
+            child: CircularProgressIndicator(color: MiaColors.accent),
+          ),
+        ),
       );
     }
 
