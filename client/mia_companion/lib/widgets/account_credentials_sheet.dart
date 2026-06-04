@@ -2,8 +2,26 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../services/api_service.dart';
+import '../services/mood_controller.dart';
 import '../theme/mia_theme.dart';
 import '../utils/account_auth_validation.dart';
+
+/// Ensures paid users who have not claimed an account are flagged for setup.
+Future<void> syncAccountCredentialsRequirement() async {
+  if (await ApiService.instance.hasClaimedAccount()) return;
+  await MoodController.instance.refreshAccess();
+  if (MoodController.instance.passActive) {
+    await ApiService.instance.requireAccountCredentials();
+  }
+}
+
+/// Shows the credentials sheet until the user saves or the context unmounts.
+Future<void> promptAccountCredentialsIfNeeded(BuildContext context) async {
+  await syncAccountCredentialsRequirement();
+  while (context.mounted && await ApiService.instance.needsAccountCredentials()) {
+    await showAccountCredentialsSheet(context);
+  }
+}
 
 /// Prompts the user to choose a username and password after unlocking personalities.
 Future<bool> showAccountCredentialsSheet(BuildContext context) {
@@ -28,7 +46,6 @@ class _AccountCredentialsSheet extends StatefulWidget {
 class _AccountCredentialsSheetState extends State<_AccountCredentialsSheet> {
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
-  final _confirmController = TextEditingController();
   bool _saving = false;
   bool _obscurePassword = true;
   String? _error;
@@ -37,14 +54,12 @@ class _AccountCredentialsSheetState extends State<_AccountCredentialsSheet> {
   void dispose() {
     _usernameController.dispose();
     _passwordController.dispose();
-    _confirmController.dispose();
     super.dispose();
   }
 
   Future<void> _save() async {
     final username = _usernameController.text;
     final password = _passwordController.text;
-    final confirm = _confirmController.text;
 
     final usernameErr = AccountAuthValidation.usernameError(username);
     final passwordErr = AccountAuthValidation.passwordError(password);
@@ -54,10 +69,6 @@ class _AccountCredentialsSheetState extends State<_AccountCredentialsSheet> {
     }
     if (passwordErr != null) {
       setState(() => _error = passwordErr);
-      return;
-    }
-    if (password != confirm) {
-      setState(() => _error = 'Passwords do not match');
       return;
     }
 
@@ -149,14 +160,6 @@ class _AccountCredentialsSheetState extends State<_AccountCredentialsSheet> {
                       () => _obscurePassword = !_obscurePassword,
                     ),
                   ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _confirmController,
-                obscureText: _obscurePassword,
-                decoration: const InputDecoration(
-                  labelText: 'Confirm password',
                 ),
               ),
               if (_error != null) ...[

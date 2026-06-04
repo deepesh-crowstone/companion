@@ -32,6 +32,7 @@ import '../widgets/mia_bottom_sheet.dart';
 import '../widgets/date_separator.dart';
 import '../widgets/disappearing_messages_banner.dart';
 import '../widgets/mood_change_banner.dart';
+import '../widgets/account_credentials_sheet.dart';
 import '../widgets/mood_options_sheet.dart';
 import '../widgets/theme_options_sheet.dart';
 import 'mia_profile_screen.dart';
@@ -257,6 +258,9 @@ class _ChatScreenState extends State<ChatScreen> {
       await _disappearing.markExpiredMessages(_messages);
       _trackPageViewedOnce();
       _scrollToBottom(force: true);
+      if (mounted) {
+        await promptAccountCredentialsIfNeeded(context);
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() => _loading = false);

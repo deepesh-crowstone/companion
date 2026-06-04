@@ -22,6 +22,7 @@ class ApiService {
   static const _usernameKey = 'mia_username';
   static const _guestPasswordKey = 'mia_guest_password';
   static const _accountClaimedKey = 'mia_account_claimed';
+  static const _credentialsRequiredKey = 'mia_credentials_required';
   static const _startedChattingKey = 'mia_started_chatting';
   static const _guestAdjectives = [
     'happy',
@@ -91,6 +92,20 @@ class ApiService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_accountClaimedKey, true);
     await prefs.remove(_guestPasswordKey);
+    await prefs.remove(_credentialsRequiredKey);
+  }
+
+  /// After personality unlock, user must choose credentials before using the app.
+  Future<void> requireAccountCredentials() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_credentialsRequiredKey, true);
+  }
+
+  /// True when the user still owes a self-chosen username/password.
+  Future<bool> needsAccountCredentials() async {
+    if (await hasClaimedAccount()) return false;
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_credentialsRequiredKey) ?? false;
   }
 
   /// Clears all local account/session data (logout + guest creds + welcome flag).
@@ -99,6 +114,7 @@ class ApiService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_guestPasswordKey);
     await prefs.remove(_accountClaimedKey);
+    await prefs.remove(_credentialsRequiredKey);
     await prefs.remove(_startedChattingKey);
   }
 
@@ -125,6 +141,11 @@ class ApiService {
 
     if (await hasClaimedAccount()) {
       throw Exception('Please log in to continue.');
+    }
+
+    if (await needsAccountCredentials()) {
+      if (isLoggedIn && await validateSession()) return;
+      throw Exception('Please save your account to continue.');
     }
 
     final prefs = await SharedPreferences.getInstance();

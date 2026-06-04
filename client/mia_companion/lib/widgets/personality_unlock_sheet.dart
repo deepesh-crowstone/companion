@@ -83,11 +83,9 @@ class _PersonalityUnlockSheetState extends State<_PersonalityUnlockSheet> {
           final access = await ApiService.instance.fetchPersonalityAccess();
           MoodController.instance.applyAccess(access);
           await MoodController.instance.setMood(widget.targetMood);
+          await ApiService.instance.requireAccountCredentials();
           if (!mounted) return;
-          final claimed = await ApiService.instance.hasClaimedAccount();
-          if (!claimed && mounted) {
-            await showAccountCredentialsSheet(context);
-          }
+          await promptAccountCredentialsIfNeeded(context);
           if (mounted) Navigator.of(context).pop(true);
         },
         onError: (message) {
