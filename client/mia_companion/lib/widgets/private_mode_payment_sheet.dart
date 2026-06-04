@@ -3,10 +3,12 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../data/profile_legal_content.dart';
 import '../services/api_service.dart';
 import '../services/personality_payment_service.dart';
 import '../services/private_mode_controller.dart';
 import '../theme/mia_theme.dart';
+import 'legal_content_sheet.dart';
 
 Future<bool> showPrivateModePaymentSheet(BuildContext context) {
   return showModalBottomSheet<bool>(
@@ -182,7 +184,18 @@ class _PrivateModePaymentSheetState extends State<_PrivateModePaymentSheet> {
               ],
             ),
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 14),
+          Text(
+            'Zara is an AI character. Private mode includes romantic chat and '
+            'curated images for users 18+ only. It does not involve a real person.',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              height: 1.4,
+              color: MiaColors.textMuted,
+            ),
+          ),
+          const SizedBox(height: 12),
           CheckboxListTile(
             value: _confirmed18,
             onChanged: _paying
@@ -249,7 +262,49 @@ class _PrivateModePaymentSheetState extends State<_PrivateModePaymentSheet> {
                     ],
                   ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 4),
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 4,
+            children: [
+              TextButton(
+                onPressed: _paying
+                    ? null
+                    : () => showLegalContentSheet(
+                          context: context,
+                          title: 'Privacy Policy',
+                          body: ProfileLegalContent.privacyPolicy,
+                        ),
+                child: Text(
+                  'Privacy Policy',
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    color: MiaColors.accentDeep,
+                  ),
+                ),
+              ),
+              Text(
+                '·',
+                style: GoogleFonts.inter(color: MiaColors.textMuted),
+              ),
+              TextButton(
+                onPressed: _paying
+                    ? null
+                    : () => showLegalContentSheet(
+                          context: context,
+                          title: 'Terms and Conditions',
+                          body: ProfileLegalContent.termsAndConditions,
+                        ),
+                child: Text(
+                  'Terms',
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    color: MiaColors.accentDeep,
+                  ),
+                ),
+              ),
+            ],
+          ),
           TextButton(
             onPressed: _paying ? null : () => Navigator.of(context).pop(false),
             child: Text(
