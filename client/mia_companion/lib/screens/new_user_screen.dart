@@ -10,6 +10,7 @@ import '../services/api_service.dart';
 import '../theme/mia_theme.dart';
 import '../widgets/onboarding_video_background.dart';
 import '../widgets/start_chatting_card.dart';
+import 'login_screen.dart';
 
 const _startedChattingKey = 'mia_started_chatting';
 const startChattingEventName = 'start_chatting_with_zara';
@@ -50,6 +51,22 @@ class _NewUserScreenState extends State<NewUserScreen> {
   bool _starting = false;
   bool _videoMuted = true;
   String? _error;
+
+  Future<void> _onLogin() async {
+    if (_starting) return;
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => LoginScreen(
+          onLoggedIn: () async {
+            await markStartedChatting();
+            if (!mounted) return;
+            Navigator.of(context).pop();
+            widget.onStarted();
+          },
+        ),
+      ),
+    );
+  }
 
   Future<void> _onStartChatting() async {
     if (_starting) return;
@@ -146,6 +163,7 @@ class _NewUserScreenState extends State<NewUserScreen> {
         child: StartChattingCard(
           loading: _starting,
           onStart: _onStartChatting,
+          onLogin: _onLogin,
         ),
       ),
     );

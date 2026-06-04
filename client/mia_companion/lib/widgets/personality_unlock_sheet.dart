@@ -9,6 +9,7 @@ import '../services/api_service.dart';
 import '../services/mood_controller.dart';
 import '../services/personality_payment_service.dart';
 import '../theme/mia_theme.dart';
+import 'account_credentials_sheet.dart';
 
 Future<bool> showPersonalityUnlockSheet({
   required BuildContext context,
@@ -82,6 +83,11 @@ class _PersonalityUnlockSheetState extends State<_PersonalityUnlockSheet> {
           final access = await ApiService.instance.fetchPersonalityAccess();
           MoodController.instance.applyAccess(access);
           await MoodController.instance.setMood(widget.targetMood);
+          if (!mounted) return;
+          final claimed = await ApiService.instance.hasClaimedAccount();
+          if (!claimed && mounted) {
+            await showAccountCredentialsSheet(context);
+          }
           if (mounted) Navigator.of(context).pop(true);
         },
         onError: (message) {

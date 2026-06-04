@@ -184,12 +184,11 @@ class _BootstrapState extends State<_Bootstrap> {
   }
 
   Future<void> _handleLogout() async {
-    try {
-      await ApiService.instance.ensureAuthenticated();
-    } catch (_) {}
+    final claimed = await ApiService.instance.hasClaimedAccount();
+    await ApiService.instance.logout();
     if (!mounted) return;
     setState(() {
-      _showNewUser = false;
+      _showNewUser = claimed;
       _ready = true;
       _chatScreenKey = UniqueKey();
     });
@@ -197,9 +196,6 @@ class _BootstrapState extends State<_Bootstrap> {
   }
 
   Future<void> _handleDeleteAccount() async {
-    try {
-      await ApiService.instance.ensureAuthenticated();
-    } catch (_) {}
     if (!mounted) return;
     setState(() {
       _showNewUser = true;
@@ -219,7 +215,13 @@ class _BootstrapState extends State<_Bootstrap> {
           onTimeout: () => false,
         );
         if (reachable) {
-          await ApiService.instance.ensureAuthenticated();
+          try {
+            await ApiService.instance.ensureAuthenticated();
+          } catch (_) {
+            if (await ApiService.instance.hasClaimedAccount()) {
+              showNewUser = true;
+            }
+          }
         }
       }
     } catch (_) {

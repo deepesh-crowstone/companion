@@ -96,6 +96,34 @@ export async function registerUser(
   username: string,
   password: string,
 ): Promise<{ user: DbUser; token: string } | { error: string }> {
+  const validated = validateCredentials(username, password);
+  if ("error" in validated) {
+    return validated;
+  }
+
+  const passwordHash = bcrypt.hashSync(password, 10);
+
+  try {
+    const { rows } = await pool.query<DbUser>(
+      `INSERT INTO users (username, password_hash)
+       VALUES ($1, $2)
+       RETURNING id, username, password_hash, intimacy_level_unlocked, created_at`,
+      [validated.username, passwordHash],
+    );
+    const user = rows[0];
+    return { user, token: signToken(user) };
+  } catch (e: unknown) {
+    if (e && typeof e === "object" && "code" in e && (e as { code: string }).code === "23505") {
+      return { error: "Username already taken" };
+    }
+    throw e;
+  }
+}
+
+function validateCredentials(
+  username: string,
+  password: string,
+): { username: string } | { error: string } {
   const trimmed = username.trim();
   if (trimmed.length < 3 || trimmed.length > 32) {
     return { error: "Username must be 3–32 characters" };
@@ -106,17 +134,32 @@ export async function registerUser(
   if (password.length < 6) {
     return { error: "Password must be at least 6 characters" };
   }
+  return { username: trimmed };
+}
+
+export async function updateUserCredentials(
+  userId: number,
+  username: string,
+  password: string,
+): Promise<{ user: DbUser; token: string } | { error: string }> {
+  const validated = validateCredentials(username, password);
+  if ("error" in validated) {
+    return validated;
+  }
 
   const passwordHash = bcrypt.hashSync(password, 10);
 
   try {
     const { rows } = await pool.query<DbUser>(
-      `INSERT INTO users (username, password_hash)
-       VALUES ($1, $2)
+      `UPDATE users SET username = $1, password_hash = $2
+       WHERE id = $3
        RETURNING id, username, password_hash, intimacy_level_unlocked, created_at`,
-      [trimmed, passwordHash],
+      [validated.username, passwordHash, userId],
     );
     const user = rows[0];
+    if (!user) {
+      return { error: "User not found" };
+    }
     return { user, token: signToken(user) };
   } catch (e: unknown) {
     if (e && typeof e === "object" && "code" in e && (e as { code: string }).code === "23505") {

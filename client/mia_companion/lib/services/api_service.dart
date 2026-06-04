@@ -21,6 +21,7 @@ class ApiService {
   static const _tokenKey = 'mia_auth_token';
   static const _usernameKey = 'mia_username';
   static const _guestPasswordKey = 'mia_guest_password';
+  static const _accountClaimedKey = 'mia_account_claimed';
   static const _startedChattingKey = 'mia_started_chatting';
   static const _guestAdjectives = [
     'happy',
@@ -79,11 +80,25 @@ class ApiService {
     await prefs.remove(_usernameKey);
   }
 
+  /// Whether the user chose a username/password (after unlock or login).
+  Future<bool> hasClaimedAccount() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_accountClaimedKey) ?? false;
+  }
+
+  /// Marks this device as using a real account (not auto-guest).
+  Future<void> markAccountClaimed() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_accountClaimedKey, true);
+    await prefs.remove(_guestPasswordKey);
+  }
+
   /// Clears all local account/session data (logout + guest creds + welcome flag).
   Future<void> clearLocalAccountData() async {
     await logout();
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_guestPasswordKey);
+    await prefs.remove(_accountClaimedKey);
     await prefs.remove(_startedChattingKey);
   }
 
@@ -107,6 +122,10 @@ class ApiService {
   Future<void> ensureAuthenticated() async {
     await loadSession();
     if (isLoggedIn && await validateSession()) return;
+
+    if (await hasClaimedAccount()) {
+      throw Exception('Please log in to continue.');
+    }
 
     final prefs = await SharedPreferences.getInstance();
     final storedUsername = prefs.getString(_usernameKey);
@@ -210,7 +229,25 @@ class ApiService {
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'username': username, 'password': password}),
     );
-    return _handleAuthResponse(res);
+    final body = await _handleAuthResponse(res);
+    await markAccountClaimed();
+    return body;
+  }
+
+  /// Replaces the auto-generated guest username with a chosen one.
+  Future<Map<String, dynamic>> setCredentials(
+    String username,
+    String password,
+  ) async {
+    final res = await _patch(
+      Uri.parse('$resolvedApiBaseUrl/auth/credentials'),
+      headers: _authHeaders,
+      body: jsonEncode({'username': username, 'password': password}),
+    );
+    _guardAuth(res);
+    final body = await _handleAuthResponse(res);
+    await markAccountClaimed();
+    return body;
   }
 
   Future<Map<String, dynamic>> _handleAuthResponse(http.Response res) async {
@@ -451,6 +488,18 @@ class ApiService {
   }) {
     return _wrap(
       () => _client.post(uri, headers: headers, body: body),
+      timeout: timeout,
+    );
+  }
+
+  Future<http.Response> _patch(
+    Uri uri, {
+    Map<String, String>? headers,
+    Object? body,
+    Duration? timeout,
+  }) {
+    return _wrap(
+      () => _client.patch(uri, headers: headers, body: body),
       timeout: timeout,
     );
   }
