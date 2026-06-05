@@ -10,10 +10,10 @@ COPY . .
 
 # Override in Railway: service variable API_BASE_URL (passed as Docker build arg).
 ARG API_BASE_URL=https://api.chatlife.online
-RUN ENGINE_REVISION="$(flutter --version | grep -oE 'revision [a-f0-9]+' | awk '{print $2}')" && \
+RUN CANVASKIT_URL="$$(sh scripts/canvaskit_url.sh)" && \
     flutter build web --release --pwa-strategy=none \
       --dart-define=API_BASE_URL=${API_BASE_URL} \
-      --dart-define=FLUTTER_WEB_CANVASKIT_URL=https://www.gstatic.com/flutter-canvaskit/${ENGINE_REVISION}/
+      --dart-define=FLUTTER_WEB_CANVASKIT_URL=$$CANVASKIT_URL
 
 FROM nginx:1.27-alpine
 
