@@ -45,8 +45,113 @@
 
   <title>Zara</title>
   <link rel="manifest" href="manifest.json">
+
+  <style>
+    :root {
+      color-scheme: light;
+      --mia-bg: #F3EEF9;
+      --mia-text: #2A2430;
+      --mia-muted: #8E8699;
+      --mia-accent: #9B72D4;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        color-scheme: dark;
+        --mia-bg: #151019;
+        --mia-text: #F3EEF9;
+        --mia-muted: #9A8FA8;
+        --mia-accent: #B088E8;
+      }
+    }
+
+    html,
+    body {
+      margin: 0;
+      height: 100%;
+      background: var(--mia-bg);
+    }
+
+    #mia-splash {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      background: var(--mia-bg);
+      transition: opacity 0.35s ease;
+    }
+
+    #mia-splash.fade-out {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    #mia-splash img {
+      width: 88px;
+      height: 88px;
+      border-radius: 22px;
+      box-shadow: 0 12px 32px rgba(110, 72, 171, 0.18);
+    }
+
+    #mia-splash h1 {
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 2.5rem;
+      font-weight: 400;
+      letter-spacing: 0.02em;
+      color: var(--mia-text);
+    }
+
+    #mia-splash p {
+      margin: -8px 0 0;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      font-size: 0.95rem;
+      color: var(--mia-muted);
+    }
+
+    #mia-splash .spinner {
+      width: 28px;
+      height: 28px;
+      margin-top: 8px;
+      border: 3px solid color-mix(in srgb, var(--mia-accent) 22%, transparent);
+      border-top-color: var(--mia-accent);
+      border-radius: 50%;
+      animation: mia-spin 0.85s linear infinite;
+    }
+
+    @keyframes mia-spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+  </style>
 </head>
 <body>
+  <div id="mia-splash" aria-live="polite" aria-busy="true">
+    <img src="icons/Icon-192.png" alt="" width="88" height="88" decoding="async">
+    <h1>Zara</h1>
+    <p>Getting things ready…</p>
+    <div class="spinner" role="progressbar" aria-label="Loading"></div>
+  </div>
+
+  <script>
+    window.addEventListener('flutter-first-frame', function () {
+      var splash = document.getElementById('mia-splash');
+      if (!splash) return;
+      splash.classList.add('fade-out');
+      splash.setAttribute('aria-busy', 'false');
+      var remove = function () {
+        if (splash.parentNode) splash.remove();
+      };
+      splash.addEventListener('transitionend', remove, { once: true });
+      window.setTimeout(remove, 500);
+    });
+  </script>
+
   <script>
     // Drop stale Flutter PWA caches after deploys (same asset URLs each build).
     if ('serviceWorker' in navigator) {
