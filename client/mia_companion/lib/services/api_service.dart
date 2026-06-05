@@ -25,6 +25,8 @@ class ApiService {
   static const _accountClaimedKey = 'mia_account_claimed';
   static const _credentialsRequiredKey = 'mia_credentials_required';
   static const _startedChattingKey = 'mia_started_chatting';
+  static const _cachedMessagesKey = 'mia_cached_messages';
+  static const _maxCachedMessages = 80;
   static const _guestAdjectives = [
     'happy',
     'lucky',
@@ -80,6 +82,7 @@ class ApiService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_tokenKey);
     await prefs.remove(_usernameKey);
+    await prefs.remove(_cachedMessagesKey);
   }
 
   /// Whether the user chose a username/password (after unlock or login).
@@ -135,8 +138,19 @@ class ApiService {
     return msg;
   }
 
-  /// Ensures a valid session exists, registering a guest user in the background if needed.
-  Future<void> ensureAuthenticated() async {
+  /// In-flight auth shared by concurrent callers (warm-up + chat load).
+  Future<void>? _authInFlight;
+
+  /// Ensures a valid session exists, registering a guest user in the background
+  /// if needed. Deduplicates concurrent calls so we never double-register a
+  /// guest or fire the same `/auth/me` twice on startup.
+  Future<void> ensureAuthenticated() {
+    return _authInFlight ??= _ensureAuthenticated().whenComplete(() {
+      _authInFlight = null;
+    });
+  }
+
+  Future<void> _ensureAuthenticated() async {
     await loadSession();
     if (isLoggedIn && await validateSession()) return;
 
@@ -295,9 +309,44 @@ class ApiService {
     }
     final data = jsonDecode(res.body) as Map<String, dynamic>;
     final list = data['messages'] as List<dynamic>;
-    return list
+    final messages = list
         .map((e) => ChatMessage.fromJson(e as Map<String, dynamic>))
         .toList();
+    unawaited(_cacheMessages(messages));
+    return messages;
+  }
+
+  /// Last fetched messages, persisted so a returning visitor sees their
+  /// conversation instantly while fresh data loads in the background.
+  Future<List<ChatMessage>> loadCachedMessages() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_cachedMessagesKey);
+      if (raw == null || raw.isEmpty) return const [];
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return const [];
+      return decoded
+          .whereType<Map<String, dynamic>>()
+          .map(ChatMessage.fromJson)
+          .toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<void> _cacheMessages(List<ChatMessage> messages) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final trimmed = messages.length > _maxCachedMessages
+          ? messages.sublist(messages.length - _maxCachedMessages)
+          : messages;
+      await prefs.setString(
+        _cachedMessagesKey,
+        jsonEncode(trimmed.map((m) => m.toJson()).toList()),
+      );
+    } catch (_) {
+      // Best-effort cache; never block or fail the fetch on storage errors.
+    }
   }
 
   Future<

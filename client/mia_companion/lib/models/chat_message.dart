@@ -43,6 +43,19 @@ class ChatMessage {
     );
   }
 
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'role': role,
+    'content': content,
+    'messageType': messageType,
+    if (audioUrl != null) 'audioUrl': audioUrl,
+    if (imageUrl != null) 'imageUrl': imageUrl,
+    if (imageKey != null) 'imageKey': imageKey,
+    // Stored as UTC so ChatDates.parseCreatedAt round-trips back to local.
+    'createdAt': createdAt.toUtc().toIso8601String(),
+    if (audioDurationSec != null) 'audioDurationSec': audioDurationSec,
+  };
+
   ChatMessage copyWith({
     int? id,
     String? role,

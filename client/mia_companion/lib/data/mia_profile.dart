@@ -14,15 +14,15 @@ class MiaSocialLink {
 
 class MiaProfile {
   static const name = 'Zara';
-  static const avatarAsset = 'assets/images/mia_profile.png';
+  static const avatarAsset = 'assets/images/mia_profile.webp';
   static const tagline = 'soft chaos, sharp timing, good coffee';
 
   /// Four photos shown in the about-me image grid (2×2).
   static const galleryAssets = <String>[
-    'assets/images/zara_gallery/photo_1.jpg',
-    'assets/images/zara_gallery/photo_2.jpg',
-    'assets/images/zara_gallery/photo_3.jpg',
-    'assets/images/zara_gallery/photo_4.jpg',
+    'assets/images/zara_gallery/photo_1.webp',
+    'assets/images/zara_gallery/photo_2.webp',
+    'assets/images/zara_gallery/photo_3.webp',
+    'assets/images/zara_gallery/photo_4.webp',
   ];
 
   static const about =

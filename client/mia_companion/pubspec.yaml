@@ -47,7 +47,7 @@ flutter_launcher_icons:
 flutter:
   uses-material-design: true
   assets:
-    - assets/images/mia_profile.png
-    - assets/images/auth_background.png
+    - assets/images/mia_profile.webp
+    - assets/images/auth_background.webp
     - assets/images/zara_gallery/
     - assets/onboarding_video.mp4

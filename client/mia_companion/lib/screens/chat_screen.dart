@@ -262,7 +262,21 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _load() async {
-    setState(() => _loading = true);
+    // Paint the last conversation instantly for returning visitors while we
+    // authenticate and revalidate against the server in the background.
+    if (_messages.isEmpty) {
+      final cached = await ApiService.instance.loadCachedMessages();
+      if (!mounted) return;
+      if (cached.isNotEmpty) {
+        setState(() {
+          _messages = cached;
+          _loading = false;
+        });
+        _scrollToBottom(force: true);
+      } else {
+        setState(() => _loading = true);
+      }
+    }
     try {
       if (!ApiService.instance.isLoggedIn) {
         await ApiService.instance.ensureAuthenticated();

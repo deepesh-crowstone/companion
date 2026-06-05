@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <!-- Google tag (gtag.js) -->
-  <script async src="https://www.googletagmanager.com/gtag/js?id=AW-18203322848"></script>
+  <!-- Google tag (gtag.js) — queued immediately, network script loaded after
+       first frame so it doesn't compete with the app bundle during boot. -->
   <script>
     window.dataLayer = window.dataLayer || [];
     function gtag(){dataLayer.push(arguments);}
@@ -12,6 +12,19 @@
     // Google Ads it gives you a label like AW-18203322848/AbC-D_efGhI. Uncomment
     // the next line and paste the label in to count each visit as a conversion.
     // gtag('event', 'conversion', { send_to: 'AW-18203322848/CONVERSION_LABEL' });
+    (function () {
+      function loadGtag() {
+        if (window.__gtagLoaded) return;
+        window.__gtagLoaded = true;
+        var s = document.createElement('script');
+        s.async = true;
+        s.src = 'https://www.googletagmanager.com/gtag/js?id=AW-18203322848';
+        document.head.appendChild(s);
+      }
+      window.addEventListener('flutter-first-frame', loadGtag, { once: true });
+      // Fallback in case first-frame is delayed or never fires.
+      window.setTimeout(loadGtag, 3000);
+    })();
   </script>
 
   <!--
@@ -33,6 +46,13 @@
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="description" content="Zara AI companion for natural chat and voice notes.">
+
+  <!-- Warm up DNS/TLS to the API, CanvasKit CDN, and fonts during Flutter boot. -->
+  <link rel="preconnect" href="https://api.chatlife.online" crossorigin>
+  <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="dns-prefetch" href="https://api.chatlife.online">
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">

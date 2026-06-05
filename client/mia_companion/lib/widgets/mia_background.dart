@@ -10,7 +10,7 @@ import '../theme/mia_theme.dart';
 class MiaBackground extends StatelessWidget {
   const MiaBackground({super.key, required this.child});
 
-  static const imageAsset = 'assets/images/auth_background.png';
+  static const imageAsset = 'assets/images/auth_background.webp';
 
   final Widget child;
 

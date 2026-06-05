@@ -250,25 +250,18 @@ class _BootstrapState extends State<_Bootstrap> {
   }
 
   /// Pre-authenticate in the background so chat can load messages sooner.
+  ///
+  /// Goes straight to auth (no extra `/health` round-trip); [ensureAuthenticated]
+  /// dedupes with the chat screen's own load so the work happens only once.
   Future<void> _warmUpSession() async {
     try {
-      final reachable = await ApiService.instance.checkHealth().timeout(
-        const Duration(seconds: 8),
-        onTimeout: () => false,
-      );
-      if (!reachable) return;
-
-      try {
-        await ApiService.instance.ensureAuthenticated();
-      } catch (_) {
-        if (!mounted) return;
-        if (await ApiService.instance.hasClaimedAccount()) {
-          setState(() => _showNewUser = true);
-          _syncBrowserUrl();
-        }
-      }
+      await ApiService.instance.ensureAuthenticated();
     } catch (_) {
-      // Chat and onboarding screens surface connection/auth errors themselves.
+      if (!mounted) return;
+      if (await ApiService.instance.hasClaimedAccount()) {
+        setState(() => _showNewUser = true);
+        _syncBrowserUrl();
+      }
     }
   }
 
