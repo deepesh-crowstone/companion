@@ -5,7 +5,13 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 API_BASE_URL="${API_BASE_URL:-https://api.chatlife.online}"
 
 cd "$ROOT"
-flutter build web --release --pwa-strategy=none --dart-define="API_BASE_URL=$API_BASE_URL"
+
+ENGINE_REVISION="$(flutter --version 2>/dev/null | grep -oE 'revision [a-f0-9]+' | awk '{print $2}')"
+CANVASKIT_URL="https://www.gstatic.com/flutter-canvaskit/${ENGINE_REVISION}/"
+
+flutter build web --release --pwa-strategy=none \
+  --dart-define="API_BASE_URL=$API_BASE_URL" \
+  --dart-define="FLUTTER_WEB_CANVASKIT_URL=$CANVASKIT_URL"
 
 echo
 echo "Web build ready:"

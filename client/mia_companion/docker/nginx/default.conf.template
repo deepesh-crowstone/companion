@@ -10,34 +10,31 @@ server {
     index index.html;
 
     gzip on;
-    gzip_types text/plain text/css application/javascript application/json image/svg+xml;
+    gzip_types text/plain text/css application/javascript application/json image/svg+xml application/wasm;
 
-    # Flutter web reuses the same filenames each deploy — never long-cache these.
+    # Long-lived static media (not redeployed under the same URL each release).
+    location /videos/ {
+        add_header Cache-Control "public, max-age=31536000, immutable";
+    }
+
+    location ~* \.(wasm|woff|woff2|png|jpg|jpeg|gif|ico|svg|mp4|webm)$ {
+        add_header Cache-Control "public, max-age=31536000, immutable";
+    }
+
+    # Flutter entrypoints reuse the same filenames each deploy — always revalidate.
     location ~* ^/(index\.html|flutter_service_worker\.js|flutter_bootstrap\.js|main\.dart\.js|version\.json)$ {
         add_header Cache-Control "no-cache, no-store, must-revalidate";
         expires off;
     }
 
-    # App images keep the same URL each deploy (not content-hashed).
-    location /assets/assets/ {
-        add_header Cache-Control "no-cache, must-revalidate";
-        expires off;
-    }
-
-    # Manifests and fonts change less often but still ship with each build.
+    # Bundled fonts and asset manifests change each build.
     location /assets/ {
-        add_header Cache-Control "no-cache, must-revalidate";
-        expires off;
+        add_header Cache-Control "public, max-age=86400";
     }
 
     location / {
         try_files $uri $uri/ /index.html;
         add_header Cache-Control "no-cache, no-store, must-revalidate";
-        expires off;
-    }
-
-    location ~* \.(png|jpg|jpeg|gif|ico|svg|woff|woff2|wasm)$ {
-        add_header Cache-Control "no-cache, must-revalidate";
         expires off;
     }
 }

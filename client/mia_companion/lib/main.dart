@@ -18,18 +18,26 @@ import 'services/session_reset.dart';
 import 'theme/mia_theme.dart';
 import 'theme/theme_controller.dart';
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
   if (!kIsWeb && Platform.isAndroid) {
-    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    unawaited(
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge),
+    );
   }
   // Clean path-based URLs on web (no `#`), so the chat interface is /chat/.
   usePathUrlStrategy();
-  await ThemeController.instance.load();
-  await DisappearingMessagesController.instance.load();
-  await MoodController.instance.load();
-  await AppsFlyerService.instance.init();
   runApp(const MiaApp());
+  unawaited(_loadStartupState());
+}
+
+Future<void> _loadStartupState() async {
+  await Future.wait<void>([
+    ThemeController.instance.load(),
+    DisappearingMessagesController.instance.load(),
+    MoodController.instance.load(),
+    AppsFlyerService.instance.init(),
+  ]);
 }
 
 class MiaApp extends StatefulWidget {
@@ -46,10 +54,7 @@ class _MiaAppState extends State<MiaApp> {
   void initState() {
     super.initState();
     _theme.addListener(_onThemeChanged);
-    _theme.load().then((_) {
-      _syncSystemChrome();
-      if (mounted) setState(() {});
-    });
+    _syncSystemChrome();
   }
 
   @override
@@ -212,26 +217,23 @@ class _BootstrapState extends State<_Bootstrap> {
 
   Future<void> _init() async {
     final startOnChat = kIsWeb && _pathIsChat(widget.initialPath);
-    var showNewUser = false;
+    if (startOnChat) {
+      if (!mounted) return;
+      setState(() {
+        _ready = true;
+        _showNewUser = false;
+      });
+      _syncBrowserUrl();
+      _onDeepLinkChanged();
+      unawaited(_warmUpSession());
+      return;
+    }
+
+    var showNewUser = true;
     try {
-      showNewUser = startOnChat ? false : !await hasStartedChatting();
-      if (!showNewUser) {
-        final reachable = await ApiService.instance.checkHealth().timeout(
-          const Duration(seconds: 8),
-          onTimeout: () => false,
-        );
-        if (reachable) {
-          try {
-            await ApiService.instance.ensureAuthenticated();
-          } catch (_) {
-            if (await ApiService.instance.hasClaimedAccount()) {
-              showNewUser = true;
-            }
-          }
-        }
-      }
+      showNewUser = !await hasStartedChatting();
     } catch (_) {
-      // Chat screen handles unreachable server / auth errors for returning users.
+      // Default to the landing page if local prefs are unavailable.
     }
     if (!mounted) return;
     setState(() {
@@ -241,8 +243,33 @@ class _BootstrapState extends State<_Bootstrap> {
     _syncBrowserUrl();
     if (showNewUser) {
       _trackSiteVisited();
+    } else {
+      unawaited(_warmUpSession());
     }
     _onDeepLinkChanged();
+  }
+
+  /// Pre-authenticate in the background so chat can load messages sooner.
+  Future<void> _warmUpSession() async {
+    try {
+      final reachable = await ApiService.instance.checkHealth().timeout(
+        const Duration(seconds: 8),
+        onTimeout: () => false,
+      );
+      if (!reachable) return;
+
+      try {
+        await ApiService.instance.ensureAuthenticated();
+      } catch (_) {
+        if (!mounted) return;
+        if (await ApiService.instance.hasClaimedAccount()) {
+          setState(() => _showNewUser = true);
+          _syncBrowserUrl();
+        }
+      }
+    } catch (_) {
+      // Chat and onboarding screens surface connection/auth errors themselves.
+    }
   }
 
   void _onStartedChatting() {

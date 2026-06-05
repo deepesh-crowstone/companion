@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:audio_session/audio_session.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
@@ -11,6 +12,7 @@ class OnboardingVideoBackground extends StatefulWidget {
   const OnboardingVideoBackground({super.key, this.isMuted = true});
 
   static const videoAsset = 'assets/onboarding_video.mp4';
+  static const webVideoUrl = '/videos/onboarding.mp4';
 
   final bool isMuted;
 
@@ -44,9 +46,14 @@ class _OnboardingVideoBackgroundState extends State<OnboardingVideoBackground> {
   }
 
   Future<void> _initVideo() async {
-    final controller = VideoPlayerController.asset(
-      OnboardingVideoBackground.videoAsset,
-    )..setLooping(true);
+    final controller = kIsWeb
+        ? VideoPlayerController.networkUrl(
+            Uri.parse(OnboardingVideoBackground.webVideoUrl),
+          )
+        : VideoPlayerController.asset(
+            OnboardingVideoBackground.videoAsset,
+          );
+    controller.setLooping(true);
 
     try {
       final session = await AudioSession.instance;
