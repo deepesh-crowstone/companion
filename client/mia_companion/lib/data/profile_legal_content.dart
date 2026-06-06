@@ -6,7 +6,7 @@ class LegalSection {
 }
 
 class ProfileLegalContent {
-  static const lastUpdated = 'June 4, 2026';
+  static const lastUpdated = 'June 6, 2026';
 
   static const faqs = [
     LegalSection(
@@ -75,6 +75,7 @@ Information we collect
 • Age (number), when you provide it to access private mode — used to confirm you are 18 or older.
 • Messages, voice notes, and optional images shown in chat.
 • Private-mode status, purchase-related records (such as order id and pass expiry), and product analytics events (for example private mode banner taps or pay button clicks).
+• Usage and interaction analytics — such as screens and pages viewed, taps, app performance, a device or browser analytics identifier, and an approximate location (country or region) derived from your IP address — collected through our analytics provider PostHog. When you sign in, these analytics may be linked to your account.
 • Basic device and app diagnostics to keep the service reliable.
 • On Android, device or advertising identifiers (such as the advertising ID) collected by our attribution partner AppsFlyer to measure installs, campaign performance, and deep-link routing.
 
@@ -96,6 +97,12 @@ Photos and storage
 
 AI and service providers
 • We use third-party providers (such as AI, speech, hosting, payment, and analytics services) to operate Zara. Your content may be processed by these providers only to deliver and improve the service.
+• Our product-analytics provider, PostHog, processes the usage and interaction analytics described above on our behalf using EU-based infrastructure.
+
+Cookies and similar technologies
+• On the web, we and our providers use cookies and similar browser storage to keep you signed in, remember preferences, measure how the product is used (PostHog analytics), and measure marketing performance (Google).
+• You can clear or block cookies in your browser settings, though some features may not work correctly without them.
+• The mobile app does not use browser cookies; it stores a local analytics identifier and queued analytics events on your device.
 
 Payments
 • Private mode purchases are handled by Cashfree. We receive payment status and order information from the processor. We do not store your full payment card details.
@@ -116,6 +123,7 @@ Children
 Your choices
 • You can log out, delete your account from Profile → Account, or contact us to request data access or deletion.
 • On Android, you can limit ad personalization or reset your advertising ID in your device settings.
+• On the web, you can clear or block cookies in your browser to limit analytics and marketing measurement.
 • Exiting private mode removes private-mode messages from your chat history.
 
 Contact
