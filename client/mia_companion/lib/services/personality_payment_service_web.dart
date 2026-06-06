@@ -3,7 +3,7 @@ import 'dart:js_interop';
 
 import 'package:web/web.dart' as web;
 
-import 'api_service.dart';
+import 'analytics.dart';
 
 const _sdkUrl = 'https://sdk.cashfree.com/js/v3/cashfree.js';
 
@@ -31,12 +31,7 @@ Future<void> startCheckout({
 
   final mode = environment == 'production' ? 'production' : 'sandbox';
 
-  unawaited(
-    ApiService.instance.trackEvent(
-      'personality_pay_clicked',
-      eventTime: DateTime.now(),
-    ),
-  );
+  unawaited(Analytics.track(AnalyticsEvents.personalityPayClicked));
 
   CashfreeCheckoutResult result;
   try {

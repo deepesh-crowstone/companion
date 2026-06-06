@@ -13,6 +13,7 @@ import '../models/zara_mood.dart';
 import '../models/voice_upload.dart';
 import '../utils/chat_dates.dart';
 import '../utils/human_presence.dart';
+import '../services/analytics.dart';
 import '../services/api_service.dart';
 import '../services/disappearing_messages_controller.dart';
 import '../services/mood_controller.dart';
@@ -309,7 +310,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _onTalkPrivatelyFromUpsell() async {
-    unawaited(ApiService.instance.trackEvent('private_mode_upsell_tap'));
+    unawaited(Analytics.track(AnalyticsEvents.privateModeUpsellTap));
     if (PrivateModeController.instance.passActive) {
       await _onEnterPrivateMode();
       return;
@@ -326,7 +327,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _onRomanticBannerTap() async {
-    unawaited(ApiService.instance.trackEvent('private_mode_banner_tap'));
+    unawaited(Analytics.track(AnalyticsEvents.privateModeBannerTap));
     final paid = await showPrivateModePaymentSheet(context);
     if (!mounted) return;
     if (paid) {
@@ -343,7 +344,7 @@ class _ChatScreenState extends State<ChatScreen> {
     }
     try {
       await PrivateModeController.instance.enterPrivateMode();
-      unawaited(ApiService.instance.trackEvent('private_mode_on'));
+      unawaited(Analytics.track(AnalyticsEvents.privateModeOn));
       if (mounted) setState(() => _statusText = _statusWhenIdle());
     } catch (e) {
       _handleError(e);
@@ -362,7 +363,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (confirmed != true || !mounted) return;
     try {
       await PrivateModeController.instance.exitPrivateMode();
-      unawaited(ApiService.instance.trackEvent('private_mode_off'));
+      unawaited(Analytics.track(AnalyticsEvents.privateModeOff));
       if (mounted) {
         setState(() => _statusText = _statusWhenIdle());
         await _load();
@@ -375,13 +376,7 @@ class _ChatScreenState extends State<ChatScreen> {
   void _trackPageViewedOnce() {
     if (_pageViewTracked) return;
     _pageViewTracked = true;
-    unawaited(
-      ApiService.instance.trackEvent(
-        'page_viewed',
-        eventTime: DateTime.now(),
-        anonymous: true,
-      ),
-    );
+    unawaited(Analytics.track(AnalyticsEvents.pageViewed));
   }
 
   /// Reverse list: offset 0 is the newest messages (bottom, above input).
@@ -1026,12 +1021,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _onCallPressed() {
-    unawaited(
-      ApiService.instance.trackEvent(
-        'call_button_clicked',
-        eventTime: DateTime.now(),
-      ),
-    );
+    unawaited(Analytics.track(AnalyticsEvents.callButtonClicked));
     MiaTheme.showMessage(
       context,
       'This feature is coming soon.',

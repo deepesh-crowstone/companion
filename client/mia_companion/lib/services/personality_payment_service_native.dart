@@ -6,7 +6,7 @@ import 'package:flutter_cashfree_pg_sdk/api/cfsession/cfsession.dart';
 import 'package:flutter_cashfree_pg_sdk/utils/cfenums.dart';
 import 'package:flutter_cashfree_pg_sdk/utils/cfexceptions.dart';
 
-import 'api_service.dart';
+import 'analytics.dart';
 
 final _gateway = CFPaymentGatewayService();
 
@@ -51,12 +51,7 @@ Future<void> startCheckout({
     final checkout = CFWebCheckoutPaymentBuilder().setSession(session).build();
 
     _gateway.doPayment(checkout);
-    unawaited(
-      ApiService.instance.trackEvent(
-        'personality_pay_clicked',
-        eventTime: DateTime.now(),
-      ),
-    );
+    unawaited(Analytics.track(AnalyticsEvents.personalityPayClicked));
     await completer.future;
   } on CFException catch (e) {
     onError(e.message);

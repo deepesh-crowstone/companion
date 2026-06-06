@@ -10,6 +10,10 @@ import 'models/app_deep_link.dart';
 import 'navigation/deep_link_navigation.dart';
 import 'screens/chat_screen.dart';
 import 'screens/new_user_screen.dart';
+import 'package:posthog_flutter/posthog_flutter.dart';
+
+import 'services/analytics.dart';
+import 'services/analytics_service.dart';
 import 'services/appsflyer_service.dart';
 import 'services/api_service.dart';
 import 'services/disappearing_messages_controller.dart';
@@ -18,7 +22,7 @@ import 'services/session_reset.dart';
 import 'theme/mia_theme.dart';
 import 'theme/theme_controller.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   if (!kIsWeb && Platform.isAndroid) {
     unawaited(
@@ -27,6 +31,7 @@ void main() {
   }
   // Clean path-based URLs on web (no `#`), so the chat interface is /chat/.
   usePathUrlStrategy();
+  await AnalyticsService.instance.init();
   runApp(const MiaApp());
   unawaited(_loadStartupState());
 }
@@ -82,23 +87,29 @@ class _MiaAppState extends State<MiaApp> {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      navigatorKey: rootNavigatorKey,
-      title: 'Zara',
-      debugShowCheckedModeBanner: false,
-      theme: MiaTheme.light(),
-      darkTheme: MiaTheme.dark(),
-      themeMode: _theme.mode,
-      // Web uses real paths (e.g. /chat/). Route every entry through the
-      // bootstrap, which decides between the landing page and chat interface.
-      onGenerateInitialRoutes: (initialRoute) => <Route<dynamic>>[
-        MaterialPageRoute<dynamic>(
-          builder: (_) => _Bootstrap(initialPath: initialRoute),
+    return PostHogWidget(
+      child: MaterialApp(
+        navigatorKey: rootNavigatorKey,
+        navigatorObservers: [PosthogObserver()],
+        title: 'Zara',
+        debugShowCheckedModeBanner: false,
+        theme: MiaTheme.light(),
+        darkTheme: MiaTheme.dark(),
+        themeMode: _theme.mode,
+        // Web uses real paths (e.g. /chat/). Route every entry through the
+        // bootstrap, which decides between the landing page and chat interface.
+        onGenerateInitialRoutes: (initialRoute) => <Route<dynamic>>[
+          MaterialPageRoute<dynamic>(
+            builder: (_) => _Bootstrap(initialPath: initialRoute),
+            settings: const RouteSettings(name: 'Bootstrap'),
+          ),
+        ],
+        onGenerateRoute: (settings) => MaterialPageRoute<dynamic>(
+          builder: (_) => const _Bootstrap(),
+          settings: settings.name != null
+              ? settings
+              : const RouteSettings(name: 'Bootstrap'),
         ),
-      ],
-      onGenerateRoute: (settings) => MaterialPageRoute<dynamic>(
-        builder: (_) => const _Bootstrap(),
-        settings: settings,
       ),
     );
   }
@@ -161,11 +172,9 @@ class _BootstrapState extends State<_Bootstrap> {
   void _trackSiteVisited() {
     if (!kIsWeb) return;
     unawaited(
-      ApiService.instance.trackEvent(
+      Analytics.track(
         siteExploredEventName,
-        eventTime: DateTime.now(),
         properties: const {'exploration_type': siteExploredTypeVisited},
-        anonymous: true,
       ),
     );
   }

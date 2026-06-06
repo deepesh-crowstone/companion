@@ -8,6 +8,9 @@ cd "$ROOT"
 
 CANVASKIT_URL="$("$ROOT/scripts/canvaskit_url.sh")"
 
+# PostHog analytics key/host are baked into lib/config.dart, so no extra
+# --dart-define is needed here. Override with --dart-define if you ever want a
+# different PostHog project for a given build.
 flutter build web --release --pwa-strategy=none \
   --dart-define="API_BASE_URL=$API_BASE_URL" \
   --dart-define="FLUTTER_WEB_CANVASKIT_URL=$CANVASKIT_URL"

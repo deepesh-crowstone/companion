@@ -45,3 +45,29 @@ const String appsFlyerDeepLinkScheme = String.fromEnvironment(
   'APPSFLYER_DEEPLINK_SCHEME',
   defaultValue: 'zara',
 );
+
+/// PostHog project API key — a public, client-side ingestion key (safe to
+/// commit; it can only send events, never read data). Baked in so every build
+/// has analytics by default. Override per environment with
+/// `--dart-define=POSTHOG_API_KEY=...`, or set it to an empty string to disable.
+const String posthogApiKey = String.fromEnvironment(
+  'POSTHOG_API_KEY',
+  defaultValue: 'phc_s3EYNcgzA5YVsaQbwDm6vgo3iRC8u8rzMACRsLpsjgCX',
+);
+
+/// PostHog ingest host (US or EU cloud). Defaults to EU.
+/// Override: `--dart-define=POSTHOG_HOST=https://us.i.posthog.com`
+const String posthogHost = String.fromEnvironment(
+  'POSTHOG_HOST',
+  defaultValue: 'https://eu.i.posthog.com',
+);
+
+/// Web only: relative path to a first-party PostHog reverse proxy (nginx routes
+/// it to PostHog so ad/tracker blockers don't drop events). Empty means talk to
+/// [posthogHost] directly. Enabled for the Railway web build via the Dockerfile
+/// (`--dart-define=POSTHOG_WEB_PROXY_PATH=/zr-relay`); left empty for local web
+/// runs and non-Railway hosts (which have no matching proxy). Mobile ignores it.
+const String posthogWebProxyPath = String.fromEnvironment(
+  'POSTHOG_WEB_PROXY_PATH',
+  defaultValue: '',
+);

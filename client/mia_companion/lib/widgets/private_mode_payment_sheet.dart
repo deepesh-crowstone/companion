@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../data/profile_legal_content.dart';
+import '../services/analytics.dart';
 import '../services/api_service.dart';
 import '../services/personality_payment_service.dart';
 import '../services/private_mode_controller.dart';
@@ -76,9 +77,7 @@ class _PrivateModePaymentSheetState extends State<_PrivateModePaymentSheet> {
       setState(() => _error = _ageRequiredMessage);
       return;
     }
-    unawaited(
-      ApiService.instance.trackEvent('private_mode_pay_clicked'),
-    );
+    unawaited(Analytics.track(AnalyticsEvents.privateModePayClicked));
     setState(() {
       _paying = true;
       _error = null;

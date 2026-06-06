@@ -12,6 +12,7 @@ import '../models/personality_access.dart';
 import '../models/private_mode_access.dart';
 import '../models/zara_mood.dart';
 import '../models/voice_upload.dart';
+import 'analytics_service.dart';
 import 'session_expired.dart';
 import 'http_client_factory.dart';
 
@@ -83,6 +84,7 @@ class ApiService {
     await prefs.remove(_tokenKey);
     await prefs.remove(_usernameKey);
     await prefs.remove(_cachedMessagesKey);
+    unawaited(AnalyticsService.instance.reset());
   }
 
   /// Whether the user chose a username/password (after unlock or login).
@@ -152,7 +154,10 @@ class ApiService {
 
   Future<void> _ensureAuthenticated() async {
     await loadSession();
-    if (isLoggedIn && await validateSession()) return;
+    if (isLoggedIn && await validateSession()) {
+      unawaited(syncAnalyticsIdentity());
+      return;
+    }
 
     if (await hasClaimedAccount()) {
       throw Exception('Please log in to continue.');
@@ -202,6 +207,25 @@ class ApiService {
         'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
     final random = Random.secure();
     return List.generate(16, (_) => chars[random.nextInt(chars.length)]).join();
+  }
+
+  /// Links the current session to PostHog using `/auth/me`.
+  Future<void> syncAnalyticsIdentity() async {
+    if (_token == null) return;
+    try {
+      final res = await _get(
+        Uri.parse('$resolvedApiBaseUrl/auth/me'),
+        headers: _authHeaders,
+      );
+      if (res.statusCode != 200) return;
+      final body = jsonDecode(res.body) as Map<String, dynamic>;
+      final user = body['user'] as Map<String, dynamic>;
+      await AnalyticsService.instance.identify(
+        userId: user['id'] as int,
+        username: user['username'] as String,
+        accountClaimed: await hasClaimedAccount(),
+      );
+    } catch (_) {}
   }
 
   /// Returns false and clears storage if the saved token is no longer valid.
@@ -291,9 +315,17 @@ class ApiService {
     if (res.statusCode >= 400) {
       throw Exception(body['error'] ?? 'Authentication failed');
     }
+    final user = body['user'] as Map<String, dynamic>;
     await _saveSession(
       body['token'] as String,
-      (body['user'] as Map)['username'] as String,
+      user['username'] as String,
+    );
+    unawaited(
+      AnalyticsService.instance.identify(
+        userId: user['id'] as int,
+        username: user['username'] as String,
+        accountClaimed: await hasClaimedAccount(),
+      ),
     );
     return body;
   }
@@ -591,6 +623,14 @@ class ApiService {
     Map<String, Object?>? properties,
     bool anonymous = false,
   }) async {
+    unawaited(
+      AnalyticsService.instance.capture(
+        eventName,
+        properties: properties,
+        anonymous: anonymous,
+      ),
+    );
+
     try {
       final res = await _post(
         Uri.parse('$resolvedApiBaseUrl/events'),

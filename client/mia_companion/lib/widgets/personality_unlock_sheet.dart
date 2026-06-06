@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 
 import '../models/zara_mood.dart';
+import '../services/analytics.dart';
 import '../services/api_service.dart';
 import '../services/mood_controller.dart';
 import '../services/personality_payment_service.dart';
@@ -51,12 +52,7 @@ class _PersonalityUnlockSheetState extends State<_PersonalityUnlockSheet> {
 
   Future<void> _unlock() async {
     if (_paying) return;
-    unawaited(
-      ApiService.instance.trackEvent(
-        'personality_unlock_clicked',
-        eventTime: DateTime.now(),
-      ),
-    );
+    unawaited(Analytics.track(AnalyticsEvents.personalityUnlockClicked));
     setState(() {
       _paying = true;
       _error = null;

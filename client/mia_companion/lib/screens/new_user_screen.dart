@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/ads_conversion_service.dart';
+import '../services/analytics.dart';
 import '../services/api_service.dart';
 import '../theme/mia_theme.dart';
 import '../widgets/onboarding_video_background.dart';
@@ -13,10 +14,10 @@ import '../widgets/start_chatting_card.dart';
 import 'login_screen.dart';
 
 const _startedChattingKey = 'mia_started_chatting';
-const startChattingEventName = 'start_chatting_with_zara';
+const startChattingEventName = AnalyticsEvents.startChatting;
 
 /// Web-only `site_explored` analytics event and its `exploration_type` values.
-const siteExploredEventName = 'site_explored';
+const siteExploredEventName = AnalyticsEvents.siteExplored;
 const siteExploredTypeVisited = 'visited';
 const siteExploredTypeClickedTalkButton = 'clicked_on_talk_with_zara_button';
 
@@ -79,13 +80,11 @@ class _NewUserScreenState extends State<NewUserScreen> {
     // connection/auth step below fails. Web only (chatlife.online).
     if (kIsWeb) {
       unawaited(
-        ApiService.instance.trackEvent(
+        Analytics.track(
           siteExploredEventName,
-          eventTime: DateTime.now(),
           properties: const {
             'exploration_type': siteExploredTypeClickedTalkButton,
           },
-          anonymous: true,
         ),
       );
     }
@@ -101,13 +100,7 @@ class _NewUserScreenState extends State<NewUserScreen> {
 
       await ApiService.instance.ensureAuthenticated();
 
-      final eventTime = DateTime.now();
-      unawaited(
-        ApiService.instance.trackEvent(
-          startChattingEventName,
-          eventTime: eventTime,
-        ),
-      );
+      unawaited(Analytics.track(startChattingEventName));
 
       // Mirror this activation to Google Ads as a conversion (web only; inert
       // until a conversion label is set in AdsConversionService).
