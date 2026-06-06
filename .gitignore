@@ -7,3 +7,5 @@ server/data/
 server/eval/runs/
 client/mia_companion/.dart_tool/
 client/mia_companion/build/
+# Cursor agent debug logs (keep .cursor/rules/ tracked).
+.cursor/*.log
