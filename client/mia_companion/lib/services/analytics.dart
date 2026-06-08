@@ -34,6 +34,11 @@ abstract final class AnalyticsEvents {
   // Engagement
   static const callButtonClicked = 'call_button_clicked';
   static const callPreviewStarted = 'call_preview_started';
+
+  // Free message limit
+  static const freeMessageNudgeShown = 'free_message_nudge_shown';
+  static const freeMessageLimitReached = 'free_message_limit_reached';
+  static const freeMessageUnlockTap = 'free_message_unlock_tap';
 }
 
 /// Events that may fire before the user authenticates.
@@ -48,7 +53,7 @@ const Set<String> _anonymousEvents = {
 
 /// App-wide analytics entry point.
 ///
-/// [track] fans a single event out to PostHog (web + Android, via
+/// [track] fans a single event out to PostHog and Mixpanel (web + Android, via
 /// [AnalyticsService]) and the backend `/events` store (via
 /// [ApiService.trackEvent]). Both destinations are best-effort and never throw,
 /// so it is safe to call from anywhere without `await`.

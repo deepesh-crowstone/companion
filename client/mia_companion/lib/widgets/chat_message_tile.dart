@@ -14,6 +14,8 @@ class ChatMessageTile extends StatelessWidget {
     required this.isPlaying,
     this.onPlayAudio,
     this.receiptStatus,
+    this.locked = false,
+    this.onUnlock,
   });
 
   final ChatMessage message;
@@ -22,6 +24,8 @@ class ChatMessageTile extends StatelessWidget {
   final bool isPlaying;
   final VoidCallback? onPlayAudio;
   final MessageReceiptStatus? receiptStatus;
+  final bool locked;
+  final VoidCallback? onUnlock;
 
   @override
   Widget build(BuildContext context) {
@@ -36,6 +40,8 @@ class ChatMessageTile extends StatelessWidget {
             isPlaying: isPlaying,
             onPlayAudio: onPlayAudio,
             receiptStatus: receiptStatus,
+            locked: locked,
+            onUnlock: onUnlock,
           ),
         ],
       ),

@@ -1,7 +1,7 @@
 name: mia_companion
 description: Zara AI companion — chat, voice notes, and realtime calls.
 publish_to: 'none'
-version: 1.1.4+19
+version: 2.1.0+21
 
 environment:
   sdk: ^3.11.4
@@ -31,6 +31,7 @@ dependencies:
   video_player: ^2.11.1
   appsflyer_sdk: ^6.18.0
   posthog_flutter: ^5.25.2
+  mixpanel_flutter: ^2.8.0
   device_info_plus: ^12.3.0
 
 dev_dependencies:

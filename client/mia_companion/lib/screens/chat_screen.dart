@@ -17,6 +17,7 @@ import '../services/analytics.dart';
 import '../services/api_service.dart';
 import '../services/call_sequence_controller.dart';
 import '../services/disappearing_messages_controller.dart';
+import '../services/free_message_controller.dart';
 import '../services/mood_controller.dart';
 import '../services/private_mode_controller.dart';
 import '../services/session_expired.dart';
@@ -28,6 +29,7 @@ import '../utils/voice_waveform_levels.dart';
 import '../widgets/chat_input_bar.dart';
 import '../widgets/chat_message_tile.dart';
 import '../widgets/empty_chat.dart';
+import '../widgets/free_messages_left_chip.dart';
 import '../widgets/mia_presence_row.dart';
 import '../widgets/mia_chat_header.dart';
 import '../theme/theme_controller.dart';
@@ -108,6 +110,13 @@ class _ChatScreenState extends State<ChatScreen> {
   ZaraMood? _trackedMood;
   bool? _trackedDisappearingEnabled;
 
+  // Free daily message limit + unlock flow.
+  final _freeMessages = FreeMessageController.instance;
+  DateTime? _freeLimitNudgeAt;
+  bool _freeLimitNudgeShown = false;
+  bool _handlingFreeLimit = false;
+  final Set<int> _lockedReplyIds = {};
+
   List<ChatMessage> get _visibleMessages =>
       _disappearing.filterMessages(_messages);
 
@@ -118,6 +127,9 @@ class _ChatScreenState extends State<ChatScreen> {
     _scroll.addListener(_onScroll);
     _disappearing.addListener(_onDisappearingMessagesChanged);
     PrivateModeController.instance.addListener(_onPrivateModeChanged);
+    _freeMessages.addListener(_onFreeMessagesChanged);
+    unawaited(_freeMessages.ensureLoaded());
+    unawaited(_freeMessages.refreshConfig());
     _scheduleExpiryRefresh();
     _load();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -132,8 +144,21 @@ class _ChatScreenState extends State<ChatScreen> {
     if (PrivateModeController.instance.privateModeActive) {
       setState(() => _privateModeUpsells.clear());
     }
+    if (PrivateModeController.instance.passActive) {
+      _lockedReplyIds.clear();
+    }
     setState(() => _statusText = _statusWhenIdle());
   }
+
+  void _onFreeMessagesChanged() {
+    if (mounted) setState(() {});
+  }
+
+  bool get _isPaid => PrivateModeController.instance.passActive;
+
+  /// Assistant replies after the daily free allowance are shown blurred.
+  bool _shouldLockNewReply() =>
+      !_isPaid && _freeMessages.sentToday > _freeMessages.limit;
 
   void _onMoodChanged() {
     final mood = MoodController.instance.mood;
@@ -189,6 +214,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _expiryRefreshTimer?.cancel();
     MoodController.instance.removeListener(_onMoodChanged);
     PrivateModeController.instance.removeListener(_onPrivateModeChanged);
+    _freeMessages.removeListener(_onFreeMessagesChanged);
     _disappearing.removeListener(_onDisappearingMessagesChanged);
     _stopAmplitudeListener();
     _input.removeListener(_onInputChanged);
@@ -276,6 +302,7 @@ class _ChatScreenState extends State<ChatScreen> {
           _messages = cached;
           _loading = false;
         });
+        unawaited(_syncFreeLimitFromHistory());
         _scrollToBottom(force: true);
       } else {
         setState(() => _loading = true);
@@ -293,6 +320,7 @@ class _ChatScreenState extends State<ChatScreen> {
         _messages = messages;
         _loading = false;
       });
+      await _syncFreeLimitFromHistory();
       _maybeAutoFocusInputOnLanding();
       await _disappearing.markExpiredMessages(_messages);
       _trackPageViewedOnce();
@@ -409,6 +437,8 @@ class _ChatScreenState extends State<ChatScreen> {
         _ChatTimelineEntry.disappearingToggle(update),
       for (final update in _privateModeUpsells)
         _ChatTimelineEntry.privateModeUpsell(update),
+      if (_freeLimitNudgeAt != null)
+        _ChatTimelineEntry.freeLimitNudge(_freeLimitNudgeAt!),
     ];
     entries.sort((a, b) => a.createdAt.compareTo(b.createdAt));
     return entries;
@@ -482,7 +512,22 @@ class _ChatScreenState extends State<ChatScreen> {
       );
     }
 
+    if (entry.isFreeLimitNudge) {
+      return RepaintBoundary(
+        key: const ValueKey('free-limit-nudge'),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_showDateHeader(timelineIndex))
+              DateSeparator(date: entry.createdAt),
+            FreeMessagesLeftChip(remaining: _freeMessages.remaining),
+          ],
+        ),
+      );
+    }
+
     final msg = entry.message!;
+    final locked = !msg.isUser && _lockedReplyIds.contains(msg.id);
 
     return RepaintBoundary(
       key: ValueKey(msg.id),
@@ -493,6 +538,8 @@ class _ChatScreenState extends State<ChatScreen> {
         isPlaying: _playingId == msg.id,
         onPlayAudio: msg.isAudio ? () => _playAudio(msg) : null,
         receiptStatus: msg.isUser ? _receiptStatuses[msg.id] : null,
+        locked: locked,
+        onUnlock: locked ? _onUnlockTapped : null,
       ),
     );
   }
@@ -533,6 +580,15 @@ class _ChatScreenState extends State<ChatScreen> {
 
     _input.clear();
     _abortMiaReply();
+
+    if (!_isPaid) {
+      final before = _freeMessages.sentToday;
+      await _freeMessages.recordSent();
+      if (before <= _freeMessages.limit &&
+          _freeMessages.sentToday > _freeMessages.limit) {
+        unawaited(Analytics.track(AnalyticsEvents.freeMessageLimitReached));
+      }
+    }
 
     final optimisticId = -DateTime.now().millisecondsSinceEpoch;
     final optimistic = ChatMessage(
@@ -615,22 +671,8 @@ class _ChatScreenState extends State<ChatScreen> {
       );
       if (!mounted || generation != _replyGeneration) return;
 
-      for (var i = 0; i < assistants.length; i++) {
-        if (i > 0) {
-          await Future<void>.delayed(_assistantTypingDelay(assistants[i]));
-          if (!mounted || generation != _replyGeneration) return;
-        }
-        setState(() {
-          _messages = [..._messages, assistants[i]];
-          _miaActivity = i == assistants.length - 1
-              ? _MiaActivity.none
-              : _MiaActivity.typing;
-          _statusText = i == assistants.length - 1
-              ? _statusWhenIdle()
-              : 'typing...';
-        });
-        _scrollToBottom(animate: true);
-      }
+      await _appendAssistantMessages(assistants, generation: generation);
+      if (!mounted || generation != _replyGeneration) return;
 
       if (result.suggestPrivateMode &&
           !PrivateModeController.instance.privateModeActive) {
@@ -649,6 +691,8 @@ class _ChatScreenState extends State<ChatScreen> {
         });
         _scrollToBottom(animate: true);
       }
+
+      _maybeShowFreeLimitNudge(assistants);
     } catch (e) {
       if (!mounted || generation != _replyGeneration) return;
       setState(() {
@@ -666,6 +710,101 @@ class _ChatScreenState extends State<ChatScreen> {
       _pendingOptimisticIds.insertAll(0, optimisticIds);
       _handleError(e);
     }
+  }
+
+  /// Appends Zara's reply messages one-by-one with human-like typing pauses.
+  Future<void> _appendAssistantMessages(
+    List<ChatMessage> assistants, {
+    int? generation,
+  }) async {
+    for (var i = 0; i < assistants.length; i++) {
+      if (i > 0) {
+        await Future<void>.delayed(_assistantTypingDelay(assistants[i]));
+        if (!mounted ||
+            (generation != null && generation != _replyGeneration)) {
+          return;
+        }
+      }
+      setState(() {
+        _messages = [..._messages, assistants[i]];
+        if (_shouldLockNewReply()) {
+          _lockedReplyIds.add(assistants[i].id);
+        }
+        _miaActivity = i == assistants.length - 1
+            ? _MiaActivity.none
+            : _MiaActivity.typing;
+        _statusText = i == assistants.length - 1
+            ? _statusWhenIdle()
+            : 'typing...';
+      });
+      _scrollToBottom(animate: true);
+    }
+  }
+
+  /// Aligns the local send counter and locked-reply ids with today's thread so
+  /// blur state survives a reload.
+  Future<void> _syncFreeLimitFromHistory() async {
+    await _freeMessages.ensureLoaded();
+    if (_isPaid) {
+      _lockedReplyIds.clear();
+      return;
+    }
+    final limit = _freeMessages.limit;
+    var userCountToday = 0;
+    final locked = <int>{};
+    for (final msg in _messages) {
+      if (!ChatDates.isToday(msg.createdAt)) continue;
+      if (msg.isUser) {
+        userCountToday++;
+      } else if (userCountToday > limit) {
+        locked.add(msg.id);
+      }
+    }
+    await _freeMessages.syncSentTodayFromHistory(userCountToday);
+    _lockedReplyIds
+      ..clear()
+      ..addAll(locked);
+    if (mounted) setState(() {});
+  }
+
+  /// Inserts the one-time "almost out of free messages" nudge, shown when the
+  /// user has exactly one free message left.
+  void _maybeShowFreeLimitNudge(List<ChatMessage> assistants) {
+    if (_freeLimitNudgeShown || _isPaid) return;
+    if (_freeMessages.remaining != 1) return;
+    _freeLimitNudgeShown = true;
+    final at = assistants.isNotEmpty
+        ? assistants.last.createdAt.add(const Duration(milliseconds: 1))
+        : DateTime.now();
+    unawaited(Analytics.track(AnalyticsEvents.freeMessageNudgeShown));
+    setState(() => _freeLimitNudgeAt = at);
+    _scrollToBottom(animate: true);
+  }
+
+  Future<void> _onUnlockTapped() async {
+    if (_handlingFreeLimit) return;
+    _handlingFreeLimit = true;
+    try {
+      unawaited(Analytics.track(AnalyticsEvents.freeMessageUnlockTap));
+      final unlocked = await _openUnlimitedPaywall();
+      if (!mounted || !unlocked) return;
+      setState(() => _lockedReplyIds.clear());
+    } finally {
+      _handlingFreeLimit = false;
+    }
+  }
+
+  Future<bool> _openUnlimitedPaywall() async {
+    final paid = await showPrivateModePaymentSheet(
+      context,
+      variant: PrivateModePaywallVariant.unlimitedMessages,
+    );
+    if (!mounted || !paid) return false;
+    await PrivateModeController.instance.refreshAccess();
+    if (!mounted) return true;
+    await showPrivateModeSetupSheet(context);
+    if (mounted) setState(() => _statusText = _statusWhenIdle());
+    return true;
   }
 
   Duration _assistantTypingDelay(ChatMessage? message) =>
@@ -936,6 +1075,9 @@ class _ChatScreenState extends State<ChatScreen> {
           result.user.copyWith(audioDurationSec: durationSec),
           result.assistant,
         ];
+        if (_shouldLockNewReply()) {
+          _lockedReplyIds.add(result.assistant.id);
+        }
         _miaActivity = _MiaActivity.none;
         _statusText = _statusWhenIdle();
       });
@@ -1286,6 +1428,7 @@ class _ChatTimelineEntry {
     this.moodUpdate,
     this.disappearingToggleUpdate,
     this.privateModeUpsell,
+    this.isFreeLimitNudge = false,
   });
 
   factory _ChatTimelineEntry.message(ChatMessage message) {
@@ -1320,9 +1463,14 @@ class _ChatTimelineEntry {
     );
   }
 
+  factory _ChatTimelineEntry.freeLimitNudge(DateTime at) {
+    return _ChatTimelineEntry._(createdAt: at, isFreeLimitNudge: true);
+  }
+
   final DateTime createdAt;
   final ChatMessage? message;
   final MoodChangeUpdate? moodUpdate;
   final DisappearingMessagesToggleUpdate? disappearingToggleUpdate;
   final PrivateModeUpsellUpdate? privateModeUpsell;
+  final bool isFreeLimitNudge;
 }

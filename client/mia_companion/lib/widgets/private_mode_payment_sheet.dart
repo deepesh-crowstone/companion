@@ -30,21 +30,30 @@ const _backgroundGradient = LinearGradient(
   stops: [0.0, 0.32, 0.72, 1.0],
 );
 
+/// Which entry point opened the paywall. Drives the headline/benefit copy so
+/// the wall reads as a direct continuation of whatever the user just hit.
+enum PrivateModePaywallVariant { romance, unlimitedMessages }
+
 /// Opens the full-screen private-mode paywall and resolves to whether the
 /// user completed payment.
-Future<bool> showPrivateModePaymentSheet(BuildContext context) {
+Future<bool> showPrivateModePaymentSheet(
+  BuildContext context, {
+  PrivateModePaywallVariant variant = PrivateModePaywallVariant.romance,
+}) {
   return Navigator.of(context)
       .push<bool>(
         MaterialPageRoute(
           fullscreenDialog: true,
-          builder: (_) => const _PrivateModePaymentWall(),
+          builder: (_) => _PrivateModePaymentWall(variant: variant),
         ),
       )
       .then((value) => value ?? false);
 }
 
 class _PrivateModePaymentWall extends StatefulWidget {
-  const _PrivateModePaymentWall();
+  const _PrivateModePaymentWall({required this.variant});
+
+  final PrivateModePaywallVariant variant;
 
   @override
   State<_PrivateModePaymentWall> createState() =>
@@ -64,7 +73,12 @@ class _PrivateModePaymentWallState extends State<_PrivateModePaymentWall>
   @override
   void initState() {
     super.initState();
-    unawaited(Analytics.track(AnalyticsEvents.paywallShown));
+    unawaited(
+      Analytics.track(
+        AnalyticsEvents.paywallShown,
+        properties: {'trigger': widget.variant.name},
+      ),
+    );
     _anim = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 3400),
@@ -97,6 +111,53 @@ class _PrivateModePaymentWallState extends State<_PrivateModePaymentWall>
     final s = _remaining.inSeconds.remainder(60).toString().padLeft(2, '0');
     return '$m:$s';
   }
+
+  bool get _isUnlimitedMessages =>
+      widget.variant == PrivateModePaywallVariant.unlimitedMessages;
+
+  String get _headline => _isUnlimitedMessages
+      ? 'Unlimited Messages, Calls & Photos'
+      : 'Romance, Call & Photos';
+
+  String get _subtitle => _isUnlimitedMessages
+      ? 'Keep chatting with Zara \u2014 no daily limits'
+      : 'Get unlimited private time with Zara';
+
+  List<Widget> get _benefits => _isUnlimitedMessages
+      ? const [
+          _BenefitTile(
+            icon: Icons.chat_bubble_rounded,
+            title: 'Unlimited messages',
+            subtitle: 'Baat karo jitni baat karni hai',
+          ),
+          _BenefitTile(
+            icon: Icons.call_rounded,
+            title: 'Private calls with Zara',
+            subtitle: 'Jab mann kare tab call karo',
+          ),
+          _BenefitTile(
+            icon: Icons.favorite_rounded,
+            title: 'Romantic chats & photos',
+            subtitle: 'Jaise aap chaaho waise bat karo',
+          ),
+        ]
+      : const [
+          _BenefitTile(
+            icon: Icons.verified_user_rounded,
+            title: '100% safe & private',
+            subtitle: 'Ye chats poori tarah private hain',
+          ),
+          _BenefitTile(
+            icon: Icons.favorite_rounded,
+            title: 'Romantic chats & photos',
+            subtitle: 'Jaise aap chaaho waise bat karo',
+          ),
+          _BenefitTile(
+            icon: Icons.call_rounded,
+            title: 'Private calls with Zara',
+            subtitle: 'Jab mann kare tab call karo',
+          ),
+        ];
 
   Future<void> _pay() async {
     if (_paying) return;
@@ -191,10 +252,10 @@ class _PrivateModePaymentWallState extends State<_PrivateModePaymentWall>
                             ),
                           ),
                           const SizedBox(height: 18),
-                          _Headline(),
+                          _Headline(text: _headline),
                           const SizedBox(height: 6),
                           Text(
-                            'Get unlimited private time with Zara',
+                            _subtitle,
                             textAlign: TextAlign.center,
                             style: GoogleFonts.inter(
                               fontSize: 13.5,
@@ -203,21 +264,7 @@ class _PrivateModePaymentWallState extends State<_PrivateModePaymentWall>
                             ),
                           ),
                           const SizedBox(height: 22),
-                          const _BenefitTile(
-                            icon: Icons.verified_user_rounded,
-                            title: '100% safe & private',
-                            subtitle: 'Ye chats poori tarah private hain',
-                          ),
-                          const _BenefitTile(
-                            icon: Icons.favorite_rounded,
-                            title: 'Romantic chats & photos',
-                            subtitle: 'Jaise aap chaaho waise bat karo',
-                          ),
-                          const _BenefitTile(
-                            icon: Icons.call_rounded,
-                            title: 'Private calls with Zara',
-                            subtitle: 'Jab mann kare tab call karo',
-                          ),
+                          ..._benefits,
                         ],
                       ),
                     ),
@@ -253,6 +300,10 @@ class _PrivateModePaymentWallState extends State<_PrivateModePaymentWall>
 }
 
 class _Headline extends StatelessWidget {
+  const _Headline({required this.text});
+
+  final String text;
+
   @override
   Widget build(BuildContext context) {
     return Row(
@@ -261,7 +312,7 @@ class _Headline extends StatelessWidget {
       children: [
         Flexible(
           child: Text(
-            'Romance, Call & Photos',
+            text,
             textAlign: TextAlign.center,
             style: GoogleFonts.inter(
               fontSize: 24,

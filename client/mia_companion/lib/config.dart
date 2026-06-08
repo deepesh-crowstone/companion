@@ -71,3 +71,12 @@ const String posthogWebProxyPath = String.fromEnvironment(
   'POSTHOG_WEB_PROXY_PATH',
   defaultValue: '',
 );
+
+/// Mixpanel project token — a public, client-side ingestion token (safe to
+/// commit; it can only send events, never read data). Override per environment
+/// with `--dart-define=MIXPANEL_TOKEN=...`, or set it to an empty string to
+/// disable.
+const String mixpanelToken = String.fromEnvironment(
+  'MIXPANEL_TOKEN',
+  defaultValue: '7eb3f70ac4e60e6465dad9358b1c3e43',
+);

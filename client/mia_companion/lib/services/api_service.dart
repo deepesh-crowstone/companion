@@ -684,6 +684,22 @@ class ApiService {
         .toList();
   }
 
+  /// Server-configured free daily message limit (`FREE_DAILY_MESSAGE_LIMIT`).
+  /// Public endpoint, so no auth is required and a 401 must not log out.
+  Future<int> fetchFreeMessageLimit() async {
+    final res = await _get(
+      Uri.parse('$resolvedApiBaseUrl/config'),
+      headers: _authHeaders,
+    );
+    if (res.statusCode >= 400) {
+      throw Exception(_errorFrom(res));
+    }
+    final data = jsonDecode(res.body) as Map<String, dynamic>;
+    final value = data['freeDailyMessageLimit'];
+    if (value is num) return value.toInt();
+    throw Exception('Invalid app config response');
+  }
+
   void _guardAuth(http.Response res) {
     if (res.statusCode == 401) {
       logout();

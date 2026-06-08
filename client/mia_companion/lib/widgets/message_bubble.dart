@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 
 import '../models/chat_message.dart';
 import '../theme/mia_theme.dart';
+import 'locked_reply_teaser_bubble.dart';
 import 'voice_note_bubble.dart';
 
 class MessageBubble extends StatelessWidget {
@@ -14,6 +15,8 @@ class MessageBubble extends StatelessWidget {
     this.audioDurationSec,
     this.compactTop = false,
     this.receiptStatus,
+    this.locked = false,
+    this.onUnlock,
   });
 
   final ChatMessage message;
@@ -21,6 +24,10 @@ class MessageBubble extends StatelessWidget {
   final bool isPlaying;
   final int? audioDurationSec;
   final MessageReceiptStatus? receiptStatus;
+
+  /// When true the assistant reply is blurred until the user unlocks.
+  final bool locked;
+  final VoidCallback? onUnlock;
 
   /// Tighter gap when the previous message is from the same sender.
   final bool compactTop;
@@ -32,6 +39,9 @@ class MessageBubble extends StatelessWidget {
     top: compactTop ? gapSameSender : gapNewSender,
     bottom: 2,
   );
+
+  bool get _isLockedAssistant =>
+      locked && !message.isUser && onUnlock != null;
 
   @override
   Widget build(BuildContext context) {
@@ -66,12 +76,34 @@ class MessageBubble extends StatelessWidget {
               ),
             ],
           ),
-          child: _BubbleContent(
-            text: _displayText(message.content, isUser: isUser),
-            time: _formatTime(message.createdAt),
-            isUser: isUser,
-            receiptStatus: isUser ? receiptStatus : null,
-          ),
+          child: _isLockedAssistant
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    LockedAssistantBubbleContent(
+                      onUnlock: onUnlock!,
+                      content: Text(
+                        _displayText(message.content, isUser: isUser),
+                        style: MiaTheme.chatBody(isUser: isUser),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: _MetaRow(
+                        time: _formatTime(message.createdAt),
+                        receiptStatus: null,
+                      ),
+                    ),
+                  ],
+                )
+              : _BubbleContent(
+                  text: _displayText(message.content, isUser: isUser),
+                  time: _formatTime(message.createdAt),
+                  isUser: isUser,
+                  receiptStatus: isUser ? receiptStatus : null,
+                ),
         ),
       ),
     );
@@ -83,6 +115,49 @@ class MessageBubble extends StatelessWidget {
 
   Widget _buildImageMessage(BuildContext context, bool isUser) {
     final url = message.imageUrl;
+    final image = url != null && url.isNotEmpty
+        ? Image.network(
+            url,
+            fit: BoxFit.cover,
+            loadingBuilder: (context, child, progress) {
+              if (progress == null) return child;
+              return _imagePlaceholder(loading: true);
+            },
+            errorBuilder: (context, error, stackTrace) => _imagePlaceholder(),
+          )
+        : _imagePlaceholder();
+
+    if (_isLockedAssistant) {
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: Container(
+          margin: _bubbleMargin,
+          constraints: BoxConstraints(
+            maxWidth: MediaQuery.sizeOf(context).width * 0.62,
+          ),
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+          decoration: BoxDecoration(
+            color: MiaColors.miaBubble,
+            borderRadius: MiaTheme.bubbleShape(isUser: false),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.08),
+                blurRadius: 10,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: LockedAssistantBubbleContent(
+            onUnlock: onUnlock!,
+            content: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: image,
+            ),
+          ),
+        ),
+      );
+    }
+
     return Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
@@ -102,18 +177,7 @@ class MessageBubble extends StatelessWidget {
         ),
         child: ClipRRect(
           borderRadius: MiaTheme.bubbleShape(isUser: isUser),
-          child: url != null && url.isNotEmpty
-              ? Image.network(
-                  url,
-                  fit: BoxFit.cover,
-                  loadingBuilder: (context, child, progress) {
-                    if (progress == null) return child;
-                    return _imagePlaceholder(loading: true);
-                  },
-                  errorBuilder: (context, error, stackTrace) =>
-                      _imagePlaceholder(),
-                )
-              : _imagePlaceholder(),
+          child: image,
         ),
       ),
     );
@@ -159,17 +223,33 @@ class MessageBubble extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.end,
           mainAxisSize: MainAxisSize.min,
           children: [
-            VoiceNoteBubble(
-              isUser: isUser,
-              isPlaying: isPlaying,
-              seed: message.id,
-              audioUrl: message.audioUrl,
-              onPlay: onPlayAudio,
-              fallbackDurationSec:
-                  audioDurationSec ??
-                  message.audioDurationSec ??
-                  _estimatedAssistantAudioDurationSec(message),
-            ),
+            if (_isLockedAssistant)
+              LockedAssistantBubbleContent(
+                onUnlock: onUnlock!,
+                content: VoiceNoteBubble(
+                  isUser: isUser,
+                  isPlaying: isPlaying,
+                  seed: message.id,
+                  audioUrl: message.audioUrl,
+                  onPlay: onPlayAudio,
+                  fallbackDurationSec:
+                      audioDurationSec ??
+                      message.audioDurationSec ??
+                      _estimatedAssistantAudioDurationSec(message),
+                ),
+              )
+            else
+              VoiceNoteBubble(
+                isUser: isUser,
+                isPlaying: isPlaying,
+                seed: message.id,
+                audioUrl: message.audioUrl,
+                onPlay: onPlayAudio,
+                fallbackDurationSec:
+                    audioDurationSec ??
+                    message.audioDurationSec ??
+                    _estimatedAssistantAudioDurationSec(message),
+              ),
             const SizedBox(height: 2),
             _MetaRow(
               time: _formatTime(message.createdAt),

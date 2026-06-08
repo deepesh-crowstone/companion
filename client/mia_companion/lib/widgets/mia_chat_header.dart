@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../data/mia_profile.dart';
@@ -90,13 +91,8 @@ class MiaChatHeader extends StatelessWidget implements PreferredSizeWidget {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    IconButton(
-                      icon: const Icon(Icons.call_rounded, size: 22),
-                      color: MiaColors.textPrimary,
-                      tooltip: 'call',
-                      onPressed: onCall,
-                      visualDensity: VisualDensity.compact,
-                    ),
+                    _CallButton(onTap: onCall),
+                    const SizedBox(width: 2),
                     IconButton(
                       icon: const Icon(Icons.more_vert, size: 22),
                       color: MiaColors.textPrimary,
@@ -108,6 +104,108 @@ class MiaChatHeader extends StatelessWidget implements PreferredSizeWidget {
                 ),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Attention-grabbing call action: filled accent circle with a slow
+/// "breathing" glow so the eye is drawn to it without it feeling noisy.
+class _CallButton extends StatefulWidget {
+  const _CallButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  State<_CallButton> createState() => _CallButtonState();
+}
+
+class _CallButtonState extends State<_CallButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1600),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _handleTap() {
+    HapticFeedback.mediumImpact();
+    widget.onTap();
+  }
+
+  Widget _buildVisual({required double glowAlpha, required double scale}) {
+    return Transform.scale(
+      scale: scale,
+      child: Container(
+        width: 40,
+        height: 40,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [MiaColors.accent, MiaColors.accentDeep],
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: MiaColors.accent.withValues(alpha: glowAlpha),
+              blurRadius: 14,
+              spreadRadius: 1.5,
+            ),
+          ],
+        ),
+        child: const Icon(
+          Icons.call_rounded,
+          color: Colors.white,
+          size: 20,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final reduceMotion = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+
+    return Tooltip(
+      message: 'Call ${MiaProfile.name}',
+      child: Semantics(
+        button: true,
+        label: 'Call ${MiaProfile.name}',
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: _handleTap,
+          child: SizedBox(
+            width: 48,
+            height: 48,
+            child: Center(
+              child: reduceMotion
+                  ? _buildVisual(glowAlpha: 0.4, scale: 1)
+                  : AnimatedBuilder(
+                      animation: _controller,
+                      builder: (context, _) {
+                        final t = Curves.easeInOut.transform(_controller.value);
+                        return _buildVisual(
+                          glowAlpha: 0.28 + 0.34 * t,
+                          scale: 1 + 0.06 * t,
+                        );
+                      },
+                    ),
+            ),
           ),
         ),
       ),
