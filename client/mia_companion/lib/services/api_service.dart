@@ -665,6 +665,25 @@ class ApiService {
     return jsonDecode(res.body) as Map<String, dynamic>;
   }
 
+  /// Remote list of scripted call-preview MP3 URLs (order = play order).
+  Future<List<String>> fetchCallPreviewAudioUrls() async {
+    final res = await _get(
+      Uri.parse('$resolvedApiBaseUrl/calls/preview-audio'),
+      headers: _authHeaders,
+    );
+    _guardAuth(res);
+    if (res.statusCode >= 400) {
+      throw Exception(_errorFrom(res));
+    }
+    final data = jsonDecode(res.body) as Map<String, dynamic>;
+    final list = data['urls'] as List<dynamic>? ?? const [];
+    return list
+        .whereType<String>()
+        .map((u) => u.trim())
+        .where((u) => u.isNotEmpty)
+        .toList();
+  }
+
   void _guardAuth(http.Response res) {
     if (res.statusCode == 401) {
       logout();

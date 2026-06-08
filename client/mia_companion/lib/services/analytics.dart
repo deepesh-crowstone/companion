@@ -30,6 +30,8 @@ abstract final class AnalyticsEvents {
 
   // Engagement
   static const callButtonClicked = 'call_button_clicked';
+  static const callPreviewStarted = 'call_preview_started';
+  static const callPaywallShown = 'call_paywall_shown';
 }
 
 /// Events that may fire before the user authenticates.

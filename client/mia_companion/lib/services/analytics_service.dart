@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import 'package:posthog_flutter/posthog_flutter.dart';
 
 import '../config.dart';
+import 'analytics_device_context.dart';
 import 'posthog_bootstrap_web.dart'
     if (dart.library.io) 'posthog_bootstrap_stub.dart';
 
@@ -51,12 +52,15 @@ class AnalyticsService {
     if (!_ready) return;
 
     try {
+      final device = await collectDevicePersonProperties();
       await Posthog().identify(
         userId: userId.toString(),
         userProperties: {
           'username': username,
           'account_type': accountClaimed ? 'claimed' : 'guest',
+          ...?device?.set,
         },
+        userPropertiesSetOnce: device?.setOnce,
       );
     } catch (_) {}
   }

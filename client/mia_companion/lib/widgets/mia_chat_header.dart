@@ -91,6 +91,13 @@ class MiaChatHeader extends StatelessWidget implements PreferredSizeWidget {
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
                     IconButton(
+                      icon: const Icon(Icons.call_rounded, size: 22),
+                      color: MiaColors.textPrimary,
+                      tooltip: 'call',
+                      onPressed: onCall,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    IconButton(
                       icon: const Icon(Icons.more_vert, size: 22),
                       color: MiaColors.textPrimary,
                       tooltip: 'menu',

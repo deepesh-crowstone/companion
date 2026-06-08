@@ -15,6 +15,7 @@ import '../utils/chat_dates.dart';
 import '../utils/human_presence.dart';
 import '../services/analytics.dart';
 import '../services/api_service.dart';
+import '../services/call_sequence_controller.dart';
 import '../services/disappearing_messages_controller.dart';
 import '../services/mood_controller.dart';
 import '../services/private_mode_controller.dart';
@@ -45,7 +46,9 @@ import '../widgets/private_mode_upsell_banner.dart';
 import '../widgets/mia_confirm_dialog.dart';
 import '../widgets/theme_options_sheet.dart';
 import 'mia_profile_screen.dart';
+import 'mp3_call_screen.dart';
 import 'user_profile_screen.dart';
+import 'voice_call_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -1020,13 +1023,44 @@ class _ChatScreenState extends State<ChatScreen> {
     _keepInputFocused();
   }
 
-  void _onCallPressed() {
+  Future<void> _onCallPressed() async {
     unawaited(Analytics.track(AnalyticsEvents.callButtonClicked));
-    MiaTheme.showMessage(
-      context,
-      'This feature is coming soon.',
-      isError: false,
-    );
+
+    // Paid users get the real realtime call; everyone else hears the next
+    // scripted Zara clip and is then shown the payment wall.
+    if (PrivateModeController.instance.passActive) {
+      await Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const VoiceCallScreen()),
+      );
+      return;
+    }
+
+    try {
+      final clipUrl = await CallSequenceController.instance.takeNext();
+      if (!mounted) return;
+
+      if (clipUrl != null) {
+        unawaited(Analytics.track(AnalyticsEvents.callPreviewStarted));
+        await Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => Mp3CallScreen(audioUrl: clipUrl)),
+        );
+        if (!mounted) return;
+      }
+
+      await _showCallPaywall();
+    } catch (e) {
+      if (mounted) _handleError(e);
+    }
+  }
+
+  Future<void> _showCallPaywall() async {
+    unawaited(Analytics.track(AnalyticsEvents.callPaywallShown));
+    final paid = await showPrivateModePaymentSheet(context);
+    if (!mounted || !paid) return;
+    await PrivateModeController.instance.refreshAccess();
+    if (!mounted) return;
+    await showPrivateModeSetupSheet(context);
+    if (mounted) setState(() => _statusText = _statusWhenIdle());
   }
 
   void _openMenuSheet() {

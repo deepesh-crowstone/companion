@@ -7,6 +7,7 @@ import { realtimeRouter } from "./routes/realtime.js";
 import { personalitiesRouter } from "./routes/personalities.js";
 import { privateModeRouter } from "./routes/private-mode.js";
 import { eventsRouter } from "./routes/events.js";
+import { callsRouter } from "./routes/calls.js";
 import { checkDbConnection, initDb } from "./db.js";
 import { checkBucketConnection, isBucketConfigured } from "./storage.js";
 import { verifyXaiConnection } from "./xai.js";
@@ -91,6 +92,7 @@ app.use("/realtime", realtimeRouter);
 app.use("/personalities", personalitiesRouter);
 app.use("/private-mode", privateModeRouter);
 app.use("/events", eventsRouter);
+app.use("/calls", callsRouter);
 
 async function main(): Promise<void> {
   await initDb();

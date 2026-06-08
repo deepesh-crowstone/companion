@@ -238,11 +238,15 @@ class _BootstrapState extends State<_Bootstrap> {
       return;
     }
 
-    var showNewUser = true;
-    try {
-      showNewUser = !await hasStartedChatting();
-    } catch (_) {
-      // Default to the landing page if local prefs are unavailable.
+    // Mobile opens straight into chat; the video welcome screen is web-only.
+    var showNewUser = false;
+    if (kIsWeb) {
+      showNewUser = true;
+      try {
+        showNewUser = !await hasStartedChatting();
+      } catch (_) {
+        // Default to the landing page if local prefs are unavailable.
+      }
     }
     if (!mounted) return;
     setState(() {
