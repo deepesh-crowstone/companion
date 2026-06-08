@@ -149,7 +149,6 @@ class _PrivateModePaymentWallState extends State<_PrivateModePaymentWall>
                 decoration: BoxDecoration(gradient: _backgroundGradient),
               ),
             ),
-            Positioned.fill(child: _BackgroundShimmer(animation: _anim)),
             SafeArea(
               child: Column(
                 children: [
@@ -184,33 +183,33 @@ class _PrivateModePaymentWallState extends State<_PrivateModePaymentWall>
                           const _BenefitTile(
                             icon: Icons.verified_user_rounded,
                             title: '100% safe & private',
-                            subtitle: 'Only you can ever see these chats',
+                            subtitle: 'Ye chats poori tarah private hain',
                           ),
                           const _BenefitTile(
                             icon: Icons.favorite_rounded,
                             title: 'Romantic chats & photos',
-                            subtitle: 'Flirty, intimate messages and private pics',
+                            subtitle: 'Jaise aap chaaho waise bat karo',
                           ),
                           const _BenefitTile(
                             icon: Icons.call_rounded,
                             title: 'Private calls with Zara',
-                            subtitle: 'Hear her voice whenever you want',
+                            subtitle: 'Jab mann kare tab call karo',
                           ),
-                          const SizedBox(height: 6),
-                          Center(child: _OfferTimer(label: _timerLabel)),
-                          if (_error != null) ...[
-                            const SizedBox(height: 14),
-                            const SizedBox(height: 10),
-                            _ErrorNote(message: _error!),
-                          ],
                         ],
                       ),
                     ),
                   ),
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 6, 20, 8),
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
                     child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
+                        if (_error != null) ...[
+                          _ErrorNote(message: _error!),
+                          const SizedBox(height: 10),
+                        ],
+                        Center(child: _OfferTimer(label: _timerLabel)),
+                        const SizedBox(height: 10),
                         _UnlockButton(
                           animation: _anim,
                           paying: _paying,
@@ -471,45 +470,6 @@ class _StackedPhotoCard extends StatelessWidget {
   }
 }
 
-class _BackgroundShimmer extends StatelessWidget {
-  const _BackgroundShimmer({required this.animation});
-
-  final Animation<double> animation;
-
-  @override
-  Widget build(BuildContext context) {
-    return IgnorePointer(
-      child: AnimatedBuilder(
-        animation: animation,
-        builder: (context, _) {
-          final t = Curves.easeInOut.transform(
-            (animation.value / 0.55).clamp(0.0, 1.0),
-          );
-          final sweep = -0.3 + 1.6 * t;
-          return DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Colors.white.withValues(alpha: 0.0),
-                  Colors.white.withValues(alpha: 0.08),
-                  Colors.white.withValues(alpha: 0.0),
-                ],
-                stops: [
-                  (sweep - 0.22).clamp(0.0, 1.0),
-                  sweep.clamp(0.0, 1.0),
-                  (sweep + 0.22).clamp(0.0, 1.0),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
-
 class _BenefitTile extends StatelessWidget {
   const _BenefitTile({
     required this.icon,
@@ -672,6 +632,11 @@ class _UnlockButton extends StatelessWidget {
         final nudge = nudgeCycle < 0.22
             ? math.sin((nudgeCycle / 0.22) * math.pi)
             : 0.0;
+        // Glossy sheen sweeps across early in the cycle, then rests.
+        final shimmerT = Curves.easeInOut.transform(
+          (animation.value / 0.55).clamp(0.0, 1.0),
+        );
+        final sweep = -0.3 + 1.6 * shimmerT;
         return DecoratedBox(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(30),
@@ -689,74 +654,102 @@ class _UnlockButton extends StatelessWidget {
             clipBehavior: Clip.antiAlias,
             child: InkWell(
               onTap: paying ? null : onTap,
-              child: Container(
-                width: double.infinity,
-                height: 58,
-                alignment: Alignment.center,
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: paying
-                    ? const SizedBox(
-                        width: 24,
-                        height: 24,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2.4,
-                          valueColor: AlwaysStoppedAnimation(_label),
-                        ),
-                      )
-                    : Row(
-                        mainAxisSize: MainAxisSize.min,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(Icons.lock_open_rounded,
-                              size: 18, color: _label),
-                          const SizedBox(width: 7),
-                          Row(
+              child: Stack(
+                children: [
+                  Container(
+                    width: double.infinity,
+                    height: 58,
+                    alignment: Alignment.center,
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: paying
+                        ? const SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.4,
+                              valueColor: AlwaysStoppedAnimation(_label),
+                            ),
+                          )
+                        : Row(
                             mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.baseline,
-                            textBaseline: TextBaseline.alphabetic,
+                            mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Text(
-                                'Unlock at ',
-                                style: GoogleFonts.inter(
-                                  fontSize: _baseFontSize,
-                                  fontWeight: FontWeight.w800,
-                                  color: _label,
-                                  letterSpacing: 0.2,
-                                ),
-                              ),
-                              Text(
-                                '\u20B9299',
-                                style: GoogleFonts.inter(
-                                  fontSize: _baseFontSize,
-                                  fontWeight: FontWeight.w600,
-                                  color: _label.withValues(alpha: 0.55),
-                                  letterSpacing: 0.2,
-                                  decoration: TextDecoration.lineThrough,
-                                  decorationColor:
-                                      _label.withValues(alpha: 0.7),
-                                ),
+                              const Icon(Icons.lock_open_rounded,
+                                  size: 18, color: _label),
+                              const SizedBox(width: 7),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment:
+                                    CrossAxisAlignment.baseline,
+                                textBaseline: TextBaseline.alphabetic,
+                                children: [
+                                  Text(
+                                    'Unlock at ',
+                                    style: GoogleFonts.inter(
+                                      fontSize: _baseFontSize,
+                                      fontWeight: FontWeight.w800,
+                                      color: _label,
+                                      letterSpacing: 0.2,
+                                    ),
+                                  ),
+                                  Text(
+                                    '\u20B9299',
+                                    style: GoogleFonts.inter(
+                                      fontSize: _baseFontSize,
+                                      fontWeight: FontWeight.w600,
+                                      color: _label.withValues(alpha: 0.55),
+                                      letterSpacing: 0.2,
+                                      decoration: TextDecoration.lineThrough,
+                                      decorationColor:
+                                          _label.withValues(alpha: 0.7),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    '\u20B99',
+                                    style: GoogleFonts.inter(
+                                      fontSize: _priceFontSize,
+                                      fontWeight: FontWeight.w800,
+                                      color: _label,
+                                      letterSpacing: 0.2,
+                                      height: 1.0,
+                                    ),
+                                  ),
+                                ],
                               ),
                               const SizedBox(width: 6),
-                              Text(
-                                '\u20B99',
-                                style: GoogleFonts.inter(
-                                  fontSize: _priceFontSize,
-                                  fontWeight: FontWeight.w800,
-                                  color: _label,
-                                  letterSpacing: 0.2,
-                                  height: 1.0,
-                                ),
+                              Transform.translate(
+                                offset: Offset(3 * nudge, 0),
+                                child: const Icon(Icons.arrow_forward_rounded,
+                                    size: 20, color: _label),
                               ),
                             ],
                           ),
-                          const SizedBox(width: 6),
-                          Transform.translate(
-                            offset: Offset(3 * nudge, 0),
-                            child: const Icon(Icons.arrow_forward_rounded,
-                                size: 20, color: _label),
+                  ),
+                  if (!paying)
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                _label.withValues(alpha: 0.0),
+                                _label.withValues(alpha: 0.14),
+                                _label.withValues(alpha: 0.0),
+                              ],
+                              stops: [
+                                (sweep - 0.18).clamp(0.0, 1.0),
+                                sweep.clamp(0.0, 1.0),
+                                (sweep + 0.18).clamp(0.0, 1.0),
+                              ],
+                            ),
                           ),
-                        ],
+                        ),
                       ),
+                    ),
+                ],
               ),
             ),
           ),
