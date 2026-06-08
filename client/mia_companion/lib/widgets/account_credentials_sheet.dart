@@ -3,14 +3,19 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../services/api_service.dart';
 import '../services/mood_controller.dart';
+import '../services/private_mode_controller.dart';
 import '../theme/mia_theme.dart';
 import '../utils/account_auth_validation.dart';
 
 /// Ensures paid users who have not claimed an account are flagged for setup.
 Future<void> syncAccountCredentialsRequirement() async {
   if (await ApiService.instance.hasClaimedAccount()) return;
-  await MoodController.instance.refreshAccess();
-  if (MoodController.instance.passActive) {
+  await Future.wait([
+    MoodController.instance.refreshAccess(),
+    PrivateModeController.instance.refreshAccess(),
+  ]);
+  if (MoodController.instance.passActive ||
+      PrivateModeController.instance.passActive) {
     await ApiService.instance.requireAccountCredentials();
   }
 }

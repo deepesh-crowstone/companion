@@ -11,7 +11,10 @@ export function buildRealtimeSessionConfig() {
     instructions: MIA_REALTIME_INSTRUCTIONS,
     turn_detection: {
       type: "server_vad",
-      threshold: 0.45,
+      // Higher threshold = less sensitive, so residual speaker echo and
+      // background noise are less likely to be misread as the user barging in
+      // (which would cut Zara off mid-sentence).
+      threshold: 0.6,
       silence_duration_ms: 900,
       prefix_padding_ms: 300,
     },

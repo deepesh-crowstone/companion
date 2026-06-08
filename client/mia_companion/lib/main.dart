@@ -204,15 +204,17 @@ class _BootstrapState extends State<_Bootstrap> {
   }
 
   Future<void> _handleLogout() async {
-    final claimed = await ApiService.instance.hasClaimedAccount();
-    await ApiService.instance.logout();
+    await clearStartedChatting();
     if (!mounted) return;
     setState(() {
-      _showNewUser = claimed;
+      _showNewUser = true;
       _ready = true;
       _chatScreenKey = UniqueKey();
     });
     _syncBrowserUrl();
+    if (kIsWeb) {
+      _trackSiteVisited();
+    }
   }
 
   Future<void> _handleDeleteAccount() async {

@@ -23,8 +23,10 @@ class RealtimeCallService {
   static const int _sampleRate = 24000;
   static const int _pcmBytesPerSecond = _sampleRate * 2; // mono PCM16
   /// Extra padding (ms) added to the computed audio duration so the speaker
-  /// fully drains before the mic resumes.
-  static const int _playbackDrainPaddingMs = 900;
+  /// fully drains before the mic resumes. Kept generous so the mic does not
+  /// reopen during short pauses in Zara's speech (which would let her audio
+  /// echo back into the mic and chop her reply into pieces).
+  static const int _playbackDrainPaddingMs = 1400;
   /// Used only if no audio delta ever arrives for a "response" — should not
   /// normally fire because every delta reschedules the finish timer based on
   /// actual queued audio duration.
@@ -533,7 +535,7 @@ class RealtimeCallService {
         transcriptController.add('…i heard you');
         break;
       case 'input_audio_buffer.speech_stopped':
-        transcriptController.add('…one sec, mia is thinking');
+        transcriptController.add('…one sec, zara is thinking');
         break;
 
       case 'response.done':

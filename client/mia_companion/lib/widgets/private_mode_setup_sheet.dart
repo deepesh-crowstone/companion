@@ -9,15 +9,10 @@ import 'account_credentials_sheet.dart';
 
 Future<void> showPrivateModeSetupSheet(BuildContext context) async {
   if (!context.mounted) return;
-  if (!PrivateModeController.instance.needsSetup) return;
+  if (!PrivateModeController.instance.passActive) return;
 
-  final needsCreds = await ApiService.instance.needsAccountCredentials();
+  await promptAccountCredentialsIfNeeded(context);
   if (!context.mounted) return;
-
-  if (needsCreds) {
-    final claimed = await showAccountCredentialsSheet(context);
-    if (!claimed || !context.mounted) return;
-  }
 
   while (context.mounted && PrivateModeController.instance.needsSetup) {
     final ok = await showModalBottomSheet<bool>(

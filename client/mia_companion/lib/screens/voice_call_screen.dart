@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import '../data/mia_profile.dart';
 import '../services/android_pip_service.dart';
 import '../services/api_service.dart';
 import '../services/realtime_call_service.dart';
@@ -20,7 +21,7 @@ class VoiceCallScreen extends StatefulWidget {
 
 class _VoiceCallScreenState extends State<VoiceCallScreen>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
-  final _call = RealtimeCallService();
+  RealtimeCallService _call = RealtimeCallService();
   Timer? _timer;
   int _seconds = 0;
   String _transcript = 'connecting…';
@@ -30,6 +31,7 @@ class _VoiceCallScreenState extends State<VoiceCallScreen>
   String? _error;
   bool _connected = false;
   bool _starting = true;
+  bool _hasError = false;
 
   late final AnimationController _pulse;
 
@@ -46,9 +48,11 @@ class _VoiceCallScreenState extends State<VoiceCallScreen>
 
   Future<void> _startCall() async {
     final mic = await Permission.microphone.request();
+    if (!mounted) return;
     if (!mic.isGranted) {
       setState(() {
         _starting = false;
+        _hasError = true;
         _error = 'microphone permission is required for calls';
         _transcript = 'permission denied';
       });
@@ -62,12 +66,14 @@ class _VoiceCallScreenState extends State<VoiceCallScreen>
           _connected = true;
           _starting = false;
           _error = null;
+          _hasError = false;
           _transcript = '…say something — i\'m listening';
         });
       } else if (state == CallConnectionState.error) {
         setState(() {
           _starting = false;
           _connected = false;
+          _hasError = true;
         });
       }
     });
@@ -75,12 +81,6 @@ class _VoiceCallScreenState extends State<VoiceCallScreen>
     _call.transcriptController.stream.listen((t) {
       if (!mounted || t.isEmpty) return;
       setState(() {
-        if (t.contains('error') ||
-            t.contains('failed') ||
-            t.contains('denied') ||
-            t.contains('disconnect')) {
-          _error = t;
-        }
         _transcript = t.startsWith('…') ? t : '…$t';
       });
     });
@@ -111,12 +111,32 @@ class _VoiceCallScreenState extends State<VoiceCallScreen>
         if (mounted) setState(() => _seconds++);
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _starting = false;
+        _hasError = true;
         _error = e.toString().replaceFirst('Exception: ', '');
         _transcript = 'couldn\'t connect';
       });
     }
+  }
+
+  Future<void> _retry() async {
+    _timer?.cancel();
+    await _call.hangUp();
+    _call.dispose();
+    if (!mounted) return;
+    setState(() {
+      _call = RealtimeCallService();
+      _starting = true;
+      _connected = false;
+      _hasError = false;
+      _error = null;
+      _seconds = 0;
+      _transcript = 'connecting…';
+      _bars = List.filled(28, 10);
+    });
+    _startCall();
   }
 
   String get _duration {
@@ -249,7 +269,7 @@ class _VoiceCallScreenState extends State<VoiceCallScreen>
               ),
               const SizedBox(height: 28),
               Text(
-                'Mia',
+                MiaProfile.name,
                 style: GoogleFonts.playfairDisplay(
                   fontSize: 38,
                   color: Colors.white,
@@ -331,6 +351,10 @@ class _VoiceCallScreenState extends State<VoiceCallScreen>
                   ),
                 ),
               ),
+              if (_hasError && !_connected && !_starting) ...[
+                const SizedBox(height: 18),
+                _RetryButton(onTap: _retry),
+              ],
               const Spacer(),
               Padding(
                 padding: const EdgeInsets.fromLTRB(32, 0, 32, 28),
@@ -384,6 +408,42 @@ class _VoiceCallScreenState extends State<VoiceCallScreen>
                       ),
                     ),
                   ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RetryButton extends StatelessWidget {
+  const _RetryButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(24),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.refresh_rounded, size: 18, color: MiaColors.accentDeep),
+              const SizedBox(width: 8),
+              Text(
+                'Try again',
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: MiaColors.accentDeep,
                 ),
               ),
             ],

@@ -20,6 +20,7 @@ abstract final class AnalyticsEvents {
   // Private mode
   static const privateModeUpsellTap = 'private_mode_upsell_tap';
   static const privateModeBannerTap = 'private_mode_banner_tap';
+  static const paywallShown = 'paywall_shown';
   static const privateModePayClicked = 'private_mode_pay_clicked';
   static const privateModeOn = 'private_mode_on';
   static const privateModeOff = 'private_mode_off';
@@ -31,7 +32,6 @@ abstract final class AnalyticsEvents {
   // Engagement
   static const callButtonClicked = 'call_button_clicked';
   static const callPreviewStarted = 'call_preview_started';
-  static const callPaywallShown = 'call_paywall_shown';
 }
 
 /// Events that may fire before the user authenticates.

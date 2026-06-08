@@ -12,6 +12,7 @@ import '../services/analytics.dart';
 import '../services/api_service.dart';
 import '../services/personality_payment_service.dart';
 import '../services/private_mode_controller.dart';
+import 'account_credentials_sheet.dart';
 import 'legal_content_sheet.dart';
 
 // Brand tokens shared with PrivateModeRomanticBanner so the wall reads as a
@@ -63,6 +64,7 @@ class _PrivateModePaymentWallState extends State<_PrivateModePaymentWall>
   @override
   void initState() {
     super.initState();
+    unawaited(Analytics.track(AnalyticsEvents.paywallShown));
     _anim = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 3400),
@@ -118,6 +120,9 @@ class _PrivateModePaymentWallState extends State<_PrivateModePaymentWall>
             throw Exception('Payment not completed yet');
           }
           await PrivateModeController.instance.refreshAccess();
+          await ApiService.instance.requireAccountCredentials();
+          if (!mounted) return;
+          await promptAccountCredentialsIfNeeded(context);
           if (!mounted) return;
           Navigator.of(context).pop(true);
         },

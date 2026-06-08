@@ -1054,7 +1054,6 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _showCallPaywall() async {
-    unawaited(Analytics.track(AnalyticsEvents.callPaywallShown));
     final paid = await showPrivateModePaymentSheet(context);
     if (!mounted || !paid) return;
     await PrivateModeController.instance.refreshAccess();
