@@ -21,7 +21,9 @@ abstract final class AnalyticsEvents {
   static const privateModeUpsellTap = 'private_mode_upsell_tap';
   static const privateModeBannerTap = 'private_mode_banner_tap';
   static const paywallShown = 'paywall_shown';
-  static const privateModePayClicked = 'private_mode_pay_clicked';
+  static const paywallPayClicked = 'paywall_pay_clicked';
+  static const paywallPhotoCollageClicked = 'paywall_photo_collage_clicked';
+  static const paywallCloseClicked = 'paywall_close_clicked';
   static const privateModeOn = 'private_mode_on';
   static const privateModeOff = 'private_mode_off';
 

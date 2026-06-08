@@ -100,7 +100,6 @@ class _PrivateModePaymentWallState extends State<_PrivateModePaymentWall>
 
   Future<void> _pay() async {
     if (_paying) return;
-    unawaited(Analytics.track(AnalyticsEvents.privateModePayClicked));
     setState(() {
       _paying = true;
       _error = null;
@@ -141,6 +140,21 @@ class _PrivateModePaymentWallState extends State<_PrivateModePaymentWall>
     }
   }
 
+  void _onPayTapped() {
+    unawaited(Analytics.track(AnalyticsEvents.paywallPayClicked));
+    unawaited(_pay());
+  }
+
+  void _onPhotoCollageTapped() {
+    unawaited(Analytics.track(AnalyticsEvents.paywallPhotoCollageClicked));
+    unawaited(_pay());
+  }
+
+  void _onCloseTapped() {
+    unawaited(Analytics.track(AnalyticsEvents.paywallCloseClicked));
+    Navigator.of(context).pop(false);
+  }
+
   @override
   Widget build(BuildContext context) {
     return AnnotatedRegion<SystemUiOverlayStyle>(
@@ -162,7 +176,7 @@ class _PrivateModePaymentWallState extends State<_PrivateModePaymentWall>
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(0, 6, 8, 0),
                       child: _CloseButton(
-                        onTap: () => Navigator.of(context).pop(false),
+                        onTap: _onCloseTapped,
                       ),
                     ),
                   ),
@@ -171,7 +185,11 @@ class _PrivateModePaymentWallState extends State<_PrivateModePaymentWall>
                       padding: const EdgeInsets.fromLTRB(20, 36, 20, 16),
                       child: Column(
                         children: [
-                          const Center(child: _LockedPhotoPreview()),
+                          Center(
+                            child: _LockedPhotoPreview(
+                              onTap: _paying ? null : _onPhotoCollageTapped,
+                            ),
+                          ),
                           const SizedBox(height: 18),
                           _Headline(),
                           const SizedBox(height: 6),
@@ -218,7 +236,7 @@ class _PrivateModePaymentWallState extends State<_PrivateModePaymentWall>
                         _UnlockButton(
                           animation: _anim,
                           paying: _paying,
-                          onTap: _pay,
+                          onTap: _onPayTapped,
                         ),
                         _LegalLinks(disabled: _paying),
                       ],
@@ -285,7 +303,9 @@ class _CloseButton extends StatelessWidget {
 }
 
 class _LockedPhotoPreview extends StatelessWidget {
-  const _LockedPhotoPreview();
+  const _LockedPhotoPreview({this.onTap});
+
+  final VoidCallback? onTap;
 
   static const _frontAsset = 'assets/images/paywall_preview.png';
   static const _baseFontSize = 14.0;
@@ -297,10 +317,13 @@ class _LockedPhotoPreview extends StatelessWidget {
     final height = width * 1.05;
     final gallery = MiaProfile.galleryAssets;
 
-    return SizedBox(
-      width: width + 36,
-      height: height + 28,
-      child: Stack(
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: SizedBox(
+        width: width + 36,
+        height: height + 28,
+        child: Stack(
         clipBehavior: Clip.none,
         alignment: Alignment.center,
         children: [
@@ -407,6 +430,7 @@ class _LockedPhotoPreview extends StatelessWidget {
             ),
           ),
         ],
+      ),
       ),
     );
   }
