@@ -9,13 +9,11 @@ import 'package:flutter_pcm_sound/flutter_pcm_sound.dart';
 import 'package:record/record.dart' hide IosAudioCategory;
 import 'package:web_socket_channel/io.dart';
 
-import 'debug_log.dart';
-
 enum CallConnectionState { connecting, ready, error, ended }
 
 /// xAI Realtime voice call — PCM 24 kHz mono over WebSocket.
 ///
-/// This is deliberately half-duplex on mobile: while Mia is speaking, the
+/// This is deliberately half-duplex on mobile: while Zara is speaking, the
 /// recorder is stopped. That prevents loudspeaker audio from being sent back
 /// to xAI as user speech, which was causing echo loops and stalled turns.
 class RealtimeCallService {
@@ -52,8 +50,6 @@ class RealtimeCallService {
   bool _micRunning = false;
   bool _wantMicRunning = false;
   bool _fatalError = false;
-  int _micChunkCount = 0;
-  int _micCycleId = 0;
   int _assistantAudioBytes = 0;
   DateTime? _assistantStartedAt;
   Timer? _assistantFinishTimer;
@@ -89,30 +85,9 @@ class RealtimeCallService {
     _wsSub = _channel!.stream.listen(
       _onEvent,
       onError: (e) {
-        // #region agent log
-        DebugLog.send(
-          location: 'realtime_call_service.dart:wsOnError',
-          message: 'WebSocket onError fired',
-          hypothesisId: 'H-A,H-E',
-          data: {'error': e.toString()},
-        );
-        // #endregion
         _emitError('connection lost: $e');
       },
       onDone: () {
-        // #region agent log
-        DebugLog.send(
-          location: 'realtime_call_service.dart:wsOnDone',
-          message: 'WebSocket onDone fired',
-          hypothesisId: 'H-A,H-E',
-          data: {
-            'wasConnected': _connected,
-            'fatalError': _fatalError,
-            'closeCode': _channel?.closeCode,
-            'closeReason': _channel?.closeReason,
-          },
-        );
-        // #endregion
         if (_connected && !_fatalError) {
           _emitError('call disconnected');
         }
@@ -200,28 +175,11 @@ class RealtimeCallService {
 
   void _send(Map<String, dynamic> payload) {
     final ch = _channel;
-    if (ch == null) {
-      // #region agent log
-      DebugLog.send(
-        location: 'realtime_call_service.dart:_send',
-        message: 'Tried to send but channel is null',
-        hypothesisId: 'H-A,H-E',
-        data: {'type': payload['type']},
-      );
-      // #endregion
-      return;
-    }
+    if (ch == null) return;
     try {
       ch.sink.add(jsonEncode(payload));
-    } catch (e) {
-      // #region agent log
-      DebugLog.send(
-        location: 'realtime_call_service.dart:_send',
-        message: 'sink.add THREW',
-        hypothesisId: 'H-A,H-E',
-        data: {'type': payload['type'], 'error': e.toString()},
-      );
-      // #endregion
+    } catch (_) {
+      // Sink may be closing mid-hangup; ignore.
     }
   }
 
@@ -244,14 +202,6 @@ class RealtimeCallService {
     // with delta accounting. Each subsequent delta will replace this timer
     // with the duration-based schedule.
     _scheduleAssistantFinish(_emergencyFallback);
-    // #region agent log
-    DebugLog.send(
-      location: 'realtime_call_service.dart:_beginAssistantTurn',
-      message: 'Assistant turn started — mic will be stopped',
-      hypothesisId: 'H-B,H-C,H-F',
-      data: {'micRunning': _micRunning, 'wantMicRunning': _wantMicRunning},
-    );
-    // #endregion
   }
 
   void _scheduleAssistantFinish(Duration delay) {
@@ -269,20 +219,6 @@ class RealtimeCallService {
     _wantMicRunning = _connected && _sessionReady && !_muted;
     _queueMicStateSync();
     transcriptController.add('…say something — i\'m listening');
-    // #region agent log
-    DebugLog.send(
-      location: 'realtime_call_service.dart:_finishAssistantTurn',
-      message: 'Assistant turn finished — mic will restart',
-      hypothesisId: 'H-B,H-C',
-      data: {
-        'connected': _connected,
-        'sessionReady': _sessionReady,
-        'muted': _muted,
-        'wantMicRunning': _wantMicRunning,
-        'micRunning': _micRunning,
-      },
-    );
-    // #endregion
   }
 
   /// Compute when the speaker buffer will be empty, then schedule the finish
@@ -298,30 +234,9 @@ class RealtimeCallService {
     final remainingMs = math.max(0, audioMs - elapsedMs);
     final drainMs = remainingMs + _playbackDrainPaddingMs;
     _scheduleAssistantFinish(Duration(milliseconds: drainMs));
-    // #region agent log
-    DebugLog.send(
-      location: 'realtime_call_service.dart:_rescheduleFinishFromPlayback',
-      message: 'Recomputed finish schedule from playback duration',
-      hypothesisId: 'H-F',
-      data: {
-        'audioMs': audioMs,
-        'elapsedMs': elapsedMs,
-        'remainingMs': remainingMs,
-        'drainMs': drainMs,
-      },
-    );
-    // #endregion
   }
 
   void _emitError(String message) {
-    // #region agent log
-    DebugLog.send(
-      location: 'realtime_call_service.dart:_emitError',
-      message: 'Fatal error path',
-      hypothesisId: 'H-G',
-      data: {'msg': message},
-    );
-    // #endregion
     _fatalError = true;
     connectionController.add(CallConnectionState.error);
     transcriptController.add(message);
@@ -350,96 +265,35 @@ class RealtimeCallService {
     if (!await _recorder.hasPermission()) {
       throw Exception('Microphone permission denied');
     }
-    Stream<Uint8List> stream;
-    try {
-      stream = await _recorder.startStream(
-        RecordConfig(
-          encoder: AudioEncoder.pcm16bits,
-          sampleRate: _sampleRate,
-          numChannels: 1,
-          echoCancel: true,
-          noiseSuppress: true,
-          autoGain: true,
-          androidConfig: AndroidRecordConfig(
-            audioSource: AndroidAudioSource.voiceCommunication,
-            audioManagerMode: AudioManagerMode.modeInCommunication,
-            speakerphone: _speakerOn,
-          ),
+    final stream = await _recorder.startStream(
+      RecordConfig(
+        encoder: AudioEncoder.pcm16bits,
+        sampleRate: _sampleRate,
+        numChannels: 1,
+        echoCancel: true,
+        noiseSuppress: true,
+        autoGain: true,
+        androidConfig: AndroidRecordConfig(
+          audioSource: AndroidAudioSource.voiceCommunication,
+          audioManagerMode: AudioManagerMode.modeInCommunication,
+          speakerphone: _speakerOn,
         ),
-      );
-      // #region agent log
-      DebugLog.send(
-        location: 'realtime_call_service.dart:_startMicNow',
-        message: 'Recorder startStream succeeded',
-        hypothesisId: 'H-B',
-        data: {},
-      );
-      // #endregion
-    } catch (e) {
-      // #region agent log
-      DebugLog.send(
-        location: 'realtime_call_service.dart:_startMicNow',
-        message: 'Recorder startStream FAILED',
-        hypothesisId: 'H-B',
-        data: {'error': e.toString()},
-      );
-      // #endregion
-      rethrow;
-    }
+      ),
+    );
     _micRunning = true;
-    _micChunkCount = 0;
-    final cycleId = ++_micCycleId;
     _micSub = stream.listen(
       (chunk) {
         if (!_connected || !_sessionReady || _muted || _assistantSpeaking) {
           return;
         }
         levelController.add(_rmsLevel(chunk));
-        _micChunkCount++;
-        // #region agent log
-        if (_micChunkCount == 1 || _micChunkCount % 10 == 0) {
-          DebugLog.send(
-            location: 'realtime_call_service.dart:micChunk',
-            message: 'Mic chunk sent to xAI',
-            hypothesisId: 'H-D,H-E,H-G',
-            data: {
-              'cycleId': cycleId,
-              'chunkNum': _micChunkCount,
-              'chunkBytes': chunk.length,
-              'rms': _rmsLevel(chunk),
-            },
-          );
-        }
-        // #endregion
         _send({
           'type': 'input_audio_buffer.append',
           'audio': base64Encode(chunk),
         });
       },
       onError: (e) {
-        // #region agent log
-        DebugLog.send(
-          location: 'realtime_call_service.dart:micStreamOnError',
-          message: 'Mic stream emitted error',
-          hypothesisId: 'H-G',
-          data: {'cycleId': cycleId, 'error': e.toString()},
-        );
-        // #endregion
         _emitError('mic error: $e');
-      },
-      onDone: () {
-        // #region agent log
-        DebugLog.send(
-          location: 'realtime_call_service.dart:micStreamOnDone',
-          message: 'Mic stream closed unexpectedly',
-          hypothesisId: 'H-G',
-          data: {
-            'cycleId': cycleId,
-            'chunksDelivered': _micChunkCount,
-            'micRunning': _micRunning,
-          },
-        );
-        // #endregion
       },
     );
   }
@@ -448,21 +302,12 @@ class RealtimeCallService {
     if (!_micRunning && _micSub == null) return;
     await _micSub?.cancel();
     _micSub = null;
-    Object? stopError;
     try {
       await _recorder.stop();
-    } catch (e) {
-      stopError = e;
+    } catch (_) {
+      // Recorder may already be stopped; ignore.
     }
     _micRunning = false;
-    // #region agent log
-    DebugLog.send(
-      location: 'realtime_call_service.dart:_stopMicNow',
-      message: 'Recorder stopped',
-      hypothesisId: 'H-B',
-      data: {'stopError': stopError?.toString()},
-    );
-    // #endregion
   }
 
   int _rmsLevel(Uint8List bytes) {
@@ -487,18 +332,6 @@ class RealtimeCallService {
     }
 
     final type = event['type'] as String?;
-    // #region agent log
-    if (type != 'response.output_audio.delta' &&
-        type != 'response.audio.delta' &&
-        type != 'response.output_audio_transcript.delta') {
-      DebugLog.send(
-        location: 'realtime_call_service.dart:_onEvent',
-        message: 'WS event received',
-        hypothesisId: 'H-A,H-C,H-D',
-        data: {'type': type ?? 'unknown'},
-      );
-    }
-    // #endregion
 
     switch (type) {
       case 'session.created':
