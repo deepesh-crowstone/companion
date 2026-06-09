@@ -121,6 +121,22 @@ export async function initDb(): Promise<void> {
       CREATE INDEX IF NOT EXISTS idx_private_mode_orders_user
         ON private_mode_orders (user_id, created_at DESC);
 
+      CREATE TABLE IF NOT EXISTS private_mode_subscriptions (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        cf_subscription_id TEXT NOT NULL UNIQUE,
+        trial_amount_inr NUMERIC(10, 2) NOT NULL,
+        mandate_amount_inr NUMERIC(10, 2) NOT NULL,
+        status TEXT NOT NULL DEFAULT 'INITIALIZED'
+          CHECK (status IN ('INITIALIZED', 'ACTIVE', 'CANCELLED', 'FAILED')),
+        auth_status TEXT,
+        trial_granted_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_private_mode_subscriptions_user
+        ON private_mode_subscriptions (user_id, created_at DESC);
+
       CREATE UNIQUE INDEX IF NOT EXISTS users_username_lower_idx
         ON users (LOWER(username));
 

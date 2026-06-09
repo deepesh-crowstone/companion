@@ -63,6 +63,10 @@
         <meta-data
             android:name="com.posthog.posthog.AUTO_INIT"
             android:value="false" />
+        <!-- Required for Cashfree subscription (autopay) checkout callbacks. -->
+        <meta-data
+            android:name="cashfree_subscription_flow_enable"
+            android:value="true" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

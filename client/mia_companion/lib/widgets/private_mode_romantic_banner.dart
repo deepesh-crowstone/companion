@@ -317,7 +317,7 @@ class _UnlockCTA extends StatelessWidget {
             textBaseline: TextBaseline.alphabetic,
             children: [
               Text(
-                'Unlock at ',
+                'Trial at ',
                 style: GoogleFonts.inter(
                   fontSize: _baseFontSize,
                   fontWeight: FontWeight.w800,
@@ -326,7 +326,7 @@ class _UnlockCTA extends StatelessWidget {
                 ),
               ),
               Text(
-                '\u20B9299',
+                '\u20B9199',
                 style: GoogleFonts.inter(
                   fontSize: _baseFontSize,
                   fontWeight: FontWeight.w600,
@@ -338,7 +338,7 @@ class _UnlockCTA extends StatelessWidget {
               ),
               const SizedBox(width: 5),
               Text(
-                '\u20B99',
+                '\u20B91',
                 style: GoogleFonts.inter(
                   fontSize: _priceFontSize,
                   fontWeight: FontWeight.w800,

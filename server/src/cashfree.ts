@@ -23,7 +23,7 @@ function cashfreeEnv(): CashfreeEnvironment {
   return raw === "production" ? "production" : "sandbox";
 }
 
-function cashfreeBaseUrl(): string {
+export function cashfreeBaseUrl(): string {
   return cashfreeEnv() === "production"
     ? "https://api.cashfree.com/pg"
     : "https://sandbox.cashfree.com/pg";
@@ -40,7 +40,7 @@ function cashfreeCredentials(): { clientId: string; clientSecret: string } {
   return { clientId, clientSecret };
 }
 
-function cashfreeHeaders(): Record<string, string> {
+export function cashfreeHeaders(): Record<string, string> {
   const { clientId, clientSecret } = cashfreeCredentials();
   return {
     "Content-Type": "application/json",

@@ -10,7 +10,7 @@ import '../data/mia_profile.dart';
 import '../data/profile_legal_content.dart';
 import '../services/analytics.dart';
 import '../services/api_service.dart';
-import '../services/personality_payment_service.dart';
+import '../services/cotopay_payment_service.dart';
 import '../services/private_mode_controller.dart';
 import 'account_credentials_sheet.dart';
 import 'legal_content_sheet.dart';
@@ -168,13 +168,13 @@ class _PrivateModePaymentWallState extends State<_PrivateModePaymentWall>
 
     try {
       final order = await ApiService.instance.createPrivateModeOrder();
-      await PersonalityPaymentService.instance.startCheckout(
-        orderId: order.orderId,
-        paymentSessionId: order.paymentSessionId,
+      await CotopayPaymentService.instance.startSubscriptionCheckout(
+        subscriptionId: order.subscriptionId,
+        subscriptionSessionId: order.subscriptionSessionId,
         environment: order.environment,
-        onVerify: (orderId) async {
+        onVerify: (subscriptionId) async {
           final result = await ApiService.instance.verifyPrivateModeOrder(
-            orderId,
+            subscriptionId,
           );
           if (!result.paid) {
             throw Exception('Payment not completed yet');
@@ -279,6 +279,8 @@ class _PrivateModePaymentWallState extends State<_PrivateModePaymentWall>
                           const SizedBox(height: 10),
                         ],
                         Center(child: _OfferTimer(label: _timerLabel)),
+                        const SizedBox(height: 10),
+                        const _MandateInfoNote(),
                         const SizedBox(height: 10),
                         _UnlockButton(
                           animation: _anim,
@@ -467,7 +469,7 @@ class _LockedPhotoPreview extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      '\u20B99',
+                      '\u20B91',
                       style: GoogleFonts.inter(
                         fontSize: _priceFontSize,
                         fontWeight: FontWeight.w800,
@@ -606,6 +608,46 @@ class _BenefitTile extends StatelessWidget {
                   ),
                 ),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MandateInfoNote extends StatelessWidget {
+  const _MandateInfoNote();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '1-day trial at \u20B91 today',
+            style: GoogleFonts.inter(
+              fontSize: 13.5,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'You are setting up a monthly mandate for \u20B9199. '
+            'From tomorrow, \u20B9199 will be auto-debited each month until you cancel.',
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              height: 1.35,
+              color: Colors.white.withValues(alpha: 0.78),
             ),
           ),
         ],
@@ -764,7 +806,7 @@ class _UnlockButton extends StatelessWidget {
                                 textBaseline: TextBaseline.alphabetic,
                                 children: [
                                   Text(
-                                    'Unlock at ',
+                                    'Start trial at ',
                                     style: GoogleFonts.inter(
                                       fontSize: _baseFontSize,
                                       fontWeight: FontWeight.w800,
@@ -773,7 +815,7 @@ class _UnlockButton extends StatelessWidget {
                                     ),
                                   ),
                                   Text(
-                                    '\u20B9299',
+                                    '\u20B9199',
                                     style: GoogleFonts.inter(
                                       fontSize: _baseFontSize,
                                       fontWeight: FontWeight.w600,
@@ -786,7 +828,7 @@ class _UnlockButton extends StatelessWidget {
                                   ),
                                   const SizedBox(width: 6),
                                   Text(
-                                    '\u20B99',
+                                    '\u20B91',
                                     style: GoogleFonts.inter(
                                       fontSize: _priceFontSize,
                                       fontWeight: FontWeight.w800,
