@@ -113,6 +113,8 @@ privateModeRouter.post("/orders", authMiddleware, async (req, res) => {
       userId: auth.userId,
       username: auth.username,
       orderNote: "Zara private mode (30 days)",
+      itemName: "Zara Private Mode",
+      itemDescription: "30-day private mode pass",
     });
 
     await insertPrivateModeOrder(

@@ -63,6 +63,8 @@ personalitiesRouter.post("/orders", authMiddleware, async (req, res) => {
       userId: auth.userId,
       username: auth.username,
       orderNote: "Zara personality pass (30 days)",
+      itemName: "Zara Personality Pass",
+      itemDescription: "30-day personality unlock pass",
     });
 
     await insertPersonalityOrder(

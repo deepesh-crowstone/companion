@@ -71,12 +71,35 @@ export function buildPrivateModeOrderId(userId: number): string {
   return `private_u${userId}_${suffix}`;
 }
 
+function buildCartDetails(options: {
+  orderId: string;
+  amountInr: number;
+  itemName: string;
+  itemDescription?: string;
+}) {
+  return {
+    cart_items: [
+      {
+        item_id: options.orderId,
+        item_name: options.itemName,
+        item_description: options.itemDescription ?? options.itemName,
+        item_original_unit_price: options.amountInr,
+        item_discounted_unit_price: options.amountInr,
+        item_quantity: 1,
+        item_currency: "INR",
+      },
+    ],
+  };
+}
+
 export async function createCashfreeOrder(options: {
   orderId: string;
   amountInr: number;
   userId: number;
   username: string;
   orderNote: string;
+  itemName: string;
+  itemDescription?: string;
 }): Promise<CashfreeCreateOrderResult> {
   const notifyUrl = process.env.CASHFREE_NOTIFY_URL?.trim();
   const returnUrl =
@@ -100,6 +123,12 @@ export async function createCashfreeOrder(options: {
         ...(notifyUrl ? { notify_url: notifyUrl } : {}),
       },
       order_note: options.orderNote,
+      cart_details: buildCartDetails({
+        orderId: options.orderId,
+        amountInr: options.amountInr,
+        itemName: options.itemName,
+        itemDescription: options.itemDescription ?? options.orderNote,
+      }),
     }),
   });
 
