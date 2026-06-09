@@ -117,7 +117,7 @@ privateModeRouter.post("/subscriptions", authMiddleware, async (req, res) => {
       username: auth.username,
       trialAmountInr: PRIVATE_MODE_TRIAL_PRICE_INR,
       mandateAmountInr: PRIVATE_MODE_MANDATE_PRICE_INR,
-      planNote: "Zara Private Mode — monthly auto-renew",
+      planNote: "Zara private mode monthly mandate",
     });
 
     await insertPrivateModeSubscription(
@@ -171,7 +171,7 @@ privateModeRouter.post("/orders", authMiddleware, async (req, res) => {
       username: auth.username,
       trialAmountInr: PRIVATE_MODE_TRIAL_PRICE_INR,
       mandateAmountInr: PRIVATE_MODE_MANDATE_PRICE_INR,
-      planNote: "Zara Private Mode — monthly auto-renew",
+      planNote: "Zara private mode monthly mandate",
     });
 
     await insertPrivateModeSubscription(
