@@ -43,8 +43,8 @@ class ProfileLegalContent {
     LegalSection(
       title: 'How do payments work?',
       body:
-          'Private mode uses a Cashfree auto-pay mandate. You pay \u20B91 today for a 1-day trial, '
-          'then \u20B9199/month is auto-debited until you cancel. We do not store your full card details.',
+          'Private mode purchases are processed by Cashfree. You receive 30 days of access. '
+          'We do not store your full card details on our servers.',
     ),
     LegalSection(
       title: 'How do voice notes work?',
