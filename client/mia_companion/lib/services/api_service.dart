@@ -143,6 +143,9 @@ class ApiService {
   /// In-flight auth shared by concurrent callers (warm-up + chat load).
   Future<void>? _authInFlight;
 
+  /// Called after a session is confirmed (existing or newly created).
+  void Function()? onAuthenticated;
+
   /// Ensures a valid session exists, registering a guest user in the background
   /// if needed. Deduplicates concurrent calls so we never double-register a
   /// guest or fire the same `/auth/me` twice on startup.
@@ -156,6 +159,7 @@ class ApiService {
     await loadSession();
     if (isLoggedIn && await validateSession()) {
       unawaited(syncAnalyticsIdentity());
+      onAuthenticated?.call();
       return;
     }
 
@@ -164,7 +168,10 @@ class ApiService {
     }
 
     if (await needsAccountCredentials()) {
-      if (isLoggedIn && await validateSession()) return;
+      if (isLoggedIn && await validateSession()) {
+        onAuthenticated?.call();
+        return;
+      }
       throw Exception('Please save your account to continue.');
     }
 
@@ -174,7 +181,10 @@ class ApiService {
     if (storedUsername != null && storedPassword != null) {
       try {
         await login(storedUsername, storedPassword);
-        if (await validateSession()) return;
+        if (await validateSession()) {
+          onAuthenticated?.call();
+          return;
+        }
       } catch (_) {
         // Fall through to fresh guest registration.
       }
@@ -186,6 +196,7 @@ class ApiService {
       try {
         await register(username, password);
         await prefs.setString(_guestPasswordKey, password);
+        onAuthenticated?.call();
         return;
       } catch (e) {
         final msg = e.toString();
@@ -327,6 +338,7 @@ class ApiService {
         accountClaimed: await hasClaimedAccount(),
       ),
     );
+    onAuthenticated?.call();
     return body;
   }
 
@@ -682,6 +694,34 @@ class ApiService {
         .map((u) => u.trim())
         .where((u) => u.isNotEmpty)
         .toList();
+  }
+
+  /// Registers this device's FCM token for push notifications.
+  Future<void> registerPushToken(String token) async {
+    final res = await _post(
+      Uri.parse('$resolvedApiBaseUrl/devices/push-token'),
+      headers: _authHeaders,
+      body: jsonEncode({'token': token, 'platform': 'android'}),
+    );
+    _guardAuth(res);
+    if (res.statusCode >= 400) {
+      throw Exception(_errorFrom(res));
+    }
+  }
+
+  /// Removes this device's FCM token on logout.
+  Future<void> unregisterPushToken(String token) async {
+    final res = await _wrap(
+      () => _client.delete(
+        Uri.parse('$resolvedApiBaseUrl/devices/push-token'),
+        headers: _authHeaders,
+        body: jsonEncode({'token': token}),
+      ),
+    );
+    if (res.statusCode == 401) return;
+    if (res.statusCode >= 400) {
+      throw Exception(_errorFrom(res));
+    }
   }
 
   /// Server-configured free daily message limit (`FREE_DAILY_MESSAGE_LIMIT`).

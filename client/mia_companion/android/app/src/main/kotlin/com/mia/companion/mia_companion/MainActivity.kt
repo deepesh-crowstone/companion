@@ -1,5 +1,7 @@
 package com.mia.companion.mia_companion
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.app.PictureInPictureParams
 import android.os.Build
 import android.os.Bundle
@@ -13,7 +15,21 @@ class MainActivity : FlutterActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         // Edge-to-edge (Android 15+): draw behind system bars; Flutter handles insets.
         WindowCompat.setDecorFitsSystemWindows(window, false)
+        createNotificationChannel()
         super.onCreate(savedInstanceState)
+    }
+
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val channel = NotificationChannel(
+            "zara_messages",
+            "Messages from Zara",
+            NotificationManager.IMPORTANCE_HIGH,
+        ).apply {
+            description = "New messages from Zara"
+        }
+        val manager = getSystemService(NotificationManager::class.java)
+        manager?.createNotificationChannel(channel)
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {

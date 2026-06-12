@@ -18,12 +18,15 @@ import 'services/appsflyer_service.dart';
 import 'services/api_service.dart';
 import 'services/disappearing_messages_controller.dart';
 import 'services/mood_controller.dart';
+import 'services/push_notification_service.dart';
 import 'services/session_reset.dart';
 import 'theme/mia_theme.dart';
 import 'theme/theme_controller.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  ApiService.instance.onAuthenticated =
+      () => unawaited(PushNotificationService.instance.syncWithServer());
   if (!kIsWeb && Platform.isAndroid) {
     unawaited(
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge),
@@ -42,6 +45,7 @@ Future<void> _loadStartupState() async {
     DisappearingMessagesController.instance.load(),
     MoodController.instance.load(),
     AppsFlyerService.instance.init(),
+    PushNotificationService.instance.init(),
   ]);
 }
 
