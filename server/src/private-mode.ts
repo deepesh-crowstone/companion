@@ -1,6 +1,6 @@
 import { pool } from "./db.js";
 
-export const PRIVATE_MODE_PASS_PRICE_INR = 9;
+export const PRIVATE_MODE_PASS_PRICE_INR = 99;
 export const PRIVATE_MODE_PASS_DAYS = 30;
 
 export type DbPrivateModeOrder = {

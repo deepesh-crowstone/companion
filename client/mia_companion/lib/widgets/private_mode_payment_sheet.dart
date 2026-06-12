@@ -467,7 +467,7 @@ class _LockedPhotoPreview extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      '\u20B99',
+                      '\u20B999',
                       style: GoogleFonts.inter(
                         fontSize: _priceFontSize,
                         fontWeight: FontWeight.w800,
@@ -773,7 +773,7 @@ class _UnlockButton extends StatelessWidget {
                                     ),
                                   ),
                                   Text(
-                                    '\u20B9299',
+                                    '\u20B91499',
                                     style: GoogleFonts.inter(
                                       fontSize: _baseFontSize,
                                       fontWeight: FontWeight.w600,
@@ -786,7 +786,7 @@ class _UnlockButton extends StatelessWidget {
                                   ),
                                   const SizedBox(width: 6),
                                   Text(
-                                    '\u20B99',
+                                    '\u20B999',
                                     style: GoogleFonts.inter(
                                       fontSize: _priceFontSize,
                                       fontWeight: FontWeight.w800,

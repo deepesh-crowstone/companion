@@ -19,7 +19,7 @@ class PrivateModeAccess {
     return PrivateModeAccess(
       passActive: json['passActive'] as bool? ?? false,
       unlockedUntil: json['unlockedUntil'] as String?,
-      priceInr: json['priceInr'] as int? ?? 9,
+      priceInr: json['priceInr'] as int? ?? 99,
       passDays: json['passDays'] as int? ?? 30,
       ageSet: json['ageSet'] as bool? ?? false,
       privateModeActive: json['privateModeActive'] as bool? ?? false,
@@ -45,7 +45,7 @@ class PrivateModePaymentOrder {
       orderId: json['orderId'] as String,
       paymentSessionId: json['paymentSessionId'] as String,
       environment: json['environment'] as String? ?? 'sandbox',
-      amountInr: (json['amountInr'] as num?)?.toInt() ?? 9,
+      amountInr: (json['amountInr'] as num?)?.toInt() ?? 99,
     );
   }
 }
