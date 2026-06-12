@@ -1,7 +1,5 @@
 import { pool } from "./db.js";
-
-export const PRIVATE_MODE_PASS_PRICE_INR = 99;
-export const PRIVATE_MODE_PASS_DAYS = 30;
+import { getPrivateModePassPricing } from "./pricing.js";
 
 export type DbPrivateModeOrder = {
   id: number;
@@ -17,6 +15,7 @@ export type PrivateModeAccess = {
   passActive: boolean;
   unlockedUntil: string | null;
   priceInr: number;
+  strikePriceInr: number;
   passDays: number;
   ageSet: boolean;
   privateModeActive: boolean;
@@ -102,11 +101,13 @@ export async function getPrivateModeAccess(
   const passActive =
     unlockedUntil != null && unlockedUntil.getTime() > Date.now();
 
+  const pricing = getPrivateModePassPricing();
   return {
     passActive,
     unlockedUntil: unlockedUntil?.toISOString() ?? null,
-    priceInr: PRIVATE_MODE_PASS_PRICE_INR,
-    passDays: PRIVATE_MODE_PASS_DAYS,
+    priceInr: pricing.priceInr,
+    strikePriceInr: pricing.strikePriceInr,
+    passDays: pricing.passDays,
     ageSet: row?.age != null,
     privateModeActive: row?.private_mode_active ?? false,
   };
@@ -119,7 +120,9 @@ export async function grantPrivateModePass(userId: number): Promise<Date> {
       ? new Date(access.unlockedUntil)
       : new Date();
   const unlockedUntil = new Date(base);
-  unlockedUntil.setDate(unlockedUntil.getDate() + PRIVATE_MODE_PASS_DAYS);
+  unlockedUntil.setDate(
+    unlockedUntil.getDate() + getPrivateModePassPricing().passDays,
+  );
 
   await pool.query(
     `INSERT INTO private_mode_pass (user_id, unlocked_until, updated_at)

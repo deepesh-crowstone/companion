@@ -3,6 +3,7 @@ class PrivateModeAccess {
     required this.passActive,
     required this.unlockedUntil,
     required this.priceInr,
+    required this.strikePriceInr,
     required this.passDays,
     required this.ageSet,
     required this.privateModeActive,
@@ -11,16 +12,22 @@ class PrivateModeAccess {
   final bool passActive;
   final String? unlockedUntil;
   final int priceInr;
+  final int strikePriceInr;
   final int passDays;
   final bool ageSet;
   final bool privateModeActive;
 
   factory PrivateModeAccess.fromJson(Map<String, dynamic> json) {
+    final priceInr = (json['priceInr'] as num).toInt();
+    final strikeRaw = json['strikePriceInr'];
+    final strikePriceInr =
+        strikeRaw is num ? strikeRaw.toInt() : priceInr;
     return PrivateModeAccess(
       passActive: json['passActive'] as bool? ?? false,
       unlockedUntil: json['unlockedUntil'] as String?,
-      priceInr: json['priceInr'] as int? ?? 99,
-      passDays: json['passDays'] as int? ?? 30,
+      priceInr: priceInr,
+      strikePriceInr: strikePriceInr < priceInr ? priceInr : strikePriceInr,
+      passDays: (json['passDays'] as num?)?.toInt() ?? 30,
       ageSet: json['ageSet'] as bool? ?? false,
       privateModeActive: json['privateModeActive'] as bool? ?? false,
     );
@@ -45,7 +52,7 @@ class PrivateModePaymentOrder {
       orderId: json['orderId'] as String,
       paymentSessionId: json['paymentSessionId'] as String,
       environment: json['environment'] as String? ?? 'sandbox',
-      amountInr: (json['amountInr'] as num?)?.toInt() ?? 99,
+      amountInr: (json['amountInr'] as num).toInt(),
     );
   }
 }

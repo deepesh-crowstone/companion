@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/personality_access.dart';
 import '../models/zara_mood.dart';
 import 'api_service.dart';
+import 'pricing_controller.dart';
 
 class MoodController extends ChangeNotifier {
   MoodController._();
@@ -30,6 +31,13 @@ class MoodController extends ChangeNotifier {
   Future<void> refreshAccess() async {
     try {
       _access = await ApiService.instance.fetchPersonalityAccess();
+      if (_access != null) {
+        PricingController.instance.applyPersonality(
+          priceInr: _access!.priceInr,
+          strikePriceInr: _access!.strikePriceInr,
+          passDays: _access!.passDays,
+        );
+      }
       if (!canUseMood(_mood)) {
         _mood = ZaraMood.friendly;
         final prefs = await SharedPreferences.getInstance();
@@ -43,6 +51,11 @@ class MoodController extends ChangeNotifier {
 
   void applyAccess(PersonalityAccess access) {
     _access = access;
+    PricingController.instance.applyPersonality(
+      priceInr: access.priceInr,
+      strikePriceInr: access.strikePriceInr,
+      passDays: access.passDays,
+    );
     notifyListeners();
   }
 

@@ -18,6 +18,7 @@ import 'services/appsflyer_service.dart';
 import 'services/api_service.dart';
 import 'services/disappearing_messages_controller.dart';
 import 'services/mood_controller.dart';
+import 'services/pricing_controller.dart';
 import 'services/push_notification_service.dart';
 import 'services/session_reset.dart';
 import 'theme/mia_theme.dart';
@@ -44,6 +45,7 @@ Future<void> _loadStartupState() async {
     ThemeController.instance.load(),
     DisappearingMessagesController.instance.load(),
     MoodController.instance.load(),
+    PricingController.instance.load(),
     AppsFlyerService.instance.init(),
     PushNotificationService.instance.init(),
   ]);

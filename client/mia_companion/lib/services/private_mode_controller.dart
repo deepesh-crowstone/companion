@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/private_mode_access.dart';
 import 'api_service.dart';
+import 'pricing_controller.dart';
 
 /// Paid private romantic mode: access from server, active session synced via API.
 class PrivateModeController extends ChangeNotifier {
@@ -23,6 +24,13 @@ class PrivateModeController extends ChangeNotifier {
     if (!ApiService.instance.isLoggedIn) return;
     try {
       _access = await ApiService.instance.fetchPrivateModeAccess();
+      if (_access != null) {
+        PricingController.instance.applyPrivateMode(
+          priceInr: _access!.priceInr,
+          strikePriceInr: _access!.strikePriceInr,
+          passDays: _access!.passDays,
+        );
+      }
     } catch (_) {
       // Keep last known access on transient errors.
     }
@@ -31,6 +39,11 @@ class PrivateModeController extends ChangeNotifier {
 
   void applyAccess(PrivateModeAccess access) {
     _access = access;
+    PricingController.instance.applyPrivateMode(
+      priceInr: access.priceInr,
+      strikePriceInr: access.strikePriceInr,
+      passDays: access.passDays,
+    );
     notifyListeners();
   }
 

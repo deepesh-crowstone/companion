@@ -3,6 +3,7 @@ class PersonalityAccess {
     required this.passActive,
     required this.unlockedUntil,
     required this.priceInr,
+    required this.strikePriceInr,
     required this.passDays,
     required this.cashfreeConfigured,
     required this.cashfreeEnvironment,
@@ -11,15 +12,21 @@ class PersonalityAccess {
   final bool passActive;
   final String? unlockedUntil;
   final int priceInr;
+  final int strikePriceInr;
   final int passDays;
   final bool cashfreeConfigured;
   final String cashfreeEnvironment;
 
   factory PersonalityAccess.fromJson(Map<String, dynamic> json) {
+    final priceInr = (json['priceInr'] as num).toInt();
+    final strikeRaw = json['strikePriceInr'];
+    final strikePriceInr =
+        strikeRaw is num ? strikeRaw.toInt() : priceInr;
     return PersonalityAccess(
       passActive: json['passActive'] as bool? ?? false,
       unlockedUntil: json['unlockedUntil'] as String?,
-      priceInr: (json['priceInr'] as num?)?.toInt() ?? 49,
+      priceInr: priceInr,
+      strikePriceInr: strikePriceInr < priceInr ? priceInr : strikePriceInr,
       passDays: (json['passDays'] as num?)?.toInt() ?? 30,
       cashfreeConfigured: json['cashfreeConfigured'] as bool? ?? false,
       cashfreeEnvironment: json['cashfreeEnvironment'] as String? ?? 'sandbox',

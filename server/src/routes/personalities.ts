@@ -14,8 +14,8 @@ import {
   grantPersonalityPass,
   insertPersonalityOrder,
   markPersonalityOrderPaid,
-  PERSONALITY_PASS_PRICE_INR,
 } from "../personalities.js";
+import { getPersonalityPassPricing } from "../pricing.js";
 
 export const personalitiesRouter = Router();
 
@@ -56,10 +56,11 @@ personalitiesRouter.post("/orders", authMiddleware, async (req, res) => {
       return;
     }
 
+    const pricing = getPersonalityPassPricing();
     const cfOrderId = buildPersonalityOrderId(auth.userId);
     const cfOrder = await createCashfreeOrder({
       orderId: cfOrderId,
-      amountInr: PERSONALITY_PASS_PRICE_INR,
+      amountInr: pricing.priceInr,
       userId: auth.userId,
       username: auth.username,
       orderNote: "Zara personality pass (30 days)",
@@ -70,13 +71,13 @@ personalitiesRouter.post("/orders", authMiddleware, async (req, res) => {
     await insertPersonalityOrder(
       auth.userId,
       cfOrder.cfOrderId,
-      PERSONALITY_PASS_PRICE_INR,
+      pricing.priceInr,
     );
 
     res.json({
       orderId: cfOrder.cfOrderId,
       paymentSessionId: cfOrder.paymentSessionId,
-      amountInr: PERSONALITY_PASS_PRICE_INR,
+      amountInr: pricing.priceInr,
       passDays: access.passDays,
       environment: cashfreePublicEnvironment(),
     });

@@ -11,9 +11,11 @@ import '../data/profile_legal_content.dart';
 import '../services/analytics.dart';
 import '../services/api_service.dart';
 import '../services/personality_payment_service.dart';
+import '../services/pricing_controller.dart';
 import '../services/private_mode_controller.dart';
 import 'account_credentials_sheet.dart';
 import 'legal_content_sheet.dart';
+import 'pass_price_labels.dart';
 
 // Brand tokens shared with PrivateModeRomanticBanner so the wall reads as a
 // direct extension of that banner.
@@ -466,14 +468,31 @@ class _LockedPhotoPreview extends StatelessWidget {
                         letterSpacing: 0.1,
                       ),
                     ),
-                    Text(
-                      '\u20B999',
-                      style: GoogleFonts.inter(
-                        fontSize: _priceFontSize,
-                        fontWeight: FontWeight.w800,
-                        color: _brandGold,
-                        height: 1.0,
-                      ),
+                    ListenableBuilder(
+                      listenable: PricingController.instance,
+                      builder: (context, _) {
+                        final pricing = PricingController.instance.privateMode;
+                        if (pricing == null) {
+                          return Text(
+                            '...',
+                            style: GoogleFonts.inter(
+                              fontSize: _priceFontSize,
+                              fontWeight: FontWeight.w800,
+                              color: _brandGold,
+                              height: 1.0,
+                            ),
+                          );
+                        }
+                        return PassSinglePriceText(
+                          pricing: pricing,
+                          style: GoogleFonts.inter(
+                            fontSize: _priceFontSize,
+                            fontWeight: FontWeight.w800,
+                            color: _brandGold,
+                            height: 1.0,
+                          ),
+                        );
+                      },
                     ),
                   ],
                 ),
@@ -750,60 +769,42 @@ class _UnlockButton extends StatelessWidget {
                               valueColor: AlwaysStoppedAnimation(_label),
                             ),
                           )
-                        : Row(
-                            mainAxisSize: MainAxisSize.min,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(Icons.lock_open_rounded,
-                                  size: 18, color: _label),
-                              const SizedBox(width: 7),
-                              Row(
+                        : ListenableBuilder(
+                            listenable: PricingController.instance,
+                            builder: (context, _) {
+                              final pricing =
+                                  PricingController.instance.privateMode;
+                              if (pricing == null) {
+                                return Text(
+                                  'Unlock',
+                                  style: GoogleFonts.inter(
+                                    fontSize: _baseFontSize,
+                                    fontWeight: FontWeight.w800,
+                                    color: _label,
+                                  ),
+                                );
+                              }
+
+                              return Row(
                                 mainAxisSize: MainAxisSize.min,
-                                crossAxisAlignment:
-                                    CrossAxisAlignment.baseline,
-                                textBaseline: TextBaseline.alphabetic,
+                                mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  Text(
-                                    'Unlock at ',
-                                    style: GoogleFonts.inter(
-                                      fontSize: _baseFontSize,
-                                      fontWeight: FontWeight.w800,
-                                      color: _label,
-                                      letterSpacing: 0.2,
-                                    ),
-                                  ),
-                                  Text(
-                                    '\u20B91499',
-                                    style: GoogleFonts.inter(
-                                      fontSize: _baseFontSize,
-                                      fontWeight: FontWeight.w600,
-                                      color: _label.withValues(alpha: 0.55),
-                                      letterSpacing: 0.2,
-                                      decoration: TextDecoration.lineThrough,
-                                      decorationColor:
-                                          _label.withValues(alpha: 0.7),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    '\u20B999',
-                                    style: GoogleFonts.inter(
-                                      fontSize: _priceFontSize,
-                                      fontWeight: FontWeight.w800,
-                                      color: _label,
-                                      letterSpacing: 0.2,
-                                      height: 1.0,
-                                    ),
+                                  const Icon(Icons.lock_open_rounded,
+                                      size: 18, color: _label),
+                                  const SizedBox(width: 7),
+                                  PassUnlockPriceRow(
+                                    pricing: pricing,
+                                    prefix: 'Unlock at ',
+                                    labelColor: _label,
+                                    baseFontSize: _baseFontSize,
+                                    priceFontSize: _priceFontSize,
+                                    showArrow: true,
+                                    arrowNudge: nudge,
+                                    arrowSize: 20,
                                   ),
                                 ],
-                              ),
-                              const SizedBox(width: 6),
-                              Transform.translate(
-                                offset: Offset(3 * nudge, 0),
-                                child: const Icon(Icons.arrow_forward_rounded,
-                                    size: 20, color: _label),
-                              ),
-                            ],
+                              );
+                            },
                           ),
                   ),
                   if (!paying)

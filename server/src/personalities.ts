@@ -1,8 +1,6 @@
 import { pool } from "./db.js";
 import type { ZaraMood } from "./mood.js";
-
-export const PERSONALITY_PASS_PRICE_INR = 49;
-export const PERSONALITY_PASS_DAYS = 30;
+import { getPersonalityPassPricing } from "./pricing.js";
 
 export type DbPersonalityOrder = {
   id: number;
@@ -18,6 +16,7 @@ export type PersonalityAccess = {
   passActive: boolean;
   unlockedUntil: string | null;
   priceInr: number;
+  strikePriceInr: number;
   passDays: number;
 };
 
@@ -36,11 +35,13 @@ export async function getPersonalityAccess(
   const passActive =
     unlockedUntil != null && unlockedUntil.getTime() > Date.now();
 
+  const pricing = getPersonalityPassPricing();
   return {
     passActive,
     unlockedUntil: unlockedUntil?.toISOString() ?? null,
-    priceInr: PERSONALITY_PASS_PRICE_INR,
-    passDays: PERSONALITY_PASS_DAYS,
+    priceInr: pricing.priceInr,
+    strikePriceInr: pricing.strikePriceInr,
+    passDays: pricing.passDays,
   };
 }
 
@@ -60,7 +61,9 @@ export async function grantPersonalityPass(userId: number): Promise<Date> {
       ? new Date(access.unlockedUntil)
       : new Date();
   const unlockedUntil = new Date(base);
-  unlockedUntil.setDate(unlockedUntil.getDate() + PERSONALITY_PASS_DAYS);
+  unlockedUntil.setDate(
+    unlockedUntil.getDate() + getPersonalityPassPricing().passDays,
+  );
 
   await pool.query(
     `INSERT INTO personality_pass (user_id, unlocked_until, updated_at)

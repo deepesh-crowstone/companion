@@ -1,3 +1,8 @@
+import {
+  getPersonalityPassPricing,
+  getPrivateModePassPricing,
+} from "./pricing.js";
+
 /** Client-tunable app config sourced from Railway (or .env) env vars. */
 
 /** Free text messages a non-paying user gets per day before the unlock wall. */
@@ -18,11 +23,15 @@ export function getFreeDailyMessageLimit(): number {
 
 export type AppConfig = {
   freeDailyMessageLimit: number;
+  privateModePass: ReturnType<typeof getPrivateModePassPricing>;
+  personalityPass: ReturnType<typeof getPersonalityPassPricing>;
 };
 
 /** Non-sensitive config the client reads on launch. */
 export function getAppConfig(): AppConfig {
   return {
     freeDailyMessageLimit: getFreeDailyMessageLimit(),
+    privateModePass: getPrivateModePassPricing(),
+    personalityPass: getPersonalityPassPricing(),
   };
 }

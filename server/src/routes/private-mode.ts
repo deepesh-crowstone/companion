@@ -14,11 +14,11 @@ import {
   grantPrivateModePass,
   insertPrivateModeOrder,
   markPrivateModeOrderPaid,
-  PRIVATE_MODE_PASS_PRICE_INR,
   setUserAge,
   deletePrivateMessages,
   setUserPrivateModeActive,
 } from "../private-mode.js";
+import { getPrivateModePassPricing } from "../pricing.js";
 
 export const privateModeRouter = Router();
 
@@ -106,10 +106,11 @@ privateModeRouter.post("/orders", authMiddleware, async (req, res) => {
       return;
     }
 
+    const pricing = getPrivateModePassPricing();
     const cfOrderId = buildPrivateModeOrderId(auth.userId);
     const cfOrder = await createCashfreeOrder({
       orderId: cfOrderId,
-      amountInr: PRIVATE_MODE_PASS_PRICE_INR,
+      amountInr: pricing.priceInr,
       userId: auth.userId,
       username: auth.username,
       orderNote: "Zara private mode (30 days)",
@@ -120,13 +121,13 @@ privateModeRouter.post("/orders", authMiddleware, async (req, res) => {
     await insertPrivateModeOrder(
       auth.userId,
       cfOrder.cfOrderId,
-      PRIVATE_MODE_PASS_PRICE_INR,
+      pricing.priceInr,
     );
 
     res.json({
       orderId: cfOrder.cfOrderId,
       paymentSessionId: cfOrder.paymentSessionId,
-      amountInr: PRIVATE_MODE_PASS_PRICE_INR,
+      amountInr: pricing.priceInr,
       passDays: access.passDays,
       environment: cashfreePublicEnvironment(),
     });

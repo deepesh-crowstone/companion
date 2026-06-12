@@ -4,13 +4,16 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 
+import '../models/pass_pricing.dart';
 import '../models/zara_mood.dart';
 import '../services/analytics.dart';
 import '../services/api_service.dart';
 import '../services/mood_controller.dart';
 import '../services/personality_payment_service.dart';
+import '../services/pricing_controller.dart';
 import '../theme/mia_theme.dart';
 import 'account_credentials_sheet.dart';
+import 'pass_price_labels.dart';
 
 Future<bool> showPersonalityUnlockSheet({
   required BuildContext context,
@@ -37,7 +40,6 @@ class _PersonalityUnlockSheet extends StatefulWidget {
 class _PersonalityUnlockSheetState extends State<_PersonalityUnlockSheet> {
   bool _paying = false;
   String? _error;
-  int _priceInr = 49;
   int _passDays = 30;
 
   @override
@@ -45,8 +47,12 @@ class _PersonalityUnlockSheetState extends State<_PersonalityUnlockSheet> {
     super.initState();
     final access = MoodController.instance.access;
     if (access != null) {
-      _priceInr = access.priceInr;
       _passDays = access.passDays;
+    } else {
+      final pricing = PricingController.instance.personality;
+      if (pricing != null) {
+        _passDays = pricing.passDays;
+      }
     }
   }
 
@@ -193,7 +199,25 @@ class _PersonalityUnlockSheetState extends State<_PersonalityUnlockSheet> {
                       color: Colors.white,
                     ),
                   )
-                : Text('Unlock for ₹$_priceInr'),
+                : ListenableBuilder(
+                    listenable: PricingController.instance,
+                    builder: (context, _) {
+                      final pricing = PricingController.instance.personality;
+                      if (pricing == null) {
+                        return const Text('Unlock');
+                      }
+                      if (!pricing.showStrikePrice) {
+                        return Text('Unlock for ${formatInr(pricing.priceInr)}');
+                      }
+                      return PassUnlockPriceRow(
+                        pricing: pricing,
+                        prefix: 'Unlock for ',
+                        labelColor: Colors.white,
+                        baseFontSize: 16,
+                        priceFontSize: 16,
+                      );
+                    },
+                  ),
           ),
           const SizedBox(height: 10),
           TextButton(

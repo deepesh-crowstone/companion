@@ -3,6 +3,9 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../services/pricing_controller.dart';
+import 'pass_price_labels.dart';
+
 /// Sticky upsell below the chat header before private mode is purchased.
 ///
 /// Rendered as a premium floating card: rich romantic gradient, a soft
@@ -311,48 +314,32 @@ class _UnlockCTA extends StatelessWidget {
         children: [
           Icon(Icons.lock_open_rounded, size: 15, color: _label),
           const SizedBox(width: 5),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
-            children: [
-              Text(
-                'Unlock at ',
-                style: GoogleFonts.inter(
-                  fontSize: _baseFontSize,
-                  fontWeight: FontWeight.w800,
-                  color: _label,
-                  letterSpacing: 0.2,
-                ),
-              ),
-              Text(
-                '\u20B91499',
-                style: GoogleFonts.inter(
-                  fontSize: _baseFontSize,
-                  fontWeight: FontWeight.w600,
-                  color: _label.withValues(alpha: 0.55),
-                  letterSpacing: 0.2,
-                  decoration: TextDecoration.lineThrough,
-                  decorationColor: _label.withValues(alpha: 0.7),
-                ),
-              ),
-              const SizedBox(width: 5),
-              Text(
-                '\u20B999',
-                style: GoogleFonts.inter(
-                  fontSize: _priceFontSize,
-                  fontWeight: FontWeight.w800,
-                  color: _label,
-                  letterSpacing: 0.2,
-                  height: 1.0,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(width: 3),
-          Transform.translate(
-            offset: Offset(3 * nudge, 0),
-            child: Icon(Icons.arrow_forward_rounded, size: 16, color: _label),
+          ListenableBuilder(
+            listenable: PricingController.instance,
+            builder: (context, _) {
+              final pricing = PricingController.instance.privateMode;
+              if (pricing == null) {
+                return Text(
+                  'Unlock',
+                  style: GoogleFonts.inter(
+                    fontSize: _baseFontSize,
+                    fontWeight: FontWeight.w800,
+                    color: _label,
+                  ),
+                );
+              }
+
+              return PassUnlockPriceRow(
+                pricing: pricing,
+                prefix: 'Unlock at ',
+                labelColor: _label,
+                baseFontSize: _baseFontSize,
+                priceFontSize: _priceFontSize,
+                showArrow: true,
+                arrowNudge: nudge,
+                arrowSize: 16,
+              );
+            },
           ),
         ],
       ),

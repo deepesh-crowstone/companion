@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config.dart';
 import '../models/chat_message.dart';
+import '../models/app_config.dart';
 import '../models/personality_access.dart';
 import '../models/private_mode_access.dart';
 import '../models/zara_mood.dart';
@@ -724,9 +725,8 @@ class ApiService {
     }
   }
 
-  /// Server-configured free daily message limit (`FREE_DAILY_MESSAGE_LIMIT`).
-  /// Public endpoint, so no auth is required and a 401 must not log out.
-  Future<int> fetchFreeMessageLimit() async {
+  /// Server-configured app settings (public `/config` endpoint).
+  Future<AppConfig> fetchAppConfig() async {
     final res = await _get(
       Uri.parse('$resolvedApiBaseUrl/config'),
       headers: _authHeaders,
@@ -735,9 +735,14 @@ class ApiService {
       throw Exception(_errorFrom(res));
     }
     final data = jsonDecode(res.body) as Map<String, dynamic>;
-    final value = data['freeDailyMessageLimit'];
-    if (value is num) return value.toInt();
-    throw Exception('Invalid app config response');
+    return AppConfig.fromJson(data);
+  }
+
+  /// Server-configured free daily message limit (`FREE_DAILY_MESSAGE_LIMIT`).
+  /// Public endpoint, so no auth is required and a 401 must not log out.
+  Future<int> fetchFreeMessageLimit() async {
+    final config = await fetchAppConfig();
+    return config.freeDailyMessageLimit;
   }
 
   void _guardAuth(http.Response res) {
