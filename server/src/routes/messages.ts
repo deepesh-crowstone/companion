@@ -30,6 +30,7 @@ import {
 } from "../private-mode.js";
 import { classifyPhotoRequest } from "../photo-request.js";
 import { pickZaraPhoto } from "../zara-photos.js";
+import { notifyUserOfAssistantMessages } from "../push-notifications.js";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -309,6 +310,10 @@ messagesRouter.post("/text", async (req, res) => {
       assistantMsgs.map((m) => toPublicMessage(m)),
     );
 
+    void notifyUserOfAssistantMessages(auth.userId, assistantMsgs).catch((e) =>
+      console.warn("Push notification failed:", e),
+    );
+
     res.json({
       userMessage: await toPublicMessage(userMsg),
       assistantMessage: combinedAssistantFallback(assistantMessages),
@@ -372,6 +377,10 @@ messagesRouter.post("/text/batch", async (req, res) => {
     );
     const assistantMessages = await Promise.all(
       assistantMsgs.map((m) => toPublicMessage(m)),
+    );
+
+    void notifyUserOfAssistantMessages(auth.userId, assistantMsgs).catch((e) =>
+      console.warn("Push notification failed:", e),
     );
 
     res.json({
@@ -491,6 +500,10 @@ messagesRouter.post("/voice", upload.single("audio"), async (req, res) => {
         audioFilename: assistantAudioKey,
         isPrivate: access.privateModeActive,
       },
+    );
+
+    void notifyUserOfAssistantMessages(auth.userId, [assistantMsg]).catch((e) =>
+      console.warn("Push notification failed:", e),
     );
 
     res.json({

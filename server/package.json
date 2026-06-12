@@ -8,7 +8,8 @@
     "eval": "tsx eval/run.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "seed:zara-photos": "tsx scripts/upload-zara-photos.ts"
+    "seed:zara-photos": "tsx scripts/upload-zara-photos.ts",
+    "profiles:smoke": "tsx scripts/smoke-test-profile-photos.ts"
   },
   "engines": {
     "node": ">=20"
@@ -20,6 +21,7 @@
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
+    "firebase-admin": "^13.10.0",
     "jsonwebtoken": "^9.0.2",
     "multer": "^1.4.5-lts.1",
     "pg": "^8.13.1",

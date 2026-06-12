@@ -1,4 +1,6 @@
 import "./load-env.js";
+import path from "path";
+import { fileURLToPath } from "url";
 import cors from "cors";
 import express from "express";
 import { authRouter } from "./routes/auth.js";
@@ -9,7 +11,12 @@ import { privateModeRouter } from "./routes/private-mode.js";
 import { eventsRouter } from "./routes/events.js";
 import { callsRouter } from "./routes/calls.js";
 import { configRouter } from "./routes/config.js";
+import { devicesRouter } from "./routes/devices.js";
+import { adminProfilesRouter } from "./routes/admin-profiles.js";
+import { profilesRouter } from "./routes/profiles.js";
+import { isPushConfigured } from "./push-notifications.js";
 import { checkDbConnection, initDb } from "./db.js";
+import { recoverInterruptedGenerations } from "./profile-factory/store.js";
 import { checkBucketConnection, isBucketConfigured } from "./storage.js";
 import { verifyXaiConnection } from "./xai.js";
 
@@ -95,15 +102,32 @@ app.use("/private-mode", privateModeRouter);
 app.use("/events", eventsRouter);
 app.use("/calls", callsRouter);
 app.use("/config", configRouter);
+app.use("/devices", devicesRouter);
+app.use("/admin/profiles", adminProfilesRouter);
+app.use("/profiles", profilesRouter);
+
+// Profile factory review dashboard (static page; the API it calls is token-gated).
+app.get("/admin", (_req, res) => {
+  const serverDir = path.dirname(fileURLToPath(import.meta.url));
+  res.sendFile(path.resolve(serverDir, "../admin/index.html"));
+});
 
 async function main(): Promise<void> {
   await initDb();
   console.log("✓ PostgreSQL schema ready");
+  await recoverInterruptedGenerations();
   if (isBucketConfigured()) {
     console.log("✓ Object storage: voice + Zara photos (presigned URLs)");
   } else {
     console.warn(
       "⚠ Voice notes and private photos disabled until bucket env vars are set",
+    );
+  }
+  if (isPushConfigured()) {
+    console.log("✓ Push notifications: Firebase Cloud Messaging");
+  } else {
+    console.warn(
+      "⚠ Push notifications disabled until FIREBASE_SERVICE_ACCOUNT_JSON is set",
     );
   }
 

@@ -1,0 +1,552 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Profile Factory</title>
+<style>
+  :root {
+    --bg: #0f0d13; --panel: #17141d; --panel2: #1e1a26; --line: #2a2435;
+    --text: #f2eef7; --muted: #9c93ab; --accent: #c084fc; --accent2: #f472b6;
+    --green: #4ade80; --red: #f87171; --amber: #fbbf24;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  [hidden] { display: none !important; }
+  body {
+    background: var(--bg); color: var(--text); height: 100vh; display: flex;
+    font: 14px/1.45 -apple-system, "Segoe UI", Inter, Roboto, sans-serif;
+  }
+  button { font: inherit; cursor: pointer; border: none; border-radius: 10px; }
+  textarea, input {
+    font: inherit; color: var(--text); background: var(--panel2);
+    border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; width: 100%;
+  }
+  textarea:focus, input:focus { outline: 1px solid var(--accent); }
+
+  /* Sidebar */
+  #sidebar {
+    width: 320px; min-width: 320px; border-right: 1px solid var(--line);
+    display: flex; flex-direction: column; background: var(--panel);
+  }
+  #sidebar header { padding: 18px 16px 10px; }
+  #sidebar h1 { font-size: 17px; letter-spacing: .3px; }
+  #sidebar h1 span { color: var(--accent); }
+  #createBtn {
+    margin: 10px 16px; padding: 12px; font-weight: 600; color: #1a1023;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+  }
+  #createBtn:disabled { opacity: .45; cursor: not-allowed; }
+  #filters { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 16px 12px; }
+  #filters button {
+    padding: 4px 10px; font-size: 12px; border-radius: 999px;
+    background: var(--panel2); color: var(--muted); border: 1px solid var(--line);
+  }
+  #filters button.active { color: var(--text); border-color: var(--accent); }
+  #list { overflow-y: auto; flex: 1; }
+  .row {
+    display: flex; gap: 10px; padding: 10px 16px; cursor: pointer;
+    border-bottom: 1px solid var(--line); align-items: center;
+  }
+  .row:hover, .row.selected { background: var(--panel2); }
+  .row img, .row .ph {
+    width: 44px; height: 56px; border-radius: 8px; object-fit: cover;
+    background: var(--panel2); flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center; color: var(--muted);
+  }
+  .row .meta { flex: 1; min-width: 0; }
+  .row .name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row .sub { color: var(--muted); font-size: 12px; }
+  .pill {
+    font-size: 10px; text-transform: uppercase; letter-spacing: .6px;
+    padding: 3px 8px; border-radius: 999px; font-weight: 700; flex-shrink: 0;
+  }
+  .pill.generating { background: #2b2440; color: var(--accent); }
+  .pill.anchor_review { background: #14323a; color: #67e8f9; }
+  .pill.draft { background: #3a2f1b; color: var(--amber); }
+  .pill.published { background: #16321f; color: var(--green); }
+  .pill.rejected { background: #3a1d1d; color: var(--red); }
+  .pill.failed { background: #3a1d1d; color: var(--red); }
+
+  /* Main */
+  #main { flex: 1; overflow-y: auto; }
+  #empty { color: var(--muted); display: flex; height: 100%; align-items: center; justify-content: center; }
+  #detail { max-width: 520px; margin: 0 auto; padding: 24px 20px 80px; }
+
+  #actionbar {
+    display: flex; gap: 8px; align-items: center; margin-bottom: 18px;
+    position: sticky; top: 0; background: var(--bg); padding: 12px 0; z-index: 5;
+  }
+  #actionbar .spacer { flex: 1; }
+  .btn { padding: 9px 14px; font-weight: 600; background: var(--panel2); color: var(--text); border: 1px solid var(--line); }
+  .btn.green { background: #173d24; color: var(--green); border-color: #1f5230; }
+  .btn.red { background: #3d1a1a; color: var(--red); border-color: #542424; }
+  .btn:disabled { opacity: .45; cursor: wait; }
+
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 16px; padding: 16px; margin-bottom: 14px;
+  }
+  .photo-card { padding: 0; overflow: hidden; }
+  .photo-card img { width: 100%; aspect-ratio: 3/4; object-fit: cover; display: block; }
+  .photo-card .tools, .card .tools { padding: 10px 12px; display: flex; gap: 8px; align-items: flex-start; }
+  .tools textarea { min-height: 38px; resize: vertical; flex: 1; font-size: 13px; }
+  .tools .btn { font-size: 13px; padding: 8px 12px; white-space: nowrap; }
+  .missing { aspect-ratio: 3/4; display: flex; align-items: center; justify-content: center; color: var(--muted); background: var(--panel2); }
+
+  .namecard h2 { font-size: 24px; }
+  .namecard .sub { color: var(--muted); margin-top: 2px; }
+  .label { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--accent); margin-bottom: 6px; font-weight: 700; }
+  .prompt-q { font-weight: 700; margin-bottom: 4px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { background: var(--panel2); border: 1px solid var(--line); padding: 5px 11px; border-radius: 999px; font-size: 13px; }
+  .basics-row { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px dashed var(--line); }
+  .basics-row:last-child { border-bottom: none; }
+  .basics-row .k { color: var(--muted); }
+  .edit-area { margin-top: 8px; }
+  .seedline { color: var(--muted); font-size: 12px; margin-top: 6px; }
+
+  #progressCard { text-align: center; padding: 48px 24px; }
+  .spinner {
+    width: 38px; height: 38px; border-radius: 50%; margin: 0 auto 16px;
+    border: 3px solid var(--line); border-top-color: var(--accent);
+    animation: spin 0.9s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #stepText { color: var(--muted); margin-top: 4px; }
+
+  .toast {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    background: var(--panel2); border: 1px solid var(--line); color: var(--text);
+    padding: 10px 18px; border-radius: 12px; z-index: 50; max-width: 80vw;
+  }
+  .toast.err { border-color: var(--red); color: var(--red); }
+</style>
+</head>
+<body>
+<aside id="sidebar">
+  <header>
+    <h1>Profile <span>Factory</span></h1>
+  </header>
+  <button id="createBtn" onclick="createProfile()">+ Create Profile</button>
+  <div id="filters"></div>
+  <div id="list"></div>
+</aside>
+<section id="main">
+  <div id="empty">Select a profile or press Create Profile</div>
+  <div id="detail" hidden></div>
+</section>
+
+<script>
+const STATUSES = ["all", "generating", "anchor_review", "draft", "published", "rejected", "failed"];
+function statusLabel(s) { return s.replace("_", " "); }
+let state = {
+  filter: "all",
+  profiles: [],
+  selectedId: null,
+  detail: null,
+  busy: false,        // an item regeneration is in flight
+  editing: null,      // section index being inline-edited
+  pollTimer: null,
+};
+
+function token() {
+  let t = localStorage.getItem("admin_token");
+  if (!t) {
+    t = prompt("Admin token (ADMIN_TOKEN from server env):") || "";
+    localStorage.setItem("admin_token", t);
+  }
+  return t;
+}
+
+async function api(path, options = {}) {
+  const res = await fetch(path, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      "x-admin-token": token(),
+      ...(options.headers || {}),
+    },
+  });
+  if (res.status === 401) {
+    localStorage.removeItem("admin_token");
+    toast("Invalid token — reload and try again", true);
+    throw new Error("unauthorized");
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || ("HTTP " + res.status));
+  return data;
+}
+
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  })[c]);
+}
+
+let toastTimer;
+function toast(msg, isErr = false) {
+  document.querySelectorAll(".toast").forEach((t) => t.remove());
+  const el = document.createElement("div");
+  el.className = "toast" + (isErr ? " err" : "");
+  el.textContent = msg;
+  document.body.appendChild(el);
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.remove(), isErr ? 6000 : 3000);
+}
+
+/* ---------- Sidebar ---------- */
+
+function renderFilters() {
+  document.getElementById("filters").innerHTML = STATUSES.map(
+    (s) => `<button class="${s === state.filter ? "active" : ""}"
+              onclick="setFilter('${s}')">${statusLabel(s)}</button>`,
+  ).join("");
+}
+
+function setFilter(f) {
+  state.filter = f;
+  renderFilters();
+  loadList();
+}
+
+async function loadList() {
+  const q = state.filter === "all" ? "" : "?status=" + state.filter;
+  const data = await api("/admin/profiles" + q);
+  state.profiles = data.profiles;
+  const anyGenerating = state.profiles.some((p) => p.status === "generating");
+  document.getElementById("createBtn").disabled = anyGenerating;
+  document.getElementById("list").innerHTML = state.profiles.map((p) => `
+    <div class="row ${p.id === state.selectedId ? "selected" : ""}" onclick="select(${p.id})">
+      ${p.thumbnail
+        ? `<img src="${esc(p.thumbnail)}" loading="lazy" />`
+        : `<div class="ph">…</div>`}
+      <div class="meta">
+        <div class="name">${esc(p.name)}, ${p.age}</div>
+        <div class="sub">${esc(p.city)} · ${esc(p.archetype)}</div>
+      </div>
+      <span class="pill ${p.status}">${statusLabel(p.status)}</span>
+    </div>`).join("") || `<div style="padding:20px;color:var(--muted)">No profiles yet</div>`;
+}
+
+/* ---------- Create + polling ---------- */
+
+async function createProfile() {
+  try {
+    document.getElementById("createBtn").disabled = true;
+    const created = await api("/admin/profiles", { method: "POST" });
+    toast("Generating new profile…");
+    await loadList();
+    select(created.id);
+  } catch (e) {
+    toast(e.message, true);
+    document.getElementById("createBtn").disabled = false;
+  }
+}
+
+function schedulePoll() {
+  clearTimeout(state.pollTimer);
+  if (state.detail && state.detail.status === "generating") {
+    state.pollTimer = setTimeout(async () => {
+      await refreshDetail(true);
+      if (state.detail && state.detail.status !== "generating") {
+        toast(state.detail.status === "anchor_review"
+          ? "Anchor ready — review the face"
+          : "Draft ready for review");
+        loadList();
+      }
+      schedulePoll();
+    }, 2500);
+  }
+}
+
+async function select(id) {
+  state.selectedId = id;
+  state.editing = null;
+  await refreshDetail();
+  loadList();
+  schedulePoll();
+}
+
+async function refreshDetail(quiet = false) {
+  if (state.selectedId == null) return;
+  try {
+    state.detail = await api("/admin/profiles/" + state.selectedId);
+    renderDetail();
+  } catch (e) {
+    if (!quiet) toast(e.message, true);
+  }
+}
+
+/* ---------- Detail rendering ---------- */
+
+function renderDetail() {
+  const d = state.detail;
+  document.getElementById("empty").hidden = !!d;
+  const root = document.getElementById("detail");
+  root.hidden = !d;
+  if (!d) return;
+
+  if (d.status === "generating") {
+    root.innerHTML = `
+      <div class="card" id="progressCard">
+        <div class="spinner"></div>
+        <h2>Creating ${esc(d.profile?.name || "profile")}…</h2>
+        <div id="stepText">${esc(d.generationStep || "starting")}</div>
+      </div>`;
+    return;
+  }
+
+  if (d.status === "failed") {
+    root.innerHTML = `
+      ${actionBar(d)}
+      <div class="card">
+        <div class="label">Generation failed</div>
+        <p>${esc(d.error || "Unknown error")}</p>
+        <p class="seedline">Delete this row and press Create Profile again.</p>
+      </div>`;
+    return;
+  }
+
+  // During anchor review only the identity photo exists; don't render
+  // placeholders for gallery slots that aren't meant to exist yet.
+  const photoSlots = d.status === "anchor_review"
+    ? [d.photos.find((p) => p.slot === 0) || { slot: 0, missing: true }]
+    : Array.from({ length: d.seed.photoCount }, (_, i) =>
+        d.photos.find((p) => p.slot === i) || { slot: i, missing: true });
+  const sections = (d.profile?.sections || []);
+
+  // Bumble-style interleave: photo, section, photo, section…
+  const items = [];
+  const maxLen = Math.max(photoSlots.length, sections.length);
+  for (let i = 0; i < maxLen; i++) {
+    if (photoSlots[i]) items.push(photoHtml(photoSlots[i], d));
+    if (i === 0) items.push(nameCard(d));
+    if (sections[i]) items.push(sectionHtml(sections[i], i, d));
+  }
+
+  root.innerHTML = `
+    ${actionBar(d)}
+    ${items.join("")}
+    <div class="card">
+      <div class="label">Rewrite all text</div>
+      <div class="tools" style="padding:0">
+        <textarea id="cmt-text" placeholder="Optional notes — e.g. funnier, less filmy, more Hinglish"></textarea>
+        <button class="btn" ${state.busy ? "disabled" : ""}
+          onclick="regen('text', 'cmt-text', this)">Rewrite</button>
+      </div>
+    </div>
+    ${reviewLog(d)}`;
+}
+
+function actionBar(d) {
+  return `
+  <div id="actionbar">
+    <span class="pill ${d.status}">${statusLabel(d.status)}</span>
+    <span class="seedline">v${d.version} · ${esc(d.slug)}</span>
+    <div class="spacer"></div>
+    ${d.status === "anchor_review"
+      ? `<button class="btn green" ${state.busy ? "disabled" : ""}
+           onclick="generatePhotos()">Generate ${d.seed.photoCount - 1} more photos</button>` : ""}
+    ${d.status === "draft" ? `<button class="btn green" onclick="act('approve')">Approve &amp; Publish</button>` : ""}
+    ${d.status === "anchor_review" || d.status === "draft" || d.status === "published"
+      ? `<button class="btn red" onclick="act('reject')">Reject</button>` : ""}
+    ${d.status === "rejected" || d.status === "failed"
+      ? `<button class="btn red" onclick="act('delete')">Delete</button>` : ""}
+  </div>`;
+}
+
+function nameCard(d) {
+  const p = d.profile || {};
+  return `
+  <div class="card namecard">
+    <h2>${esc(p.name)}, ${esc(p.age)}</h2>
+    <div class="sub">${esc(p.profession)} · ${esc(p.city)}</div>
+    <div class="seedline">${esc(d.seed.archetype)} · ${esc(d.seed.appearance)}</div>
+  </div>`;
+}
+
+function photoHtml(photo, d) {
+  const idx = photo.slot;
+  const anchorNote = idx !== 0 ? "" : d.status === "anchor_review"
+    ? `<div class="seedline" style="padding:0 12px 10px">identity anchor — comment &amp; redo until the face is right, then press "Generate ${d.seed.photoCount - 1} more photos"</div>`
+    : `<div class="seedline" style="padding:0 12px 10px">anchor photo — redoing it changes the face; redo other photos after</div>`;
+  return `
+  <div class="card photo-card">
+    ${photo.missing
+      ? `<div class="missing">photo ${idx + 1} missing</div>`
+      : `<img src="${esc(photo.url)}" />`}
+    <div class="tools">
+      <textarea id="cmt-photo-${idx}" placeholder="Comment for photo ${idx + 1} — e.g. different outfit, brighter light"></textarea>
+      <button class="btn" ${state.busy ? "disabled" : ""}
+        onclick="regen('photo:${idx}', 'cmt-photo-${idx}', this)">${photo.missing ? "Generate" : "Redo"}</button>
+    </div>
+    ${anchorNote}
+  </div>`;
+}
+
+function sectionHtml(section, idx, d) {
+  let body = "";
+  if (state.editing === idx) return editorHtml(section, idx);
+  if (section.kind === "bio") {
+    body = `<div class="label">About</div><p>${esc(section.text)}</p>`;
+  } else if (section.kind === "prompt") {
+    body = `<div class="prompt-q">${esc(section.prompt)}</div><p>${esc(section.answer)}</p>`;
+  } else if (section.kind === "interests") {
+    body = `<div class="label">Interests</div>
+      <div class="chips">${section.items.map((i) => `<span class="chip">${esc(i)}</span>`).join("")}</div>`;
+  } else if (section.kind === "basics") {
+    body = `<div class="label">Basics</div>` + section.items.map((i) =>
+      `<div class="basics-row"><span class="k">${esc(i.label)}</span><span>${esc(i.value)}</span></div>`).join("");
+  }
+  return `
+  <div class="card">
+    ${body}
+    <div class="tools" style="padding:10px 0 0">
+      <textarea id="cmt-section-${idx}" placeholder="Comment — what should change?"></textarea>
+      <button class="btn" ${state.busy ? "disabled" : ""}
+        onclick="regen('section:${idx}', 'cmt-section-${idx}', this)">Redo</button>
+      <button class="btn" onclick="startEdit(${idx})">Edit</button>
+    </div>
+  </div>`;
+}
+
+function editorHtml(section, idx) {
+  let fields = "";
+  if (section.kind === "bio") {
+    fields = `<textarea id="edit-main" rows="3">${esc(section.text)}</textarea>`;
+  } else if (section.kind === "prompt") {
+    fields = `<div class="prompt-q">${esc(section.prompt)}</div>
+      <textarea id="edit-main" rows="3">${esc(section.answer)}</textarea>`;
+  } else if (section.kind === "interests") {
+    fields = `<div class="label">Comma-separated interests</div>
+      <textarea id="edit-main" rows="2">${esc(section.items.join(", "))}</textarea>`;
+  } else if (section.kind === "basics") {
+    fields = section.items.map((i, j) =>
+      `<div class="basics-row"><span class="k">${esc(i.label)}</span>
+       <input id="edit-basic-${j}" value="${esc(i.value)}" style="max-width:55%" /></div>`).join("");
+  }
+  return `
+  <div class="card">
+    ${fields}
+    <div class="tools" style="padding:10px 0 0">
+      <button class="btn green" onclick="saveEdit(${idx})">Save</button>
+      <button class="btn" onclick="cancelEdit()">Cancel</button>
+    </div>
+  </div>`;
+}
+
+function reviewLog(d) {
+  if (!d.reviews?.length) return "";
+  return `
+  <div class="card">
+    <div class="label">Review history</div>
+    ${d.reviews.map((r) =>
+      `<div class="basics-row"><span class="k">${esc(r.target)}</span>
+       <span style="text-align:right">${esc(r.comment)}</span></div>`).join("")}
+  </div>`;
+}
+
+/* ---------- Actions ---------- */
+
+async function regen(target, commentElId, btn) {
+  if (state.busy) return;
+  state.busy = true;
+  const comment = document.getElementById(commentElId)?.value || "";
+  btn.textContent = "Working…";
+  btn.disabled = true;
+  try {
+    state.detail = await api(`/admin/profiles/${state.selectedId}/regenerate`, {
+      method: "POST",
+      body: JSON.stringify({ target, comment }),
+    });
+    toast("Done — take a look");
+    loadList();
+  } catch (e) {
+    toast(e.message, true);
+  } finally {
+    state.busy = false;
+    // Re-render after clearing busy — renderDetail() bakes disabled into HTML.
+    renderDetail();
+  }
+}
+
+async function generatePhotos() {
+  if (!confirm("Lock this face and generate the remaining photos?")) return;
+  try {
+    await api(`/admin/profiles/${state.selectedId}/generate-photos`, { method: "POST" });
+    toast("Generating gallery…");
+    await refreshDetail();
+    schedulePoll();
+    loadList();
+  } catch (e) {
+    toast(e.message, true);
+  }
+}
+
+function startEdit(idx) { state.editing = idx; renderDetail(); }
+function cancelEdit() { state.editing = null; renderDetail(); }
+
+async function saveEdit(idx) {
+  const profile = JSON.parse(JSON.stringify(state.detail.profile));
+  const section = profile.sections[idx];
+  if (section.kind === "bio") {
+    section.text = document.getElementById("edit-main").value.trim();
+  } else if (section.kind === "prompt") {
+    section.answer = document.getElementById("edit-main").value.trim();
+  } else if (section.kind === "interests") {
+    section.items = document.getElementById("edit-main").value
+      .split(",").map((s) => s.trim()).filter(Boolean);
+  } else if (section.kind === "basics") {
+    section.items = section.items.map((item, j) => ({
+      label: item.label,
+      value: document.getElementById("edit-basic-" + j).value.trim(),
+    }));
+  }
+  try {
+    state.detail = await api("/admin/profiles/" + state.selectedId, {
+      method: "PATCH",
+      body: JSON.stringify({ profile }),
+    });
+    state.editing = null;
+    toast("Saved");
+    renderDetail();
+  } catch (e) {
+    toast(e.message, true);
+  }
+}
+
+async function act(action) {
+  const labels = {
+    approve: "Publish this profile to the production deck?",
+    reject: "Reject this profile?",
+    delete: "Delete this profile row permanently?",
+  };
+  if (!confirm(labels[action])) return;
+  try {
+    if (action === "delete") {
+      await api("/admin/profiles/" + state.selectedId, { method: "DELETE" });
+      state.selectedId = null;
+      state.detail = null;
+      document.getElementById("detail").hidden = true;
+      document.getElementById("empty").hidden = false;
+    } else {
+      await api(`/admin/profiles/${state.selectedId}/${action}`, { method: "POST" });
+      await refreshDetail();
+    }
+    loadList();
+    toast(action === "approve" ? "Published" : "Done");
+  } catch (e) {
+    toast(e.message, true);
+  }
+}
+
+/* ---------- Boot ---------- */
+renderFilters();
+loadList();
+setInterval(() => {
+  // Keep sidebar fresh (e.g. generation finishing in background).
+  if (!state.busy) loadList();
+}, 10000);
+</script>
+</body>
+</html>

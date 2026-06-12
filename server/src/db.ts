@@ -162,6 +162,63 @@ export async function initDb(): Promise<void> {
 
       ALTER TABLE user_events
         ADD COLUMN IF NOT EXISTS properties JSONB;
+
+      CREATE TABLE IF NOT EXISTS push_device_tokens (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        fcm_token TEXT NOT NULL,
+        platform TEXT NOT NULL DEFAULT 'android',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (fcm_token)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_push_device_tokens_user
+        ON push_device_tokens (user_id);
+
+      CREATE TABLE IF NOT EXISTS ai_profiles (
+        id SERIAL PRIMARY KEY,
+        slug TEXT NOT NULL UNIQUE,
+        status TEXT NOT NULL DEFAULT 'generating'
+          CHECK (status IN ('generating', 'draft', 'published', 'rejected', 'failed')),
+        generation_step TEXT,
+        error TEXT,
+        persona_seed JSONB NOT NULL,
+        profile JSONB,
+        version INTEGER NOT NULL DEFAULT 1,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      ALTER TABLE ai_profiles DROP CONSTRAINT IF EXISTS ai_profiles_status_check;
+      ALTER TABLE ai_profiles
+        ADD CONSTRAINT ai_profiles_status_check
+        CHECK (status IN ('generating', 'anchor_review', 'draft', 'published', 'rejected', 'failed'));
+
+      CREATE INDEX IF NOT EXISTS idx_ai_profiles_status
+        ON ai_profiles (status, updated_at DESC);
+
+      CREATE TABLE IF NOT EXISTS ai_profile_photos (
+        id SERIAL PRIMARY KEY,
+        profile_id INTEGER NOT NULL REFERENCES ai_profiles(id) ON DELETE CASCADE,
+        slot INTEGER NOT NULL,
+        object_key TEXT NOT NULL,
+        prompt TEXT NOT NULL,
+        is_anchor BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (profile_id, slot)
+      );
+
+      CREATE TABLE IF NOT EXISTS ai_profile_reviews (
+        id SERIAL PRIMARY KEY,
+        profile_id INTEGER NOT NULL REFERENCES ai_profiles(id) ON DELETE CASCADE,
+        target TEXT NOT NULL,
+        comment TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_ai_profile_reviews_profile
+        ON ai_profile_reviews (profile_id, created_at DESC);
     `);
   } finally {
     client.release();
