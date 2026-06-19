@@ -16,6 +16,7 @@ import {
   markPersonalityOrderPaid,
 } from "../personalities.js";
 import { getPersonalityPassPricing } from "../pricing.js";
+import { getProfileBySlug, resolveProfileSlug } from "../profiles/catalog.js";
 
 export const personalitiesRouter = Router();
 
@@ -25,10 +26,16 @@ function getAuth(req: Request): AuthPayload {
 
 personalitiesRouter.get("/status", authMiddleware, async (req, res) => {
   const auth = getAuth(req);
+  const profileSlug = resolveProfileSlug(
+    typeof req.query.profileSlug === "string" ? req.query.profileSlug : null,
+  );
   try {
-    const access = await getPersonalityAccess(auth.userId);
+    const access = await getPersonalityAccess(auth.userId, profileSlug);
+    const profile = getProfileBySlug(profileSlug);
     res.json({
       ...access,
+      profileSlug,
+      profileName: profile?.name ?? profileSlug,
       cashfreeConfigured: isCashfreeConfigured(),
       cashfreeEnvironment: cashfreePublicEnvironment(),
     });
@@ -40,6 +47,10 @@ personalitiesRouter.get("/status", authMiddleware, async (req, res) => {
 
 personalitiesRouter.post("/orders", authMiddleware, async (req, res) => {
   const auth = getAuth(req);
+  const profileSlug = resolveProfileSlug(
+    typeof req.body?.profileSlug === "string" ? req.body.profileSlug : null,
+  );
+  const profile = getProfileBySlug(profileSlug);
 
   if (!isCashfreeConfigured()) {
     res.status(503).json({
@@ -50,28 +61,30 @@ personalitiesRouter.post("/orders", authMiddleware, async (req, res) => {
   }
 
   try {
-    const access = await getPersonalityAccess(auth.userId);
+    const access = await getPersonalityAccess(auth.userId, profileSlug);
     if (access.passActive) {
       res.status(400).json({ error: "Personalities are already unlocked" });
       return;
     }
 
     const pricing = getPersonalityPassPricing();
+    const profileName = profile?.name ?? profileSlug;
     const cfOrderId = buildPersonalityOrderId(auth.userId);
     const cfOrder = await createCashfreeOrder({
       orderId: cfOrderId,
       amountInr: pricing.priceInr,
       userId: auth.userId,
       username: auth.username,
-      orderNote: "Zara personality pass (30 days)",
-      itemName: "Zara Personality Pass",
-      itemDescription: "30-day personality unlock pass",
+      orderNote: `${profileName} personality pass (${pricing.passDays} days)`,
+      itemName: `${profileName} Personality Pass`,
+      itemDescription: `${pricing.passDays}-day personality unlock pass`,
     });
 
     await insertPersonalityOrder(
       auth.userId,
       cfOrder.cfOrderId,
       pricing.priceInr,
+      profileSlug,
     );
 
     res.json({
@@ -79,6 +92,7 @@ personalitiesRouter.post("/orders", authMiddleware, async (req, res) => {
       paymentSessionId: cfOrder.paymentSessionId,
       amountInr: pricing.priceInr,
       passDays: access.passDays,
+      profileSlug,
       environment: cashfreePublicEnvironment(),
     });
   } catch (e) {
@@ -97,7 +111,7 @@ async function finalizePaidOrder(cfOrderId: string, userId: number) {
     throw new Error("Order does not belong to this user");
   }
   if (localOrder.status === "PAID") {
-    const access = await getPersonalityAccess(userId);
+    const access = await getPersonalityAccess(userId, localOrder.profile_slug);
     return { alreadyPaid: true as const, access };
   }
 
@@ -108,12 +122,15 @@ async function finalizePaidOrder(cfOrderId: string, userId: number) {
 
   const paidOrder = await markPersonalityOrderPaid(cfOrderId);
   if (!paidOrder) {
-    const access = await getPersonalityAccess(userId);
+    const access = await getPersonalityAccess(userId, localOrder.profile_slug);
     return { alreadyPaid: true as const, access };
   }
 
-  const unlockedUntil = await grantPersonalityPass(userId);
-  const access = await getPersonalityAccess(userId);
+  const unlockedUntil = await grantPersonalityPass(
+    userId,
+    paidOrder.profile_slug,
+  );
+  const access = await getPersonalityAccess(userId, paidOrder.profile_slug);
   return {
     paid: true as const,
     access,
@@ -136,7 +153,11 @@ personalitiesRouter.post(
     try {
       const result = await finalizePaidOrder(orderId, auth.userId);
       if ("paid" in result && result.paid === false) {
-        const access = await getPersonalityAccess(auth.userId);
+        const localOrder = await findPersonalityOrderByCfId(orderId);
+        const access = await getPersonalityAccess(
+          auth.userId,
+          localOrder?.profile_slug,
+        );
         res.json({
           paid: false,
           orderStatus: result.orderStatus,
@@ -190,7 +211,7 @@ personalitiesRouter.post("/webhook", async (req, res) => {
     }
 
     await markPersonalityOrderPaid(cfOrderId);
-    await grantPersonalityPass(localOrder.user_id);
+    await grantPersonalityPass(localOrder.user_id, localOrder.profile_slug);
     res.json({ ok: true });
   } catch (e) {
     console.error("Cashfree webhook error:", e);

@@ -1,11 +1,12 @@
 import {
   MIA_STT_LANGUAGE,
-  MIA_TEXT_SYSTEM_PROMPT,
   MIA_TTS_LANGUAGE,
-  MIA_VOICE_SYSTEM_PROMPT,
   MIA_VOICE_ID,
   XAI_CHAT_MODEL,
+  buildTextSystemPrompt,
+  buildVoiceSystemPrompt,
 } from "./mia.js";
+import { getProfileBySlug, resolveProfileSlug } from "./profiles/catalog.js";
 import {
   ELEVENLABS_VOICE_TTS_INSTRUCTIONS,
   MIA_VOICE_TTS_INSTRUCTIONS,
@@ -494,7 +495,26 @@ export type ChatWithMiaOptions = {
   expressiveTts?: boolean;
   mood?: ZaraMood;
   intimacyLevel?: IntimacyLevel;
+  profileSlug?: string;
 };
+
+function profileNameForSlug(profileSlug: string): string {
+  return getProfileBySlug(resolveProfileSlug(profileSlug))?.name ?? "Zara";
+}
+
+function resolveChatProfileSlug(
+  history: DbMessage[],
+  options?: { profileSlug?: string },
+): string {
+  if (options?.profileSlug) {
+    return resolveProfileSlug(options.profileSlug);
+  }
+  for (let i = history.length - 1; i >= 0; i -= 1) {
+    const slug = history[i]?.profile_slug;
+    if (slug) return resolveProfileSlug(slug);
+  }
+  return resolveProfileSlug(null);
+}
 
 function ttsProvider(): string {
   return (envValue("MIA_TTS_PROVIDER") ?? "elevenlabs").toLowerCase();
@@ -559,16 +579,19 @@ export async function chatWithMia(
     throw new Error("Chat history must end with a user message");
   }
 
+  const profileSlug = resolveChatProfileSlug(history, options);
+  const profileName = profileNameForSlug(profileSlug);
   const mood = options?.mood ?? "friendly";
-  const moodLine = moodPromptForMood(mood);
+  const moodLine = moodPromptForMood(mood, profileName);
   const intimacyLevel = effectiveIntimacyLevel(
     mood,
     options?.intimacyLevel ?? 1,
   );
+  const voicePrompt = buildVoiceSystemPrompt(profileSlug);
   const systemPrompt = `${
     options?.expressiveTts
-      ? `${MIA_VOICE_SYSTEM_PROMPT}\n${voiceTtsInstructions()}`
-      : MIA_VOICE_SYSTEM_PROMPT
+      ? `${voicePrompt}\n${voiceTtsInstructions()}`
+      : voicePrompt
   }\n\n${intimacyPromptForLevel(intimacyLevel)}\n\n${moodLine}\n\n${currentIndiaTimeContext()}`;
 
   const messages: { role: string; content: string }[] = [
@@ -598,7 +621,10 @@ export async function chatWithMia(
   return options?.expressiveTts ? stripEmojis(rewritten) : rewritten;
 }
 
-async function addVoiceDeliveryToTextReply(textReply: string): Promise<string> {
+async function addVoiceDeliveryToTextReply(
+  textReply: string,
+  profileName: string,
+): Promise<string> {
   const cleanReply = stripEmojis(textReply).trim();
   if (!cleanReply) {
     throw new Error("Empty text reply for voice delivery");
@@ -612,10 +638,10 @@ async function addVoiceDeliveryToTextReply(textReply: string): Promise<string> {
       messages: [
         {
           role: "system",
-          content: `Convert Zara's normal text-chat reply into a realistic voice-note script for TTS.
+          content: `Convert ${profileName}'s normal text-chat reply into a realistic voice-note script for TTS.
 
 Rules:
-- Keep the same meaning, emotional stance, and Zara personality. Do not add new ideas, questions, advice, facts, pet names, or extra intimacy.
+- Keep the same meaning, emotional stance, and ${profileName}'s personality. Do not add new ideas, questions, advice, facts, pet names, or extra intimacy.
 - Preserve the user's respectful/plural grammar style as a hard rule: tum/tumhe/tumhara, batao, batao na, kar do, le rahe ho, ho gaye. Never use tu/tujhe/tera, bata, bata na, kar de, le raha hai, ho gaya.
 - Convert the spoken words to Devanagari Hindi/Hinglish so the Hindi voice sounds natural. Transliterate English loanwords phonetically when possible.
 - Add only a few delivery tags for performance. ${voiceTtsInstructions()}
@@ -637,12 +663,15 @@ export async function chatWithMiaText(
     mood?: ZaraMood;
     privateMode?: boolean;
     invitePrivateMode?: boolean;
+    profileSlug?: string;
   },
 ): Promise<string[]> {
   if (history.length === 0 || history[history.length - 1]?.role !== "user") {
     throw new Error("Chat history must end with a user message");
   }
 
+  const profileSlug = resolveChatProfileSlug(history, options);
+  const profileName = profileNameForSlug(profileSlug);
   const privateMode = options?.privateMode ?? false;
   const invitePrivateMode = options?.invitePrivateMode ?? false;
   const mood = privateMode ? "bold" : (options?.mood ?? "friendly");
@@ -656,11 +685,11 @@ export async function chatWithMiaText(
     : invitePrivateMode
       ? `\n\n${privateModeInvitePrompt()}`
       : "";
-  const systemPrompt = `${MIA_TEXT_SYSTEM_PROMPT}
+  const systemPrompt = `${buildTextSystemPrompt(profileSlug)}
 
 ${intimacyPromptForLevel(intimacyLevel)}
 
-${moodPromptForMood(mood)}${privateLine}
+${moodPromptForMood(mood, profileName)}${privateLine}
 
 ${currentIndiaTimeContext()}
 
@@ -696,11 +725,14 @@ output format:
 
 export async function chatWithMiaTextAsVoice(
   history: DbMessage[],
-  options?: { mood?: ZaraMood; intimacyLevel?: IntimacyLevel },
+  options?: { mood?: ZaraMood; intimacyLevel?: IntimacyLevel; profileSlug?: string },
 ): Promise<string> {
+  const profileSlug = resolveChatProfileSlug(history, options);
+  const profileName = profileNameForSlug(profileSlug);
   const textSegments = await chatWithMiaText(history, {
     mood: options?.mood,
     intimacyLevel: options?.intimacyLevel,
+    profileSlug,
   });
-  return addVoiceDeliveryToTextReply(textSegments.join(" "));
+  return addVoiceDeliveryToTextReply(textSegments.join(" "), profileName);
 }

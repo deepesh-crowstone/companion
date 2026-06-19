@@ -5,8 +5,14 @@ import {
   getPhotosForProfiles,
   listPublishedProfiles,
 } from "../profile-factory/store.js";
+import { listCatalogForClient } from "../profiles/catalog.js";
 
 export const profilesRouter = Router();
+
+/** Grid home: curated companion list (no swipe UI). Public metadata only. */
+profilesRouter.get("/list", (_req, res) => {
+  res.json({ profiles: listCatalogForClient() });
+});
 
 profilesRouter.use(authMiddleware);
 

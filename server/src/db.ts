@@ -30,6 +30,7 @@ export type DbUser = {
 export type DbMessage = {
   id: number;
   user_id: number;
+  profile_slug: string;
   role: "user" | "assistant";
   content: string;
   message_type: "text" | "audio" | "image";
@@ -219,6 +220,27 @@ export async function initDb(): Promise<void> {
 
       CREATE INDEX IF NOT EXISTS idx_ai_profile_reviews_profile
         ON ai_profile_reviews (profile_id, created_at DESC);
+
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS profile_slug TEXT;
+      UPDATE messages SET profile_slug = 'zara' WHERE profile_slug IS NULL;
+      ALTER TABLE messages ALTER COLUMN profile_slug SET DEFAULT 'zara';
+      ALTER TABLE messages ALTER COLUMN profile_slug SET NOT NULL;
+
+      CREATE INDEX IF NOT EXISTS idx_messages_user_profile_created
+        ON messages (user_id, profile_slug, created_at, id);
+
+      ALTER TABLE personality_pass ADD COLUMN IF NOT EXISTS profile_slug TEXT;
+      UPDATE personality_pass SET profile_slug = 'zara' WHERE profile_slug IS NULL;
+      ALTER TABLE personality_pass ALTER COLUMN profile_slug SET DEFAULT 'zara';
+      ALTER TABLE personality_pass ALTER COLUMN profile_slug SET NOT NULL;
+      ALTER TABLE personality_pass DROP CONSTRAINT IF EXISTS personality_pass_pkey;
+      ALTER TABLE personality_pass
+        ADD CONSTRAINT personality_pass_pkey PRIMARY KEY (user_id, profile_slug);
+
+      ALTER TABLE personality_orders ADD COLUMN IF NOT EXISTS profile_slug TEXT;
+      UPDATE personality_orders SET profile_slug = 'zara' WHERE profile_slug IS NULL;
+      ALTER TABLE personality_orders ALTER COLUMN profile_slug SET DEFAULT 'zara';
+      ALTER TABLE personality_orders ALTER COLUMN profile_slug SET NOT NULL;
     `);
   } finally {
     client.release();

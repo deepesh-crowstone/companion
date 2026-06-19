@@ -31,6 +31,7 @@ import {
 import { classifyPhotoRequest } from "../photo-request.js";
 import { pickZaraPhoto } from "../zara-photos.js";
 import { notifyUserOfAssistantMessages } from "../push-notifications.js";
+import { getProfileBySlug, resolveProfileSlug } from "../profiles/catalog.js";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -58,18 +59,28 @@ function apiErrorFromDb(e: unknown): { status: number; message: string } | null 
   return null;
 }
 
-async function listMessages(userId: number): Promise<DbMessage[]> {
+function parseProfileSlug(raw: unknown): string {
+  return resolveProfileSlug(typeof raw === "string" ? raw : null);
+}
+
+async function listMessages(
+  userId: number,
+  profileSlug: string,
+): Promise<DbMessage[]> {
   const { rows } = await pool.query<DbMessage>(
-    `SELECT id, user_id, role, content, message_type, audio_filename, image_key,
+    `SELECT id, user_id, profile_slug, role, content, message_type, audio_filename, image_key,
             COALESCE(is_private, FALSE) AS is_private, created_at
-     FROM messages WHERE user_id = $1 ORDER BY created_at ASC, id ASC`,
-    [userId],
+     FROM messages
+     WHERE user_id = $1 AND profile_slug = $2
+     ORDER BY created_at ASC, id ASC`,
+    [userId, profileSlug],
   );
   return rows;
 }
 
 async function insertMessage(
   userId: number,
+  profileSlug: string,
   role: "user" | "assistant",
   content: string,
   messageType: "text" | "audio" | "image",
@@ -81,12 +92,13 @@ async function insertMessage(
 ): Promise<DbMessage> {
   const isPrivate = options?.isPrivate ?? (await isUserPrivateModeActive(userId));
   const { rows } = await pool.query<DbMessage>(
-    `INSERT INTO messages (user_id, role, content, message_type, audio_filename, image_key, is_private)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
-     RETURNING id, user_id, role, content, message_type, audio_filename, image_key,
+    `INSERT INTO messages (user_id, profile_slug, role, content, message_type, audio_filename, image_key, is_private)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+     RETURNING id, user_id, profile_slug, role, content, message_type, audio_filename, image_key,
                is_private, created_at`,
     [
       userId,
+      profileSlug,
       role,
       content,
       messageType,
@@ -100,11 +112,14 @@ async function insertMessage(
 
 async function insertAssistantTextMessages(
   userId: number,
+  profileSlug: string,
   contents: string[],
 ): Promise<DbMessage[]> {
   const inserted: DbMessage[] = [];
   for (const content of contents) {
-    inserted.push(await insertMessage(userId, "assistant", content, "text"));
+    inserted.push(
+      await insertMessage(userId, profileSlug, "assistant", content, "text"),
+    );
   }
   return inserted;
 }
@@ -173,14 +188,17 @@ function normalizeGreeting(text: string): string {
 }
 
 const SIMPLE_OPENING_GREETING =
-  /^(hi|hello|hey|hii+|heyy+|yo|sup)( zara)?$/;
+  /^(hi|hello|hey|hii+|heyy+|yo|sup)( [a-z]+)?$/;
 
 function isFirstMessageSimpleGreeting(
   history: DbMessage[],
   userText: string,
+  profileName: string,
 ): boolean {
   if (history.length > 0) return false;
-  return SIMPLE_OPENING_GREETING.test(normalizeGreeting(userText));
+  const normalized = normalizeGreeting(userText);
+  if (SIMPLE_OPENING_GREETING.test(normalized)) return true;
+  return normalized === normalizeGreeting(`hi ${profileName.toLowerCase()}`);
 }
 
 function openingGreetingReply(): string[] {
@@ -189,10 +207,11 @@ function openingGreetingReply(): string[] {
 
 async function insertAssistantImageMessage(
   userId: number,
+  profileSlug: string,
   photo: ReturnType<typeof pickZaraPhoto>,
   caption: string,
 ): Promise<DbMessage> {
-  return insertMessage(userId, "assistant", caption, "image", {
+  return insertMessage(userId, profileSlug, "assistant", caption, "image", {
     imageKey: photo.objectKey,
     isPrivate: true,
   });
@@ -207,13 +226,20 @@ async function buildTextReply(
   userMsgs: DbMessage[],
   mood: ZaraMood,
   privateMode: boolean,
+  profileSlug: string,
 ): Promise<{ assistantMsgs: DbMessage[]; suggestPrivateMode: boolean }> {
   const userId = userMsgs[0].user_id;
+  const profileName =
+    getProfileBySlug(profileSlug)?.name ?? profileSlug;
   const lastUserText = userMsgs[userMsgs.length - 1]?.content ?? "";
 
-  if (!privateMode && isFirstMessageSimpleGreeting(history, lastUserText)) {
+  if (
+    !privateMode &&
+    isFirstMessageSimpleGreeting(history, lastUserText, profileName)
+  ) {
     const assistantMsgs = await insertAssistantTextMessages(
       userId,
+      profileSlug,
       openingGreetingReply(),
     );
     return { assistantMsgs, suggestPrivateMode: false };
@@ -231,9 +257,11 @@ async function buildTextReply(
     mood,
     privateMode,
     invitePrivateMode: suggestPrivateMode,
+    profileSlug,
   });
   const assistantMsgs = await insertAssistantTextMessages(
     userId,
+    profileSlug,
     replySegments,
   );
 
@@ -246,6 +274,7 @@ async function buildTextReply(
       });
       const imageMsg = await insertAssistantImageMessage(
         userId,
+        profileSlug,
         photo,
         "",
       );
@@ -262,8 +291,9 @@ async function buildTextReply(
 
 messagesRouter.get("/", async (req, res) => {
   const auth = getAuth(req);
+  const profileSlug = parseProfileSlug(req.query.profileSlug);
   try {
-    const messages = await listMessages(auth.userId);
+    const messages = await listMessages(auth.userId, profileSlug);
     const publicMessages = await Promise.all(
       messages.map((m) => toPublicMessage(m)),
     );
@@ -281,8 +311,17 @@ messagesRouter.get("/", async (req, res) => {
 
 messagesRouter.post("/text", async (req, res) => {
   const auth = getAuth(req);
-  const { text, mood: moodRaw } = req.body as { text?: string; mood?: string };
-  const mood = await resolveMoodForUser(auth.userId, parseMood(moodRaw));
+  const { text, mood: moodRaw, profileSlug: profileSlugRaw } = req.body as {
+    text?: string;
+    mood?: string;
+    profileSlug?: string;
+  };
+  const profileSlug = parseProfileSlug(profileSlugRaw);
+  const mood = await resolveMoodForUser(
+    auth.userId,
+    parseMood(moodRaw),
+    profileSlug,
+  );
   const trimmed = text?.trim();
 
   if (!trimmed) {
@@ -297,14 +336,21 @@ messagesRouter.post("/text", async (req, res) => {
       return;
     }
 
-    const history = await listMessages(auth.userId);
-    const userMsg = await insertMessage(auth.userId, "user", trimmed, "text");
+    const history = await listMessages(auth.userId, profileSlug);
+    const userMsg = await insertMessage(
+      auth.userId,
+      profileSlug,
+      "user",
+      trimmed,
+      "text",
+    );
 
     const { assistantMsgs, suggestPrivateMode } = await buildTextReply(
       history,
       [userMsg],
       mood,
       access.privateModeActive,
+      profileSlug,
     );
     const assistantMessages = await Promise.all(
       assistantMsgs.map((m) => toPublicMessage(m)),
@@ -342,11 +388,17 @@ messagesRouter.post("/text", async (req, res) => {
 
 messagesRouter.post("/text/batch", async (req, res) => {
   const auth = getAuth(req);
-  const { texts, mood: moodRaw } = req.body as {
+  const { texts, mood: moodRaw, profileSlug: profileSlugRaw } = req.body as {
     texts?: string[];
     mood?: string;
+    profileSlug?: string;
   };
-  const mood = await resolveMoodForUser(auth.userId, parseMood(moodRaw));
+  const profileSlug = parseProfileSlug(profileSlugRaw);
+  const mood = await resolveMoodForUser(
+    auth.userId,
+    parseMood(moodRaw),
+    profileSlug,
+  );
   const trimmed = (texts ?? [])
     .map((t) => (typeof t === "string" ? t.trim() : ""))
     .filter((t) => t.length > 0);
@@ -363,10 +415,12 @@ messagesRouter.post("/text/batch", async (req, res) => {
       return;
     }
 
-    const history = await listMessages(auth.userId);
+    const history = await listMessages(auth.userId, profileSlug);
     const userMsgs: DbMessage[] = [];
     for (const text of trimmed) {
-      userMsgs.push(await insertMessage(auth.userId, "user", text, "text"));
+      userMsgs.push(
+        await insertMessage(auth.userId, profileSlug, "user", text, "text"),
+      );
     }
 
     const { assistantMsgs, suggestPrivateMode } = await buildTextReply(
@@ -374,6 +428,7 @@ messagesRouter.post("/text/batch", async (req, res) => {
       userMsgs,
       mood,
       access.privateModeActive,
+      profileSlug,
     );
     const assistantMessages = await Promise.all(
       assistantMsgs.map((m) => toPublicMessage(m)),
@@ -441,10 +496,12 @@ messagesRouter.post("/voice", upload.single("audio"), async (req, res) => {
   const mood = await resolveMoodForUser(
     auth.userId,
     parseMood(req.body?.mood),
+    parseProfileSlug(req.body?.profileSlug),
   );
 
   try {
-    const history = await listMessages(auth.userId);
+    const profileSlug = parseProfileSlug(req.body?.profileSlug);
+    const history = await listMessages(auth.userId, profileSlug);
     const transcript = await transcribeAudio(tmpPath, mime);
 
     if (!transcript) {
@@ -460,26 +517,34 @@ messagesRouter.post("/voice", upload.single("audio"), async (req, res) => {
       return;
     }
 
-    const userMsg = await insertMessage(auth.userId, "user", transcript, "audio", {
-      audioFilename: userAudioKey,
-      isPrivate: access.privateModeActive,
-    });
+    const userMsg = await insertMessage(
+      auth.userId,
+      profileSlug,
+      "user",
+      transcript,
+      "audio",
+      {
+        audioFilename: userAudioKey,
+        isPrivate: access.privateModeActive,
+      },
+    );
 
     const classified = access.privateModeActive
       ? { level: 3 as const }
       : await classifyIntimacyLevel(transcript);
     const voiceMood = access.privateModeActive ? ("bold" as const) : mood;
     const voiceHistory = [...history, userMsg];
+    const voiceOptions = {
+      mood: voiceMood,
+      intimacyLevel: classified.level,
+      profileSlug,
+    };
     const replyForTts =
       voiceReplyPipeline() === "text_tagged"
-        ? await chatWithMiaTextAsVoice(voiceHistory, {
-            mood: voiceMood,
-            intimacyLevel: classified.level,
-          })
+        ? await chatWithMiaTextAsVoice(voiceHistory, voiceOptions)
         : await chatWithMia(voiceHistory, {
             expressiveTts: true,
-            mood: voiceMood,
-            intimacyLevel: classified.level,
+            ...voiceOptions,
           });
 
     const displayReply = stripSpeechTagsForDisplay(replyForTts);
@@ -493,6 +558,7 @@ messagesRouter.post("/voice", upload.single("audio"), async (req, res) => {
 
     const assistantMsg = await insertMessage(
       auth.userId,
+      profileSlug,
       "assistant",
       displayReply,
       "audio",
