@@ -6,24 +6,33 @@ import '../theme/mia_theme.dart';
 import 'mia_avatar.dart';
 
 class EmptyChat extends StatelessWidget {
-  const EmptyChat({super.key});
+  const EmptyChat({
+    super.key,
+    this.companionName,
+    this.avatarAsset,
+  });
+
+  final String? companionName;
+  final String? avatarAsset;
 
   @override
   Widget build(BuildContext context) {
+    final name = companionName ?? MiaProfile.name;
     return Center(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 40),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const MiaAvatar(
+            MiaAvatar(
               size: 88,
+              assetPath: avatarAsset,
               showBorder: true,
               borderWidth: 2,
             ),
             const SizedBox(height: 24),
             Text(
-              'say hi to ${MiaProfile.name}',
+              'say hi to $name',
               style: MiaTheme.serifTitle(size: 22),
             ),
             const SizedBox(height: 10),

@@ -7,9 +7,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter_web_plugins/url_strategy.dart';
 
 import 'models/app_deep_link.dart';
+import 'models/companion_profile.dart';
 import 'navigation/deep_link_navigation.dart';
 import 'screens/chat_screen.dart';
 import 'screens/new_user_screen.dart';
+import 'screens/profiles_grid_screen.dart';
 import 'package:posthog_flutter/posthog_flutter.dart';
 
 import 'services/analytics.dart';
@@ -307,6 +309,18 @@ class _BootstrapState extends State<_Bootstrap> {
       return NewUserScreen(onStarted: _onStartedChatting);
     }
 
-    return ChatScreen(key: _chatScreenKey);
+    if (!kIsWeb && Platform.isAndroid) {
+      return const ProfilesGridScreen();
+    }
+
+    return ChatScreen(
+      key: _chatScreenKey,
+      profile: const CompanionProfile(
+        slug: 'zara',
+        name: 'Zara',
+        tagline: 'soft chaos, sharp timing, good coffee',
+        avatarAsset: 'assets/images/mia_profile.webp',
+      ),
+    );
   }
 }

@@ -65,7 +65,9 @@ class _PersonalityUnlockSheetState extends State<_PersonalityUnlockSheet> {
     });
 
     try {
-      final order = await ApiService.instance.createPersonalityOrder();
+      final order = await ApiService.instance.createPersonalityOrder(
+        profileSlug: MoodController.instance.activeProfileSlug,
+      );
 
       await PersonalityPaymentService.instance.startCheckout(
         orderId: order.orderId,
@@ -82,7 +84,9 @@ class _PersonalityUnlockSheetState extends State<_PersonalityUnlockSheet> {
                   : 'Payment not completed yet',
             );
           }
-          final access = await ApiService.instance.fetchPersonalityAccess();
+          final access = await ApiService.instance.fetchPersonalityAccess(
+            profileSlug: MoodController.instance.activeProfileSlug,
+          );
           MoodController.instance.applyAccess(access);
           await MoodController.instance.setMood(widget.targetMood);
           await ApiService.instance.requireAccountCredentials();

@@ -8,12 +8,14 @@ class MiaAvatar extends StatelessWidget {
   const MiaAvatar({
     super.key,
     required this.size,
+    this.assetPath,
     this.onTap,
     this.borderWidth = 0,
     this.showBorder = false,
   });
 
   final double size;
+  final String? assetPath;
   final VoidCallback? onTap;
   final double borderWidth;
   final bool showBorder;
@@ -22,7 +24,7 @@ class MiaAvatar extends StatelessWidget {
   Widget build(BuildContext context) {
     Widget avatar = ClipOval(
       child: Image.asset(
-        MiaProfile.avatarAsset,
+        assetPath ?? MiaProfile.avatarAsset,
         width: size,
         height: size,
         fit: BoxFit.cover,

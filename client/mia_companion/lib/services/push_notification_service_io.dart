@@ -73,7 +73,7 @@ Future<void> initPushNotifications(PushNotificationService service) async {
 
   _cachedToken = await messaging.getToken();
   if (kDebugMode && _cachedToken != null) {
-    debugPrint('FCM token ready');
+    debugPrint('FCM registration token:\n$_cachedToken');
   }
 }
 

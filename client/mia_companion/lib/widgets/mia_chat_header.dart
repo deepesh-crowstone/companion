@@ -16,6 +16,8 @@ class MiaChatHeader extends StatelessWidget implements PreferredSizeWidget {
     required this.onMenu,
     required this.onMood,
     required this.onProfile,
+    this.companionName,
+    this.avatarAsset,
     this.statusText = 'Active',
     this.showMoodPicker = true,
   });
@@ -24,6 +26,8 @@ class MiaChatHeader extends StatelessWidget implements PreferredSizeWidget {
   final VoidCallback onMenu;
   final VoidCallback onMood;
   final VoidCallback onProfile;
+  final String? companionName;
+  final String? avatarAsset;
   final String statusText;
   final bool showMoodPicker;
 
@@ -47,6 +51,7 @@ class MiaChatHeader extends StatelessWidget implements PreferredSizeWidget {
                   children: [
                     MiaAvatar(
                       size: 44,
+                      assetPath: avatarAsset,
                       onTap: onProfile,
                       showBorder: true,
                       borderWidth: 1.5,
@@ -65,7 +70,7 @@ class MiaChatHeader extends StatelessWidget implements PreferredSizeWidget {
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Text(
-                                  MiaProfile.name,
+                                  companionName ?? MiaProfile.name,
                                   style: GoogleFonts.inter(
                                     fontSize: 16,
                                     fontWeight: FontWeight.w700,
@@ -91,7 +96,10 @@ class MiaChatHeader extends StatelessWidget implements PreferredSizeWidget {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    _CallButton(onTap: onCall),
+                    _CallButton(
+                      onTap: onCall,
+                      companionName: companionName ?? MiaProfile.name,
+                    ),
                     const SizedBox(width: 2),
                     IconButton(
                       icon: const Icon(Icons.more_vert, size: 22),
@@ -114,9 +122,10 @@ class MiaChatHeader extends StatelessWidget implements PreferredSizeWidget {
 /// Attention-grabbing call action: filled accent circle with a slow
 /// "breathing" glow so the eye is drawn to it without it feeling noisy.
 class _CallButton extends StatefulWidget {
-  const _CallButton({required this.onTap});
+  const _CallButton({required this.onTap, required this.companionName});
 
   final VoidCallback onTap;
+  final String companionName;
 
   @override
   State<_CallButton> createState() => _CallButtonState();
@@ -182,10 +191,10 @@ class _CallButtonState extends State<_CallButton>
     final reduceMotion = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
 
     return Tooltip(
-      message: 'Call ${MiaProfile.name}',
+      message: 'Call ${widget.companionName}',
       child: Semantics(
         button: true,
-        label: 'Call ${MiaProfile.name}',
+        label: 'Call ${widget.companionName}',
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: _handleTap,

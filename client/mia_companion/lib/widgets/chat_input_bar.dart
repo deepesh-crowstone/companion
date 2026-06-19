@@ -26,6 +26,7 @@ class ChatInputBar extends StatefulWidget {
     required this.onHoldSend,
     required this.onHoldCancel,
     required this.onSlideUpdate,
+    this.companionName,
     this.emojiPickerOpen = false,
     this.onEmojiToggle,
     this.enabled = true,
@@ -49,6 +50,7 @@ class ChatInputBar extends StatefulWidget {
   final VoidCallback onHoldSend;
   final VoidCallback onHoldCancel;
   final void Function(double offset, bool cancelActive) onSlideUpdate;
+  final String? companionName;
 
   @override
   State<ChatInputBar> createState() => _ChatInputBarState();
@@ -182,7 +184,8 @@ class _ChatInputBarState extends State<ChatInputBar> {
                                   color: MiaColors.textPrimary,
                                 ),
                                 decoration: InputDecoration(
-                                  hintText: 'message ${MiaProfile.name}...',
+                                  hintText:
+                                      'message ${widget.companionName ?? MiaProfile.name}...',
                                   hintStyle: GoogleFonts.inter(
                                     color: _iconGrey,
                                     fontSize: 15,

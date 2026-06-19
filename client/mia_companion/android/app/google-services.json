@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "858312523115",
+    "project_id": "zara-b1e57",
+    "storage_bucket": "zara-b1e57.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:858312523115:android:5cea57ca0bd672c0cf202e",
+        "android_client_info": {
+          "package_name": "com.mia.companion.mia_companion"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDnkpVKtHjG89b9VSckE6dfxr_0chZJnVs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

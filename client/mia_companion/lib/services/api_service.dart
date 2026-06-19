@@ -9,10 +9,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../config.dart';
 import '../models/chat_message.dart';
 import '../models/app_config.dart';
+import '../models/companion_profile.dart';
 import '../models/personality_access.dart';
 import '../models/private_mode_access.dart';
 import '../models/zara_mood.dart';
 import '../models/voice_upload.dart';
+import '../data/companion_assets.dart';
 import 'analytics_service.dart';
 import 'session_expired.dart';
 import 'http_client_factory.dart';
@@ -27,7 +29,7 @@ class ApiService {
   static const _accountClaimedKey = 'mia_account_claimed';
   static const _credentialsRequiredKey = 'mia_credentials_required';
   static const _startedChattingKey = 'mia_started_chatting';
-  static const _cachedMessagesKey = 'mia_cached_messages';
+  static const _cachedMessagesKeyPrefix = 'mia_cached_messages_';
   static const _maxCachedMessages = 80;
   static const _guestAdjectives = [
     'happy',
@@ -84,7 +86,10 @@ class ApiService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_tokenKey);
     await prefs.remove(_usernameKey);
-    await prefs.remove(_cachedMessagesKey);
+    final keys = prefs.getKeys().where((key) => key.startsWith(_cachedMessagesKeyPrefix));
+    for (final key in keys) {
+      await prefs.remove(key);
+    }
     unawaited(AnalyticsService.instance.reset());
   }
 
@@ -343,9 +348,35 @@ class ApiService {
     return body;
   }
 
-  Future<List<ChatMessage>> fetchMessages() async {
+  Future<List<CompanionProfile>> fetchCompanionProfiles() async {
     final res = await _get(
-      Uri.parse('$resolvedApiBaseUrl/messages'),
+      Uri.parse('$resolvedApiBaseUrl/profiles/list'),
+      headers: _authHeaders,
+    );
+    if (res.statusCode >= 400) {
+      throw Exception(_errorFrom(res));
+    }
+    final data = jsonDecode(res.body) as Map<String, dynamic>;
+    final list = data['profiles'] as List<dynamic>? ?? const [];
+    return list
+        .whereType<Map<String, dynamic>>()
+        .map(
+          (json) => CompanionProfile.fromJson(
+            json,
+            avatarAsset: CompanionAssets.avatarForSlug(json['slug'] as String),
+          ),
+        )
+        .toList();
+  }
+
+  String _cachedMessagesKeyFor(String profileSlug) =>
+      '$_cachedMessagesKeyPrefix$profileSlug';
+
+  Future<List<ChatMessage>> fetchMessages({required String profileSlug}) async {
+    final res = await _get(
+      Uri.parse(
+        '$resolvedApiBaseUrl/messages?profileSlug=${Uri.encodeQueryComponent(profileSlug)}',
+      ),
       headers: _authHeaders,
     );
     _guardAuth(res);
@@ -357,16 +388,16 @@ class ApiService {
     final messages = list
         .map((e) => ChatMessage.fromJson(e as Map<String, dynamic>))
         .toList();
-    unawaited(_cacheMessages(messages));
+    unawaited(_cacheMessages(messages, profileSlug: profileSlug));
     return messages;
   }
 
   /// Last fetched messages, persisted so a returning visitor sees their
   /// conversation instantly while fresh data loads in the background.
-  Future<List<ChatMessage>> loadCachedMessages() async {
+  Future<List<ChatMessage>> loadCachedMessages({required String profileSlug}) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString(_cachedMessagesKey);
+      final raw = prefs.getString(_cachedMessagesKeyFor(profileSlug));
       if (raw == null || raw.isEmpty) return const [];
       final decoded = jsonDecode(raw);
       if (decoded is! List) return const [];
@@ -379,14 +410,17 @@ class ApiService {
     }
   }
 
-  Future<void> _cacheMessages(List<ChatMessage> messages) async {
+  Future<void> _cacheMessages(
+    List<ChatMessage> messages, {
+    required String profileSlug,
+  }) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final trimmed = messages.length > _maxCachedMessages
           ? messages.sublist(messages.length - _maxCachedMessages)
           : messages;
       await prefs.setString(
-        _cachedMessagesKey,
+        _cachedMessagesKeyFor(profileSlug),
         jsonEncode(trimmed.map((m) => m.toJson()).toList()),
       );
     } catch (_) {
@@ -397,8 +431,12 @@ class ApiService {
   Future<
     ({ChatMessage user, ChatMessage assistant, List<ChatMessage> assistants})
   >
-  sendText(String text, {ZaraMood? mood}) async {
-    final batch = await sendTextBatch([text], mood: mood);
+  sendText(String text, {ZaraMood? mood, required String profileSlug}) async {
+    final batch = await sendTextBatch(
+      [text],
+      mood: mood,
+      profileSlug: profileSlug,
+    );
     return (
       user: batch.users.last,
       assistant: batch.assistant,
@@ -414,12 +452,17 @@ class ApiService {
       bool suggestPrivateMode,
     })
   >
-  sendTextBatch(List<String> texts, {ZaraMood? mood}) async {
+  sendTextBatch(
+    List<String> texts, {
+    ZaraMood? mood,
+    required String profileSlug,
+  }) async {
     final res = await _post(
       Uri.parse('$resolvedApiBaseUrl/messages/text/batch'),
       headers: _authHeaders,
       body: jsonEncode({
         'texts': texts,
+        'profileSlug': profileSlug,
         if (mood != null) 'mood': mood.serverValue,
       }),
       timeout: _replyTimeout,
@@ -452,12 +495,17 @@ class ApiService {
     );
   }
 
-  Future<({ChatMessage user, ChatMessage assistant})> sendVoice(VoiceUpload audio, {ZaraMood? mood}) async {
+  Future<({ChatMessage user, ChatMessage assistant})> sendVoice(
+    VoiceUpload audio, {
+    ZaraMood? mood,
+    required String profileSlug,
+  }) async {
     final request = http.MultipartRequest(
       'POST',
       Uri.parse('$resolvedApiBaseUrl/messages/voice'),
     );
     request.headers['Authorization'] = 'Bearer $_token';
+    request.fields['profileSlug'] = profileSlug;
     if (mood != null) {
       request.fields['mood'] = mood.serverValue;
     }
@@ -504,9 +552,13 @@ class ApiService {
     }
   }
 
-  Future<PersonalityAccess> fetchPersonalityAccess() async {
+  Future<PersonalityAccess> fetchPersonalityAccess({
+    required String profileSlug,
+  }) async {
     final res = await _get(
-      Uri.parse('$resolvedApiBaseUrl/personalities/status'),
+      Uri.parse(
+        '$resolvedApiBaseUrl/personalities/status?profileSlug=${Uri.encodeQueryComponent(profileSlug)}',
+      ),
       headers: _authHeaders,
     );
     _guardAuth(res);
@@ -518,10 +570,13 @@ class ApiService {
     );
   }
 
-  Future<PersonalityPaymentOrder> createPersonalityOrder() async {
+  Future<PersonalityPaymentOrder> createPersonalityOrder({
+    required String profileSlug,
+  }) async {
     final res = await _post(
       Uri.parse('$resolvedApiBaseUrl/personalities/orders'),
       headers: _authHeaders,
+      body: jsonEncode({'profileSlug': profileSlug}),
     );
     _guardAuth(res);
     if (res.statusCode >= 400) {

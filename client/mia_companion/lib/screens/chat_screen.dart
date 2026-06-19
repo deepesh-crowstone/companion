@@ -6,6 +6,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:record/record.dart';
 
 import '../models/chat_message.dart';
+import '../models/companion_profile.dart';
 import '../models/disappearing_messages_toggle_update.dart';
 import '../models/mood_change_update.dart';
 import '../models/private_mode_upsell_update.dart';
@@ -53,7 +54,9 @@ import 'user_profile_screen.dart';
 import 'voice_call_screen.dart';
 
 class ChatScreen extends StatefulWidget {
-  const ChatScreen({super.key});
+  const ChatScreen({super.key, required this.profile});
+
+  final CompanionProfile profile;
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -130,6 +133,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _freeMessages.addListener(_onFreeMessagesChanged);
     unawaited(_freeMessages.ensureLoaded());
     unawaited(_freeMessages.refreshConfig());
+    unawaited(MoodController.instance.setActiveProfile(widget.profile.slug));
     _scheduleExpiryRefresh();
     _load();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -295,7 +299,9 @@ class _ChatScreenState extends State<ChatScreen> {
     // Paint the last conversation instantly for returning visitors while we
     // authenticate and revalidate against the server in the background.
     if (_messages.isEmpty) {
-      final cached = await ApiService.instance.loadCachedMessages();
+      final cached = await ApiService.instance.loadCachedMessages(
+        profileSlug: widget.profile.slug,
+      );
       if (!mounted) return;
       if (cached.isNotEmpty) {
         setState(() {
@@ -312,7 +318,9 @@ class _ChatScreenState extends State<ChatScreen> {
       if (!ApiService.instance.isLoggedIn) {
         await ApiService.instance.ensureAuthenticated();
       }
-      final messages = await ApiService.instance.fetchMessages();
+      final messages = await ApiService.instance.fetchMessages(
+        profileSlug: widget.profile.slug,
+      );
       unawaited(MoodController.instance.refreshAccess());
       unawaited(PrivateModeController.instance.refreshAccess());
       if (!mounted) return;
@@ -628,6 +636,7 @@ class _ChatScreenState extends State<ChatScreen> {
       final replyFuture = ApiService.instance.sendTextBatch(
         texts,
         mood: MoodController.instance.mood,
+        profileSlug: widget.profile.slug,
       );
       await _ensureReceiptsRead(optimisticIds);
       if (!mounted || generation != _replyGeneration) {
@@ -1053,6 +1062,7 @@ class _ChatScreenState extends State<ChatScreen> {
       final result = await ApiService.instance.sendVoice(
         upload,
         mood: MoodController.instance.mood,
+        profileSlug: widget.profile.slug,
       );
       if (!mounted || generation != _replyGeneration) {
         await discardVoiceRecordingOutput(path);
@@ -1321,6 +1331,8 @@ class _ChatScreenState extends State<ChatScreen> {
         child: Column(
           children: [
             MiaChatHeader(
+              companionName: widget.profile.name,
+              avatarAsset: widget.profile.avatarAsset,
               statusText: _statusText,
               showMoodPicker: false,
               onProfile: () {
@@ -1366,7 +1378,10 @@ class _ChatScreenState extends State<ChatScreen> {
                             ),
                           )
                         : _timeline.isEmpty && !_showMiaActivity
-                        ? const EmptyChat()
+                        ? EmptyChat(
+                            companionName: widget.profile.name,
+                            avatarAsset: widget.profile.avatarAsset,
+                          )
                         : RefreshIndicator(
                             color: MiaColors.accent,
                             onRefresh: _load,
@@ -1396,6 +1411,7 @@ class _ChatScreenState extends State<ChatScreen> {
             WebKeyboardInset(
               focusNode: _inputFocus,
               child: ChatInputBar(
+                companionName: widget.profile.name,
                 controller: _input,
                 focusNode: _inputFocus,
                 recording: _recording,
