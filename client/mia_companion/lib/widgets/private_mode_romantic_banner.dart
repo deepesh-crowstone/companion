@@ -9,7 +9,7 @@ import 'pass_price_labels.dart';
 /// Sticky upsell below the chat header before private mode is purchased.
 ///
 /// Rendered as a premium floating card: rich romantic gradient, a soft
-/// breathing glow, a slow shimmer sweep and a glassy heart badge to draw the
+/// breathing glow, a slow shimmer sweep and a glassy chat badge to draw the
 /// eye toward the unlock action.
 class PrivateModeRomanticBanner extends StatefulWidget {
   const PrivateModeRomanticBanner({super.key, required this.onTap});
@@ -60,7 +60,7 @@ class _PrivateModeRomanticBannerState extends State<PrivateModeRomanticBanner>
           child: AnimatedBuilder(
         animation: _controller,
         builder: (context, _) {
-          // Gentle 0..1 breathing value for the glow + heart pulse.
+          // Gentle 0..1 breathing value for the glow + badge pulse.
           final pulse = 0.5 + 0.5 * math.sin(_controller.value * 2 * math.pi);
           final sweep = -0.3 + 1.6 * _shimmer.value;
           // Two quick nudges per cycle (2x the prior arrow frequency).
@@ -100,7 +100,7 @@ class _PrivateModeRomanticBannerState extends State<PrivateModeRomanticBanner>
                           mainAxisSize: MainAxisSize.min,
                           crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
-                            Center(child: _HeartBadge(pulse: pulse)),
+                            Center(child: _ChatBadge(pulse: pulse)),
                             const SizedBox(height: 9),
                             _BannerCopy(nudge: nudge),
                           ],
@@ -173,8 +173,8 @@ class _ShimmerSweep extends StatelessWidget {
   }
 }
 
-class _HeartBadge extends StatelessWidget {
-  const _HeartBadge({required this.pulse});
+class _ChatBadge extends StatelessWidget {
+  const _ChatBadge({required this.pulse});
 
   final double pulse;
 
@@ -205,7 +205,7 @@ class _HeartBadge extends StatelessWidget {
       child: Center(
         child: Transform.scale(
           scale: 1 + 0.08 * pulse,
-          child: const Icon(Icons.favorite_rounded, color: Colors.white, size: 13),
+          child: const Icon(Icons.chat_bubble_rounded, color: Colors.white, size: 13),
         ),
       ),
     );
@@ -226,53 +226,30 @@ class _BannerCopy extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.center,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Center(
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.center,
+          Text.rich(
+            TextSpan(
               children: [
-                Text(
-                  'Romance, Call & Photos',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.inter(
-                    fontSize: 16.5,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
-                    height: 1.2,
-                    letterSpacing: 0.1,
+                const TextSpan(text: 'Unlimited chats and voice notes'),
+                WidgetSpan(
+                  alignment: PlaceholderAlignment.middle,
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 6),
+                    child: const Icon(
+                      Icons.auto_awesome,
+                      size: 14,
+                      color: Color(0xFFFFD27D),
+                    ),
                   ),
                 ),
-                const SizedBox(width: 6),
-                const Icon(Icons.auto_awesome, size: 14, color: Color(0xFFFFD27D)),
               ],
             ),
-          ),
-          const SizedBox(height: 4),
-          Center(
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.verified_user_rounded,
-                  size: 12,
-                  color: Colors.white.withValues(alpha: 0.75),
-                ),
-                const SizedBox(width: 5),
-                Text(
-                  'Only for 18+ age',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.inter(
-                    fontSize: 11,
-                    color: Colors.white.withValues(alpha: 0.82),
-                    height: 1.3,
-                  ),
-                ),
-              ],
+            textAlign: TextAlign.center,
+            style: GoogleFonts.inter(
+              fontSize: 16.5,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+              height: 1.2,
+              letterSpacing: 0.1,
             ),
           ),
           const SizedBox(height: 11),

@@ -1,4 +1,4 @@
-import { MEERA_IDENTITY_PROMPT } from "./identities/meera.js";
+import { ARYAN_IDENTITY_PROMPT } from "./identities/aryan.js";
 import { ZARA_IDENTITY_PROMPT } from "./identities/zara.js";
 import type { CompanionProfile } from "./types.js";
 
@@ -15,13 +15,13 @@ const PROFILE_CATALOG: CompanionProfile[] = [
     identityPrompt: ZARA_IDENTITY_PROMPT,
   },
   {
-    slug: "meera",
-    name: "Meera",
+    slug: "aryan",
+    name: "Aryan",
     tagline: "quiet reads, warm wit, steady heart",
-    gender: "female",
+    gender: "male",
     openingTraits:
       "feel calm, perceptive, gently witty, and emotionally steady - not like an assistant, therapist, customer-support bot, or romance-script chatbot.",
-    identityPrompt: MEERA_IDENTITY_PROMPT,
+    identityPrompt: ARYAN_IDENTITY_PROMPT,
   },
 ];
 
@@ -33,6 +33,7 @@ export function getProfileBySlug(slug: string): CompanionProfile | null {
 
 export function resolveProfileSlug(slug: string | null | undefined): string {
   const normalized = slug?.trim().toLowerCase();
+  if (normalized === "meera" || normalized === "mira") return "aryan";
   if (normalized && bySlug.has(normalized)) return normalized;
   return DEFAULT_PROFILE_SLUG;
 }

@@ -3,7 +3,9 @@ class CompanionAssets {
 
   static const avatarBySlug = <String, String>{
     'zara': 'assets/images/mia_profile.webp',
-    'meera': 'assets/images/zara_gallery/photo_2.webp',
+    'aryan': 'assets/images/aryan/portrait.jpg',
+    'meera': 'assets/images/aryan/portrait.jpg',
+    'mira': 'assets/images/aryan/portrait.jpg',
   };
 
   static String avatarForSlug(String slug) {

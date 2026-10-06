@@ -11,6 +11,11 @@ class CompanionProfile {
   final String tagline;
   final String avatarAsset;
 
+  bool get isAryan =>
+      slug == 'aryan' || slug == 'meera' || slug == 'mira';
+
+  String get displayName => isAryan ? 'Aryan' : name;
+
   factory CompanionProfile.fromJson(
     Map<String, dynamic> json, {
     required String avatarAsset,

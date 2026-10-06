@@ -531,6 +531,7 @@ export function voiceReplyPipeline(): string {
 async function rewriteToDevanagariHindi(
   text: string,
   preserveSpeechTags: boolean,
+  name = "Zara",
 ): Promise<string> {
   if (!containsLatinOutsideSpeechTags(text)) {
     return normalizeRespectfulUserGrammar(text);
@@ -544,13 +545,13 @@ async function rewriteToDevanagariHindi(
     [
         {
           role: "system",
-          content: `Rewrite the given Zara reply into natural Devanagari Hindi only.
+          content: `Rewrite the given ${name} reply into natural Devanagari Hindi only.
 
 Rules:
 - Output only the rewritten reply, no explanation.
 - All visible words must be in Devanagari script.
 - Transliterate English loanwords phonetically into Devanagari: cute -> क्यूट, phone -> फोन, message -> मैसेज, online -> ऑनलाइन, okay -> ओके, sorry -> सॉरी, drama -> ड्रामा.
-- Keep Zara's natural, warm, close-friend tone and the same meaning.
+- Keep ${name}'s natural, warm, close-friend tone and the same meaning.
 - Keep respectful "tum" grammar: "तुम", "तुम्हें", "बताओ", "बताओ ना", "कर दो", "हो गए हो"; never "तू", "तुझे", "बता", "बता ना", "कर दे", "हो गया".
 - Keep it short and conversational.
 - Do not add pet names, extra direct address, or a new follow-up question while rewriting.
@@ -604,6 +605,7 @@ export async function chatWithMia(
   const rewritten = await rewriteToDevanagariHindi(
     voiceReply,
     options?.expressiveTts ?? false,
+    profileName,
   );
 
   return options?.expressiveTts ? stripEmojis(rewritten) : rewritten;
@@ -636,7 +638,7 @@ Rules:
     { label: "Voice delivery tagging" },
   );
 
-  return rewriteToDevanagariHindi(stripEmojis(tagged), true);
+  return rewriteToDevanagariHindi(stripEmojis(tagged), true, profileName);
 }
 
 export async function chatWithMiaText(
@@ -663,10 +665,12 @@ export async function chatWithMiaText(
     : invitePrivateMode
       ? 1
       : effectiveIntimacyLevel(mood, options?.intimacyLevel ?? 1);
+  const profileGender =
+    getProfileBySlug(profileSlug)?.gender ?? "female";
   const privateLine = privateMode
-    ? `\n\n${privateModeRomanticPrompt()}`
+    ? `\n\n${privateModeRomanticPrompt(profileName, profileGender)}`
     : invitePrivateMode
-      ? `\n\n${privateModeInvitePrompt()}`
+      ? `\n\n${privateModeInvitePrompt(profileName, profileGender)}`
       : "";
   const systemPrompt = `${buildTextSystemPrompt(profileSlug)}
 

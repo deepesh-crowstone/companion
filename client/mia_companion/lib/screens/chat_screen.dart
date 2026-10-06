@@ -17,6 +17,7 @@ import '../utils/human_presence.dart';
 import '../services/analytics.dart';
 import '../services/api_service.dart';
 import '../services/call_sequence_controller.dart';
+import '../services/chat_sounds.dart';
 import '../services/disappearing_messages_controller.dart';
 import '../services/free_message_controller.dart';
 import '../services/mood_controller.dart';
@@ -261,12 +262,16 @@ class _ChatScreenState extends State<ChatScreen> {
   String _statusWhenIdle() =>
       PrivateModeController.instance.privateModeActive ? 'Private' : 'Active';
 
+  void _applyMiaActivity(_MiaActivity next) {
+    _miaActivity = next;
+  }
+
   void _abortMiaReply() {
     _replyGeneration++;
     _replyTimer?.cancel();
     if (_showMiaActivity && mounted) {
       setState(() {
-        _miaActivity = _MiaActivity.none;
+        _applyMiaActivity(_MiaActivity.none);
         _statusText = _statusWhenIdle();
       });
     }
@@ -274,14 +279,14 @@ class _ChatScreenState extends State<ChatScreen> {
 
   void _showMiaTypingIndicator() {
     setState(() {
-      _miaActivity = _MiaActivity.typing;
+      _applyMiaActivity(_MiaActivity.typing);
       _statusText = 'typing...';
     });
   }
 
   void _showMiaRecordingIndicator() {
     setState(() {
-      _miaActivity = _MiaActivity.recording;
+      _applyMiaActivity(_MiaActivity.recording);
       _statusText = 'recording audio...';
     });
   }
@@ -617,6 +622,7 @@ class _ChatScreenState extends State<ChatScreen> {
       _messages = [..._messages, optimistic];
       _pinnedToBottom = true;
     });
+    unawaited(ChatSounds.instance.playSent());
     _scrollToBottom(force: true);
     _keepInputFocused();
     unawaited(_flushTextOutbox());
@@ -708,7 +714,7 @@ class _ChatScreenState extends State<ChatScreen> {
         _messages = _messages
             .where((m) => !optimisticIds.contains(m.id))
             .toList();
-        _miaActivity = _MiaActivity.none;
+        _applyMiaActivity(_MiaActivity.none);
         _statusText = _statusWhenIdle();
         for (final id in optimisticIds) {
           _receiptStatuses.remove(id);
@@ -739,13 +745,16 @@ class _ChatScreenState extends State<ChatScreen> {
         if (_shouldLockNewReply()) {
           _lockedReplyIds.add(assistants[i].id);
         }
-        _miaActivity = i == assistants.length - 1
-            ? _MiaActivity.none
-            : _MiaActivity.typing;
+        _applyMiaActivity(
+          i == assistants.length - 1
+              ? _MiaActivity.none
+              : _MiaActivity.typing,
+        );
         _statusText = i == assistants.length - 1
             ? _statusWhenIdle()
             : 'typing...';
       });
+      unawaited(ChatSounds.instance.playReceived());
       _scrollToBottom(animate: true);
     }
   }
@@ -1042,9 +1051,10 @@ class _ChatScreenState extends State<ChatScreen> {
     // 1) Your voice note appears first.
     setState(() {
       _messages = [..._messages, optimistic];
-      _miaActivity = _MiaActivity.none;
+      _applyMiaActivity(_MiaActivity.none);
       _pinnedToBottom = true;
     });
+    unawaited(ChatSounds.instance.playSent());
     _scrollToBottom(force: true);
 
     // 2) Then Mia's recording state (voice reply).
@@ -1088,9 +1098,10 @@ class _ChatScreenState extends State<ChatScreen> {
         if (_shouldLockNewReply()) {
           _lockedReplyIds.add(result.assistant.id);
         }
-        _miaActivity = _MiaActivity.none;
+        _applyMiaActivity(_MiaActivity.none);
         _statusText = _statusWhenIdle();
       });
+      unawaited(ChatSounds.instance.playReceived());
       await discardVoiceRecordingOutput(path);
       _scrollToBottom(force: true, animate: true);
     } catch (e) {
@@ -1098,7 +1109,7 @@ class _ChatScreenState extends State<ChatScreen> {
       if (!mounted) return;
       setState(() {
         _messages = _messages.where((m) => m.id != optimisticId).toList();
-        _miaActivity = _MiaActivity.none;
+        _applyMiaActivity(_MiaActivity.none);
         _statusText = _statusWhenIdle();
       });
       _handleError(e);
@@ -1331,13 +1342,15 @@ class _ChatScreenState extends State<ChatScreen> {
         child: Column(
           children: [
             MiaChatHeader(
-              companionName: widget.profile.name,
+              companionName: widget.profile.displayName,
               avatarAsset: widget.profile.avatarAsset,
               statusText: _statusText,
               showMoodPicker: false,
               onProfile: () {
                 Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const MiaProfileScreen()),
+                  MaterialPageRoute(
+                    builder: (_) => MiaProfileScreen(profile: widget.profile),
+                  ),
                 );
               },
               onCall: _onCallPressed,
@@ -1379,7 +1392,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           )
                         : _timeline.isEmpty && !_showMiaActivity
                         ? EmptyChat(
-                            companionName: widget.profile.name,
+                            companionName: widget.profile.displayName,
                             avatarAsset: widget.profile.avatarAsset,
                           )
                         : RefreshIndicator(
@@ -1411,7 +1424,7 @@ class _ChatScreenState extends State<ChatScreen> {
             WebKeyboardInset(
               focusNode: _inputFocus,
               child: ChatInputBar(
-                companionName: widget.profile.name,
+                companionName: widget.profile.displayName,
                 controller: _input,
                 focusNode: _inputFocus,
                 recording: _recording,

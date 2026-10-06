@@ -3,13 +3,35 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../data/aryan_profile.dart';
 import '../data/mia_profile.dart';
+import '../models/companion_profile.dart';
 import '../theme/mia_theme.dart';
 import '../widgets/mia_avatar.dart';
 import '../widgets/mia_profile_photo_viewer.dart';
 
 class MiaProfileScreen extends StatelessWidget {
-  const MiaProfileScreen({super.key});
+  const MiaProfileScreen({super.key, this.profile});
+
+  final CompanionProfile? profile;
+
+  bool get _aryan => profile?.isAryan ?? false;
+
+  String get _name => _aryan ? AryanProfile.name : MiaProfile.name;
+
+  String get _avatar =>
+      _aryan ? AryanProfile.avatarAsset : MiaProfile.avatarAsset;
+
+  String get _about => _aryan ? AryanProfile.about : MiaProfile.about;
+
+  List<String> get _gallery =>
+      _aryan ? AryanProfile.galleryAssets : MiaProfile.galleryAssets;
+
+  List<String> get _hobbies =>
+      _aryan ? AryanProfile.hobbies : MiaProfile.hobbies;
+
+  List<MiaSocialLink> get _links =>
+      _aryan ? AryanProfile.followLinks : MiaProfile.followLinks;
 
   @override
   Widget build(BuildContext context) {
@@ -36,17 +58,18 @@ class MiaProfileScreen extends StatelessWidget {
                   children: [
                     MiaAvatar(
                       size: 108,
+                      assetPath: _avatar,
                       showBorder: true,
                       borderWidth: 3,
                       onTap: () => MiaProfilePhotoViewer.open(
                         context,
-                        asset: MiaProfile.avatarAsset,
+                        asset: _avatar,
                       ),
                     ),
                     const SizedBox(height: 16),
-                    Text(MiaProfile.name, style: MiaTheme.serifTitle(size: 32)),
+                    Text(_name, style: MiaTheme.serifTitle(size: 32)),
                     const SizedBox(height: 10),
-                    const _FollowMeRow(),
+                    _FollowMeRow(links: _links),
                     const SizedBox(height: 24),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -54,7 +77,7 @@ class MiaProfileScreen extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           Text(
-                            MiaProfile.about,
+                            _about,
                             textAlign: TextAlign.center,
                             style: GoogleFonts.inter(
                               fontSize: 15,
@@ -63,13 +86,13 @@ class MiaProfileScreen extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(height: 16),
-                          _PhotoGrid(assets: MiaProfile.galleryAssets),
+                          _PhotoGrid(assets: _gallery),
                           const SizedBox(height: 16),
                           Wrap(
                             alignment: WrapAlignment.center,
                             spacing: 8,
                             runSpacing: 8,
-                            children: MiaProfile.hobbies.map((h) {
+                            children: _hobbies.map((h) {
                               return Container(
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 14,
@@ -107,7 +130,9 @@ class MiaProfileScreen extends StatelessWidget {
 }
 
 class _FollowMeRow extends StatelessWidget {
-  const _FollowMeRow();
+  const _FollowMeRow({required this.links});
+
+  final List<MiaSocialLink> links;
 
   Future<void> _open(BuildContext context, MiaSocialLink link) async {
     final uri = Uri.parse(link.url);
@@ -146,15 +171,15 @@ class _FollowMeRow extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 8),
-        for (var i = 0; i < MiaProfile.followLinks.length; i++) ...[
+        for (var i = 0; i < links.length; i++) ...[
           if (i > 0) const SizedBox(width: 2.5),
           InkWell(
-            onTap: () => _open(context, MiaProfile.followLinks[i]),
+            onTap: () => _open(context, links[i]),
             borderRadius: BorderRadius.circular(8),
             child: Padding(
               padding: const EdgeInsets.all(5),
               child: FaIcon(
-                _iconFor(MiaProfile.followLinks[i]),
+                _iconFor(links[i]),
                 size: 20,
                 color: MiaColors.accentDeep,
               ),
