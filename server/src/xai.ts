@@ -2,7 +2,6 @@ import {
   MIA_STT_LANGUAGE,
   MIA_TTS_LANGUAGE,
   MIA_VOICE_ID,
-  XAI_CHAT_MODEL,
   buildTextSystemPrompt,
   buildVoiceSystemPrompt,
 } from "./mia.js";
@@ -23,11 +22,10 @@ import {
   privateModeInvitePrompt,
   privateModeRomanticPrompt,
 } from "./private-mode.js";
-import { xaiChatCompletion } from "./xai-client.js";
+import { replyChatCompletion } from "./reply-client.js";
 
 const XAI_BASE = "https://api.x.ai/v1";
 const ELEVENLABS_BASE = "https://api.elevenlabs.io/v1";
-const MIA_CHAT_TEMPERATURE = 0.78;
 const MAX_TEXT_REPLY_SEGMENTS = 3;
 
 const LATIN_LETTER_RE = /[A-Za-z]/;
@@ -542,12 +540,8 @@ async function rewriteToDevanagariHindi(
     ? "Preserve any existing TTS delivery tags exactly as-is, including square-bracket tags like [laughs], [sighs], [teasing], [pauses], [light chuckle], and any <whisper>...</whisper> tags. Only rewrite the human-readable words around them."
     : "Do not add speech tags or markup.";
 
-  const rewritten = await xaiChatCompletion(
-    {
-      model: XAI_CHAT_MODEL,
-      reasoning_effort: "low",
-      temperature: 0.2,
-      messages: [
+  const rewritten = await replyChatCompletion(
+    [
         {
           role: "system",
           content: `Rewrite the given Zara reply into natural Devanagari Hindi only.
@@ -564,7 +558,6 @@ Rules:
         },
         { role: "user", content: text },
       ],
-    },
     { label: "Devanagari rewrite" },
   );
 
@@ -605,12 +598,7 @@ export async function chatWithMia(
     });
   }
 
-  const reply = await xaiChatCompletion({
-    model: XAI_CHAT_MODEL,
-    reasoning_effort: "low",
-    messages,
-    temperature: MIA_CHAT_TEMPERATURE,
-  });
+  const reply = await replyChatCompletion(messages);
 
   const voiceReply = options?.expressiveTts ? stripEmojis(reply) : reply;
   const rewritten = await rewriteToDevanagariHindi(
@@ -630,12 +618,8 @@ async function addVoiceDeliveryToTextReply(
     throw new Error("Empty text reply for voice delivery");
   }
 
-  const tagged = await xaiChatCompletion(
-    {
-      model: XAI_CHAT_MODEL,
-      reasoning_effort: "low",
-      temperature: 0.35,
-      messages: [
+  const tagged = await replyChatCompletion(
+    [
         {
           role: "system",
           content: `Convert ${profileName}'s normal text-chat reply into a realistic voice-note script for TTS.
@@ -649,7 +633,6 @@ Rules:
         },
         { role: "user", content: cleanReply },
       ],
-    },
     { label: "Voice delivery tagging" },
   );
 
@@ -713,12 +696,7 @@ output format:
     });
   }
 
-  const reply = await xaiChatCompletion({
-    model: XAI_CHAT_MODEL,
-    reasoning_effort: "low",
-    messages,
-    temperature: MIA_CHAT_TEMPERATURE,
-  });
+  const reply = await replyChatCompletion(messages);
 
   return parseTextReplySegments(reply);
 }

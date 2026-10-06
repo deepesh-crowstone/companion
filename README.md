@@ -135,7 +135,10 @@ The API returns **presigned URLs** (7-day TTL) for playback. Legacy disk `/uploa
 | `JWT_SECRET` | Yes | Long random string (32+ chars) |
 | `NODE_ENV` | Yes | `production` |
 | `BUCKET`, `ENDPOINT`, `REGION`, `ACCESS_KEY_ID`, `SECRET_ACCESS_KEY` | Yes (voice) | From Railway Bucket (reference) |
-| `XAI_CHAT_MODEL` | No | `grok-4.7` (default) |
+| `XAI_CHAT_MODEL` | No | `grok-4.7` (classifiers and profile text; chat replies use `REPLY_MODEL`) |
+| `REPLY_API_BASE_URL` | Yes (replies) | `http://103.48.50.181:6006/v1` |
+| `REPLY_API_KEY` | Yes (replies) | Bearer token for the reply server |
+| `REPLY_MODEL` | No | `nvidia/Qwen3.6-35B-A3B-NVFP4` |
 | `MIA_TTS_PROVIDER` | No | `elevenlabs` (default), or `xai` fallback |
 | `ELEVENLABS_API_KEY` | Yes (voice) | From ElevenLabs dashboard |
 | `ELEVENLABS_VOICE_ID` | Yes (voice) | ElevenLabs voice ID |
