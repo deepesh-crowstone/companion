@@ -17,6 +17,7 @@ import {
 } from "../personalities.js";
 import { getPersonalityPassPricing } from "../pricing.js";
 import { getProfileBySlug, resolveProfileSlug } from "../profiles/catalog.js";
+import { displayNameForSlug } from "../profiles/display-name.js";
 
 export const personalitiesRouter = Router();
 
@@ -35,7 +36,7 @@ personalitiesRouter.get("/status", authMiddleware, async (req, res) => {
     res.json({
       ...access,
       profileSlug,
-      profileName: profile?.name ?? profileSlug,
+      profileName: profile?.name ?? displayNameForSlug(profileSlug),
       cashfreeConfigured: isCashfreeConfigured(),
       cashfreeEnvironment: cashfreePublicEnvironment(),
     });
@@ -68,7 +69,7 @@ personalitiesRouter.post("/orders", authMiddleware, async (req, res) => {
     }
 
     const pricing = getPersonalityPassPricing();
-    const profileName = profile?.name ?? profileSlug;
+    const profileName = profile?.name ?? displayNameForSlug(profileSlug);
     const cfOrderId = buildPersonalityOrderId(auth.userId);
     const cfOrder = await createCashfreeOrder({
       orderId: cfOrderId,

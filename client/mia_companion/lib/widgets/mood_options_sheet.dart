@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../models/companion_profile.dart';
 import '../models/zara_mood.dart';
 import '../services/mood_controller.dart';
 import '../theme/mia_theme.dart';
@@ -39,7 +40,7 @@ Future<void> showMoodOptionsSheet(BuildContext context) {
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    "Select Zara's Personality",
+                    "Select ${CompanionProfile.displayNameForSlug(MoodController.instance.activeProfileSlug)}'s Personality",
                     style: GoogleFonts.inter(
                       fontSize: 18,
                       fontWeight: FontWeight.w700,

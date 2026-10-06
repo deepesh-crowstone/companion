@@ -5,6 +5,8 @@
  * xAI fallback uses a smaller overlapping square-bracket tag set.
  */
 
+import { ZARA_DISPLAY_NAME } from "./profiles/display-name.js";
+
 type VoiceProfile = {
   name: string;
   gender: "female" | "male";
@@ -85,14 +87,14 @@ rules:
 
 /** @deprecated Build instructions with the active profile. */
 export const MIA_VOICE_TTS_INSTRUCTIONS = buildXaiVoiceTtsInstructions({
-  name: "Zara",
+  name: ZARA_DISPLAY_NAME,
   gender: "female",
 });
 
 /** @deprecated Build instructions with the active profile. */
 export const ELEVENLABS_VOICE_TTS_INSTRUCTIONS =
   buildElevenLabsVoiceTtsInstructions({
-    name: "Zara",
+    name: ZARA_DISPLAY_NAME,
     gender: "female",
   });
 

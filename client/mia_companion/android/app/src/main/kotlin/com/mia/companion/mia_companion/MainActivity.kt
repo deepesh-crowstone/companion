@@ -23,10 +23,10 @@ class MainActivity : FlutterActivity() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val channel = NotificationChannel(
             "zara_messages",
-            "Messages from Zara",
+            "Messages from Riva",
             NotificationManager.IMPORTANCE_HIGH,
         ).apply {
-            description = "New messages from Zara"
+            description = "New messages from Riva"
         }
         val manager = getSystemService(NotificationManager::class.java)
         manager?.createNotificationChannel(channel)

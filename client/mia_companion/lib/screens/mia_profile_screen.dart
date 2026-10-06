@@ -17,7 +17,7 @@ class MiaProfileScreen extends StatelessWidget {
 
   bool get _aryan => profile?.isAryan ?? false;
 
-  String get _name => _aryan ? AryanProfile.name : MiaProfile.name;
+  String get _name => profile?.displayName ?? MiaProfile.name;
 
   String get _avatar =>
       _aryan ? AryanProfile.avatarAsset : MiaProfile.avatarAsset;

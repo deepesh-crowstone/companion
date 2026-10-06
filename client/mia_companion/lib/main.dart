@@ -99,7 +99,7 @@ class _MiaAppState extends State<MiaApp> {
       child: MaterialApp(
         navigatorKey: rootNavigatorKey,
         navigatorObservers: [PosthogObserver()],
-        title: 'Zara',
+        title: CompanionProfile.zaraDisplayName,
         debugShowCheckedModeBanner: false,
         theme: MiaTheme.light(),
         darkTheme: MiaTheme.dark(),
@@ -317,7 +317,7 @@ class _BootstrapState extends State<_Bootstrap> {
       key: _chatScreenKey,
       profile: const CompanionProfile(
         slug: 'zara',
-        name: 'Zara',
+        name: CompanionProfile.zaraDisplayName,
         tagline: 'soft chaos, sharp timing, good coffee',
         avatarAsset: 'assets/images/mia_profile.webp',
       ),

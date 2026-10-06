@@ -35,6 +35,7 @@ import {
 } from "../zara-photos.js";
 import { notifyUserOfAssistantMessages } from "../push-notifications.js";
 import { getProfileBySlug, resolveProfileSlug } from "../profiles/catalog.js";
+import { displayNameForSlug } from "../profiles/display-name.js";
 import { MAX_CONTEXT_SOURCE_MESSAGES } from "../conversation-context.js";
 import {
   isSimpleOpeningGreeting,
@@ -228,7 +229,8 @@ async function buildTextReply(
   profileSlug: string,
 ): Promise<{ assistantMsgs: DbMessage[]; suggestPrivateMode: boolean }> {
   const userId = userMsgs[0].user_id;
-  const profileName = getProfileBySlug(profileSlug)?.name ?? profileSlug;
+  const profileName =
+    getProfileBySlug(profileSlug)?.name ?? displayNameForSlug(profileSlug);
   const lastUserText = userMsgs[userMsgs.length - 1]?.content ?? "";
   if (
     !privateMode &&
@@ -283,7 +285,7 @@ async function buildTextReply(
   if (canAttachPrivatePhoto) {
     const photoRequest = await classifyPhotoRequest(
       lastUserText,
-      getProfileBySlug(profileSlug)?.name ?? profileSlug,
+      getProfileBySlug(profileSlug)?.name ?? displayNameForSlug(profileSlug),
     );
     if (photoRequest.wantsPhoto) {
       const photo = pickZaraPhoto({
@@ -381,7 +383,7 @@ messagesRouter.post("/text", async (req, res) => {
     void notifyUserOfAssistantMessages(
       auth.userId,
       assistantMsgs,
-      getProfileBySlug(profileSlug)?.name,
+      getProfileBySlug(profileSlug)?.name ?? displayNameForSlug(profileSlug),
     ).catch((e) => console.warn("Push notification failed:", e));
 
     res.json({
@@ -461,7 +463,7 @@ messagesRouter.post("/text/batch", async (req, res) => {
     void notifyUserOfAssistantMessages(
       auth.userId,
       assistantMsgs,
-      getProfileBySlug(profileSlug)?.name,
+      getProfileBySlug(profileSlug)?.name ?? displayNameForSlug(profileSlug),
     ).catch((e) => console.warn("Push notification failed:", e));
 
     res.json({
@@ -597,7 +599,7 @@ messagesRouter.post("/voice", upload.single("audio"), async (req, res) => {
     void notifyUserOfAssistantMessages(
       auth.userId,
       [assistantMsg],
-      getProfileBySlug(profileSlug)?.name,
+      getProfileBySlug(profileSlug)?.name ?? displayNameForSlug(profileSlug),
     ).catch((e) => console.warn("Push notification failed:", e));
 
     res.json({

@@ -6,6 +6,7 @@ import {
   buildVoiceSystemPrompt,
 } from "./mia.js";
 import { getProfileBySlug, resolveProfileSlug } from "./profiles/catalog.js";
+import { ZARA_DISPLAY_NAME } from "./profiles/display-name.js";
 import {
   buildElevenLabsVoiceTtsInstructions,
   buildXaiVoiceTtsInstructions,
@@ -375,7 +376,7 @@ async function rewriteToDevanagariHindi(
   text: string,
   preserveSpeechTags: boolean,
   profile: Pick<CompanionProfile, "name" | "gender"> = {
-    name: "Zara",
+    name: ZARA_DISPLAY_NAME,
     gender: "female",
   },
 ): Promise<string> {

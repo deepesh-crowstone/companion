@@ -7,7 +7,7 @@
     <!-- Required when Play Console declares advertising ID usage (AppsFlyer attribution). -->
     <uses-permission android:name="com.google.android.gms.permission.AD_ID"/>
     <application
-        android:label="Zara"
+        android:label="Riva"
         android:usesCleartextTraffic="true"
         android:networkSecurityConfig="@xml/network_security_config"
         android:name="${applicationName}"

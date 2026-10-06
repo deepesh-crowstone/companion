@@ -18,7 +18,8 @@ import {
   TEXT_REPLY_OUTPUT_FORMAT,
   buildPlatformBehavior,
 } from "../src/platform-behavior.js";
-import { getProfileBySlug } from "../src/profiles/catalog.js";
+import { getProfileBySlug, resolveProfileSlug } from "../src/profiles/catalog.js";
+import { displayNameForSlug } from "../src/profiles/display-name.js";
 import {
   privateModeInvitePrompt,
   privateModeRomanticPrompt,
@@ -70,12 +71,30 @@ function message(index: number, role: "user" | "assistant"): DbMessage {
   };
 }
 
+test("zara slug stays stored and is spoken as Riva", () => {
+  const zara = profile("zara");
+  assert.equal(zara.slug, "zara");
+  assert.equal(zara.name, "Riva");
+  assert.equal(resolveProfileSlug("zara"), "zara");
+  assert.equal(displayNameForSlug("zara"), "Riva");
+  assert.equal(displayNameForSlug("Zara"), "Riva");
+  assert.match(zara.identityPrompt, /\bRiva\b/);
+  assert.doesNotMatch(zara.identityPrompt, /\bZara\b/);
+  assert.match(buildTextSystemPrompt("zara"), /you are Riva\b/);
+  assert.doesNotMatch(buildTextSystemPrompt("zara"), /\bZara\b/);
+  assert.match(buildRealtimeInstructions("zara"), /you are Riva\b/);
+  assert.match(moodPromptForMood("friendly", "zara"), /current Riva personality/);
+  assert.doesNotMatch(moodPromptForMood("friendly", "zara"), /\bzara\b/i);
+  assert.match(privateModeInvitePrompt(), /\bas Riva\b/);
+  assert.doesNotMatch(privateModeInvitePrompt(), /\bZara\b/);
+});
+
 test("Zara and Aryan prompts encode distinct, gender-safe behavior", () => {
   const zara = profile("zara");
   const aryan = profile("aryan");
   assert.match(zara.identityPrompt, /mock-dramatic|Fast playful pivots/i);
   assert.match(aryan.identityPrompt, /dry line|practical observations/i);
-  assert.doesNotMatch(aryan.identityPrompt, /\bZara\b|bad-girl|girlfriend/i);
+  assert.doesNotMatch(aryan.identityPrompt, /\bZara\b|\bRiva\b|bad-girl|girlfriend/i);
 
   for (const mood of ["friendly", "funny", "caring", "bold"] as const) {
     const line = moodPromptForMood(mood, aryan);
@@ -107,7 +126,7 @@ test("Zara and Aryan prompts encode distinct, gender-safe behavior", () => {
     buildElevenLabsVoiceTtsInstructions(aryan),
   ].join("\n");
   assert.match(aryanTts, /masculine self-grammar/);
-  assert.doesNotMatch(aryanTts, /Zara|feminine self-grammar/);
+  assert.doesNotMatch(aryanTts, /Zara|Riva|feminine self-grammar/);
   assert.match(intimacyPromptForLevel(3, "Aryan"), /with Aryan/);
 });
 
@@ -125,7 +144,7 @@ test("realtime instructions use the selected profile", () => {
   assert.match(prompt, /you are Aryan/);
   assert.match(prompt, /UX researcher/);
   assert.match(prompt, /say so honestly/i);
-  assert.doesNotMatch(prompt, /you are Zara|Zara's/);
+  assert.doesNotMatch(prompt, /you are Zara|Zara's|you are Riva|Riva's/);
 });
 
 test("private photo availability never substitutes Zara media for Aryan", () => {
@@ -368,9 +387,10 @@ test("non-local HTTP reply endpoint produces a key-free warning", () => {
 });
 
 test("openers are profile-specific, language-aware, and stable", () => {
-  assert.equal(isSimpleOpeningGreeting("hi", "Zara"), true);
+  assert.equal(isSimpleOpeningGreeting("hi", "Riva"), true);
+  assert.equal(isSimpleOpeningGreeting("hi riva", "Riva"), true);
   assert.equal(isSimpleOpeningGreeting("hello!!!", "Aryan"), true);
-  assert.equal(isSimpleOpeningGreeting("kaise ho", "Zara"), false);
+  assert.equal(isSimpleOpeningGreeting("kaise ho", "Riva"), false);
   assert.equal(isSimpleOpeningGreeting("I had a long day", "Aryan"), false);
 
   for (const slug of ["zara", "aryan"] as const) {

@@ -1,5 +1,6 @@
 import { ARYAN_IDENTITY_PROMPT } from "./identities/aryan.js";
 import { ZARA_IDENTITY_PROMPT } from "./identities/zara.js";
+import { ZARA_DISPLAY_NAME } from "./display-name.js";
 import type { CompanionProfile } from "./types.js";
 
 export const DEFAULT_PROFILE_SLUG = "zara";
@@ -7,7 +8,7 @@ export const DEFAULT_PROFILE_SLUG = "zara";
 const PROFILE_CATALOG: CompanionProfile[] = [
   {
     slug: "zara",
-    name: "Zara",
+    name: ZARA_DISPLAY_NAME,
     tagline: "soft chaos, sharp timing, good coffee",
     gender: "female",
     openingTraits:

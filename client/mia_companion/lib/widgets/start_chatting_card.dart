@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../models/companion_profile.dart';
+
 /// Bottom CTA for the onboarding welcome screen.
 class StartChattingCard extends StatelessWidget {
   const StartChattingCard({
@@ -55,7 +57,7 @@ class StartChattingCard extends StatelessWidget {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Text(
-                            'Start Chatting with Zara',
+                            'Start Chatting with ${CompanionProfile.zaraDisplayName}',
                             style: GoogleFonts.inter(
                               fontWeight: FontWeight.w700,
                               fontSize: 16,

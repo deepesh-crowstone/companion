@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../models/companion_profile.dart';
 import '../services/api_service.dart';
+import '../services/mood_controller.dart';
 import '../services/private_mode_controller.dart';
 import '../theme/mia_theme.dart';
 import '../utils/account_auth_validation.dart';
@@ -107,7 +109,7 @@ class _PrivateModeAgeSheetState extends State<_PrivateModeAgeSheet> {
               ),
               const SizedBox(height: 10),
               Text(
-                'Enter your age to unlock private romantic chat with Zara.',
+                'Enter your age to unlock private romantic chat with ${CompanionProfile.displayNameForSlug(MoodController.instance.activeProfileSlug)}.',
                 textAlign: TextAlign.center,
                 style: GoogleFonts.inter(
                   fontSize: 15,

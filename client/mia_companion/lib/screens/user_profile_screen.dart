@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../config/app_info.dart';
+import '../models/companion_profile.dart';
 import '../data/profile_legal_content.dart';
 import '../services/api_service.dart';
 import '../theme/mia_theme.dart';
@@ -16,7 +17,9 @@ class UserProfileScreen extends StatelessWidget {
     final uri = Uri(
       scheme: 'mailto',
       path: 'hello@crowstone.ai',
-      queryParameters: const {'subject': 'Zara App Support'},
+      queryParameters: {
+        'subject': '${CompanionProfile.zaraDisplayName} App Support',
+      },
     );
     if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
       if (context.mounted) {

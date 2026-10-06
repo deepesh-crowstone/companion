@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/companion_profile.dart';
 import '../services/ads_conversion_service.dart';
 import '../services/analytics.dart';
 import '../services/api_service.dart';
@@ -216,7 +217,7 @@ class _OnboardingPitch extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(left: 4, bottom: 16),
               child: Text(
-                'Meet Zara',
+                'Meet ${CompanionProfile.zaraDisplayName}',
                 style: MiaTheme.serifTitle(size: 68).copyWith(
                   fontWeight: FontWeight.w400,
                   color: Colors.white,

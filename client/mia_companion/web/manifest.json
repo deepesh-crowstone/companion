@@ -1,11 +1,11 @@
 {
-    "name": "Zara",
-    "short_name": "Zara",
+    "name": "Riva",
+    "short_name": "Riva",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0F0615",
     "theme_color": "#0F0615",
-    "description": "Zara AI companion for natural chat and voice notes.",
+    "description": "Riva AI companion for natural chat and voice notes.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

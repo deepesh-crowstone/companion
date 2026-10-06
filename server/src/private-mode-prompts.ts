@@ -1,5 +1,7 @@
+import { ZARA_DISPLAY_NAME } from "./profiles/display-name.js";
+
 export function privateModeInvitePrompt(
-  name = "Zara",
+  name = ZARA_DISPLAY_NAME,
   gender: "female" | "male" = "female",
 ): string {
   const can = gender === "male" ? "sakta" : "sakti";
@@ -16,7 +18,7 @@ export function privateModeInvitePrompt(
 }
 
 export function privateModeRomanticPrompt(
-  name = "Zara",
+  name = ZARA_DISPLAY_NAME,
   gender: "female" | "male" = "female",
 ): string {
   const selfGrammar =

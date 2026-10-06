@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 
+import '../models/companion_profile.dart';
 import '../models/pass_pricing.dart';
 import '../models/zara_mood.dart';
 import '../services/analytics.dart';
@@ -172,7 +173,7 @@ class _PersonalityUnlockSheetState extends State<_PersonalityUnlockSheet> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    'Switch Zara\'s tone anytime while your pass is active.',
+                    'Switch ${CompanionProfile.displayNameForSlug(MoodController.instance.activeProfileSlug)}\'s tone anytime while your pass is active.',
                     style: GoogleFonts.inter(
                       fontSize: 14,
                       height: 1.4,

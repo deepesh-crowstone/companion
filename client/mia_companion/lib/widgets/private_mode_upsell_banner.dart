@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../models/companion_profile.dart';
+import '../services/mood_controller.dart';
+
 /// In-chat CTA after romantic intent in normal mode.
 class PrivateModeUpsellBanner extends StatelessWidget {
   const PrivateModeUpsellBanner({super.key, required this.onTalkPrivately});
@@ -33,7 +36,7 @@ class PrivateModeUpsellBanner extends StatelessWidget {
                       size: 18, color: Colors.pink.shade700),
                   const SizedBox(width: 10),
                   Text(
-                    'Talk Privately with Zara',
+                    'Talk Privately with ${CompanionProfile.displayNameForSlug(MoodController.instance.activeProfileSlug)}',
                     style: GoogleFonts.inter(
                       fontSize: 14,
                       fontWeight: FontWeight.w700,

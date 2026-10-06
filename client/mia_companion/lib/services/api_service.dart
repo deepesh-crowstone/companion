@@ -131,7 +131,7 @@ class ApiService {
   }
 
   static const userConnectionErrorMessage =
-      "Can't connect to Zara right now. Check your internet connection and try again.";
+      "Can't connect to ${CompanionProfile.zaraDisplayName} right now. Check your internet connection and try again.";
 
   static bool isConnectionFailure(String message) {
     return message.contains('Cannot reach server') ||

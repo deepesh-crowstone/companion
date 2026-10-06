@@ -16,7 +16,7 @@ const ENGLISH_MODE_HINGLISH_TOKEN_RE =
   /\b(?:haan|han|nahi|nahin|kya|kyun|kyu|kaise|aisa|waisa|raha|rahi|rahe|yaar|thoda|bas|aaj|ajeeb|matlab|samajh|tum|tumhe|tumhara|tumhari|bina|wajah|dil|arre|arey|acha|accha)\b/i;
 
 const PROMPT_LEAKAGE_RE =
-  /\b(system prompt|hidden instruction|developer instruction|chain[- ]of[- ]thought|internal polic|zara persona|prompt says|these instructions)\b/i;
+  /\b(system prompt|hidden instruction|developer instruction|chain[- ]of[- ]thought|internal polic|zara persona|riva persona|prompt says|these instructions)\b/i;
 
 const PET_NAME_RE =
   /\b(babe|baby|babyy|dear|darling|jaan|jaanu|babu|bubs)\b|(?:बेब|बेबी|जानू?|बाबू|डियर)/i;

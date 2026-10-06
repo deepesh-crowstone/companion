@@ -1,4 +1,8 @@
 import type { IntimacyLevel } from "./intimacy.js";
+import {
+  ARYAN_DISPLAY_NAME,
+  ZARA_DISPLAY_NAME,
+} from "./profiles/display-name.js";
 import type { CompanionProfile, ProfileGender } from "./profiles/types.js";
 
 export type ZaraMood = "friendly" | "funny" | "caring" | "bold";
@@ -20,16 +24,28 @@ function resolveMoodProfile(
   if (typeof profile !== "string") {
     return { name: profile.name, gender: profile.gender };
   }
-  if (profile.trim().toLowerCase() === "aryan") {
-    return { name: "Aryan", gender: "male" };
+  const normalized = profile.trim().toLowerCase();
+  if (
+    normalized === "aryan" ||
+    normalized === "meera" ||
+    normalized === "mira"
+  ) {
+    return { name: ARYAN_DISPLAY_NAME, gender: "male" };
   }
-  return { name: profile.trim() || "Zara", gender: "female" };
+  if (
+    normalized === "zara" ||
+    normalized === "riva" ||
+    normalized.length === 0
+  ) {
+    return { name: ZARA_DISPLAY_NAME, gender: "female" };
+  }
+  return { name: profile.trim(), gender: "female" };
 }
 
 export function moodPromptForMood(
   mood: ZaraMood,
   profile: Pick<CompanionProfile, "name" | "gender"> | string = {
-    name: "Zara",
+    name: ZARA_DISPLAY_NAME,
     gender: "female",
   },
 ): string {

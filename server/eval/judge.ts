@@ -1,4 +1,5 @@
 import { xaiChatCompletion } from "./model.js";
+import { displayNameForSlug } from "../src/profiles/display-name.js";
 import type { EvalCase, JudgeResult, JudgeScores, ReplyOutput } from "./types.js";
 
 const SCORE_KEYS: (keyof JudgeScores)[] = [
@@ -63,7 +64,7 @@ export async function judgeReply(
   evalCase: EvalCase,
   output: ReplyOutput,
 ): Promise<JudgeResult> {
-  const profileName = evalCase.profileSlug === "aryan" ? "Aryan" : "Zara";
+  const profileName = displayNameForSlug(evalCase.profileSlug);
   const raw = await xaiChatCompletion(
     [
       {

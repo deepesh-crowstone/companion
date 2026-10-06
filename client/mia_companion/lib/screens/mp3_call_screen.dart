@@ -5,7 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:just_audio/just_audio.dart';
 
-import '../data/mia_profile.dart';
+import '../models/companion_profile.dart';
+import '../services/mood_controller.dart';
 import '../theme/mia_theme.dart';
 import '../widgets/mia_avatar.dart';
 
@@ -150,7 +151,9 @@ class _Mp3CallScreenState extends State<Mp3CallScreen>
               ),
               const SizedBox(height: 26),
               Text(
-                MiaProfile.name,
+                CompanionProfile.displayNameForSlug(
+                  MoodController.instance.activeProfileSlug,
+                ),
                 style: GoogleFonts.playfairDisplay(
                   fontSize: 38,
                   color: Colors.white,

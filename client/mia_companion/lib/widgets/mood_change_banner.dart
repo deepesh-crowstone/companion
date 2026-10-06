@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../models/companion_profile.dart';
 import '../models/zara_mood.dart';
+import '../services/mood_controller.dart';
 import '../theme/mia_theme.dart';
 
 class MoodChangeBanner extends StatelessWidget {
@@ -26,7 +28,7 @@ class MoodChangeBanner extends StatelessWidget {
               Icon(_iconFor(mood), size: 16, color: MiaColors.accentDeep),
               const SizedBox(width: 8),
               Text(
-                "You changed Zara's personality to ${mood.label}",
+                "You changed ${CompanionProfile.displayNameForSlug(MoodController.instance.activeProfileSlug)}'s personality to ${mood.label}",
                 style: GoogleFonts.inter(
                   fontSize: 12,
                   fontWeight: FontWeight.w500,

@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:permission_handler/permission_handler.dart';
 
-import '../data/mia_profile.dart';
+import '../models/companion_profile.dart';
 import '../services/android_pip_service.dart';
 import '../services/api_service.dart';
 import '../services/mood_controller.dart';
@@ -272,7 +272,9 @@ class _VoiceCallScreenState extends State<VoiceCallScreen>
               ),
               const SizedBox(height: 28),
               Text(
-                MiaProfile.name,
+                CompanionProfile.displayNameForSlug(
+                  MoodController.instance.activeProfileSlug,
+                ),
                 style: GoogleFonts.playfairDisplay(
                   fontSize: 38,
                   color: Colors.white,

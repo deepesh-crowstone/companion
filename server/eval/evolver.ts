@@ -1,6 +1,7 @@
 import { readFile, writeFile } from "fs/promises";
 import path from "path";
 import { xaiChatCompletion } from "./model.js";
+import { ZARA_DISPLAY_NAME } from "../src/profiles/display-name.js";
 import type { EvalReport } from "./types.js";
 
 function compactReport(report: EvalReport): unknown {
@@ -58,7 +59,7 @@ export async function generatePromptReview(
     [
       {
         role: "system",
-        content: `You are a prompt evaluation lead for Zara, a human-feeling AI companion.
+        content: `You are a prompt evaluation lead for ${ZARA_DISPLAY_NAME}, a human-feeling AI companion.
 
 Read the eval report and current prompt files. Produce a human-reviewable prompt evolution report.
 

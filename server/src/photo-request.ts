@@ -1,4 +1,5 @@
 import { XAI_CHAT_MODEL } from "./mia.js";
+import { ZARA_DISPLAY_NAME } from "./profiles/display-name.js";
 import { xaiChatCompletion } from "./xai-client.js";
 import { userLikelyWantsPhoto } from "./zara-photos.js";
 
@@ -38,7 +39,7 @@ function parsePhotoClassification(raw: string): PhotoRequestClassification {
 
 export async function classifyPhotoRequest(
   text: string,
-  profileName = "Zara",
+  profileName = ZARA_DISPLAY_NAME,
 ): Promise<PhotoRequestClassification> {
   if (!userLikelyWantsPhoto(text)) {
     return { wantsPhoto: false, emotion: null, clothingLevel: null };

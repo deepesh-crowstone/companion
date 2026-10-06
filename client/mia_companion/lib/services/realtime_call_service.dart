@@ -9,6 +9,9 @@ import 'package:flutter_pcm_sound/flutter_pcm_sound.dart';
 import 'package:record/record.dart' hide IosAudioCategory;
 import 'package:web_socket_channel/io.dart';
 
+import '../models/companion_profile.dart';
+import 'mood_controller.dart';
+
 enum CallConnectionState { connecting, ready, error, ended }
 
 /// xAI Realtime voice call — PCM 24 kHz mono over WebSocket.
@@ -368,7 +371,9 @@ class RealtimeCallService {
         transcriptController.add('…i heard you');
         break;
       case 'input_audio_buffer.speech_stopped':
-        transcriptController.add('…one sec, zara is thinking');
+        transcriptController.add(
+          '…one sec, ${CompanionProfile.displayNameForSlug(MoodController.instance.activeProfileSlug).toLowerCase()} is thinking',
+        );
         break;
 
       case 'response.done':

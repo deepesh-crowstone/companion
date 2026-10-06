@@ -3,7 +3,8 @@ import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import '../data/mia_profile.dart';
+import '../models/companion_profile.dart';
+import '../services/mood_controller.dart';
 import '../theme/mia_theme.dart';
 
 /// Blurs [content] and shows an unlock row directly beneath it, inside the
@@ -46,7 +47,7 @@ class LockedAssistantBubbleContent extends StatelessWidget {
               const SizedBox(width: 6),
               Flexible(
                 child: Text(
-                  'Unlock ${MiaProfile.name}\u2019s Reply',
+                  'Unlock ${CompanionProfile.displayNameForSlug(MoodController.instance.activeProfileSlug)}\u2019s Reply',
                   style: GoogleFonts.inter(
                     fontSize: 12.5,
                     fontWeight: FontWeight.w700,

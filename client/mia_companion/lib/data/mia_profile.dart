@@ -1,3 +1,5 @@
+import '../models/companion_profile.dart';
+
 class MiaSocialLink {
   const MiaSocialLink({
     required this.platform,
@@ -13,7 +15,7 @@ class MiaSocialLink {
 }
 
 class MiaProfile {
-  static const name = 'Zara';
+  static const name = CompanionProfile.zaraDisplayName;
   static const avatarAsset = 'assets/images/mia_profile.webp';
   static const tagline = 'soft chaos, sharp timing, good coffee';
 
@@ -26,7 +28,7 @@ class MiaProfile {
   ];
 
   static const about =
-      "hey — i'm zara. brand/content girl, accidental night owl, "
+      "hey — i'm riva. brand/content girl, accidental night owl, "
       "and professional overthinker of tiny message tones. i like good coffee, "
       "rainy playlists, sharp jokes, and people who remember the small things.";
 
@@ -44,19 +46,19 @@ class MiaProfile {
   static const followLinks = [
     MiaSocialLink(
       platform: 'Instagram',
-      handle: '@zara.vibes',
+      handle: '@riva.vibes',
       url: 'https://instagram.com/',
       icon: 'instagram',
     ),
     MiaSocialLink(
       platform: 'X',
-      handle: '@zaraonline',
+      handle: '@rivaonline',
       url: 'https://x.com/',
       icon: 'x',
     ),
     MiaSocialLink(
       platform: 'Facebook',
-      handle: 'zara.vibes',
+      handle: 'riva.vibes',
       url: 'https://facebook.com/',
       icon: 'facebook',
     ),

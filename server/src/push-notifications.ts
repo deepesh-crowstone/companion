@@ -1,5 +1,6 @@
 import admin from "firebase-admin";
 import { pool } from "./db.js";
+import { ZARA_DISPLAY_NAME } from "./profiles/display-name.js";
 
 type PushMessageType = "text" | "audio" | "image";
 
@@ -104,7 +105,7 @@ export async function notifyUserOfAssistantMessage(
     content: string;
     messageType: PushMessageType;
   },
-  profileName = "Zara",
+  profileName = ZARA_DISPLAY_NAME,
 ): Promise<void> {
   if (!ensureFirebaseAdmin()) return;
 
@@ -160,7 +161,7 @@ export async function notifyUserOfAssistantMessages(
     content: string;
     message_type: PushMessageType;
   }[],
-  profileName = "Zara",
+  profileName = ZARA_DISPLAY_NAME,
 ): Promise<void> {
   if (messages.length === 0) return;
 
