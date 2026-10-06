@@ -1,16 +1,8 @@
-import "./model.js";
 import path from "path";
 import { loadEvalCases, DEFAULT_CASE_DIR } from "./cases.js";
 import { runHardChecks } from "./checks.js";
-import { generatePromptReview } from "./evolver.js";
 import { loadFeedbackSummary, DEFAULT_FEEDBACK_DIR } from "./feedback.js";
 import { toDbHistory } from "./history.js";
-import { judgeReply } from "./judge.js";
-import {
-  chatModel,
-  generateReply,
-  loadPromptVariant,
-} from "./model.js";
 import {
   createEvalReport,
   DEFAULT_RUNS_DIR,
@@ -170,6 +162,7 @@ async function main(): Promise<void> {
           cases: cases.map((evalCase) => ({
             id: evalCase.id,
             title: evalCase.title,
+            profileSlug: evalCase.profileSlug ?? "zara",
             channel: evalCase.channel,
             tags: evalCase.tags,
             turns: evalCase.history.length,
@@ -183,6 +176,10 @@ async function main(): Promise<void> {
     return;
   }
 
+  const { chatModel, generateReply, loadPromptVariant } =
+    await import("./model.js");
+  const { judgeReply } = await import("./judge.js");
+  const { generatePromptReview } = await import("./evolver.js");
   const candidate = args.comparePrompt
     ? await loadPromptVariant(args.comparePrompt)
     : null;
@@ -194,7 +191,7 @@ async function main(): Promise<void> {
 
   for (const evalCase of cases) {
     const repeats = repeatsFor(evalCase, args);
-    const history = toDbHistory(evalCase.history);
+    const history = toDbHistory(evalCase.history, evalCase.profileSlug);
 
     for (const variant of variants) {
       for (let sampleIndex = 1; sampleIndex <= repeats; sampleIndex += 1) {

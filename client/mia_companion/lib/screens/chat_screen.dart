@@ -1129,8 +1129,8 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _onCallPressed() async {
     unawaited(Analytics.track(AnalyticsEvents.callButtonClicked));
 
-    // Paid users get the real realtime call; everyone else hears the next
-    // scripted Zara clip and is then shown the payment wall.
+    // Paid users get the real realtime call. Everyone else hears the next
+    // scripted preview when this profile has one, then sees the payment wall.
     if (PrivateModeController.instance.passActive) {
       await Navigator.of(context).push(
         MaterialPageRoute(builder: (_) => const VoiceCallScreen()),
@@ -1139,7 +1139,9 @@ class _ChatScreenState extends State<ChatScreen> {
     }
 
     try {
-      final clipUrl = await CallSequenceController.instance.takeNext();
+      final clipUrl = await CallSequenceController.instance.takeNext(
+        widget.profile.slug,
+      );
       if (!mounted) return;
 
       if (clipUrl != null) {

@@ -74,15 +74,16 @@ export async function listDeviceTokens(userId: number): Promise<string[]> {
 function notificationBody(
   messageType: PushMessageType,
   content: string,
+  profileName: string,
 ): string {
   switch (messageType) {
     case "audio":
-      return "Zara sent you a voice note";
+      return `${profileName} sent you a voice note`;
     case "image":
-      return "Zara sent you a photo";
+      return `${profileName} sent you a photo`;
     default: {
       const trimmed = content.trim();
-      if (!trimmed) return "Zara sent you a message";
+      if (!trimmed) return `${profileName} sent you a message`;
       return trimmed.length > 120 ? `${trimmed.slice(0, 117)}...` : trimmed;
     }
   }
@@ -103,17 +104,22 @@ export async function notifyUserOfAssistantMessage(
     content: string;
     messageType: PushMessageType;
   },
+  profileName = "Zara",
 ): Promise<void> {
   if (!ensureFirebaseAdmin()) return;
 
   const tokens = await listDeviceTokens(userId);
   if (tokens.length === 0) return;
 
-  const body = notificationBody(message.messageType, message.content);
+  const body = notificationBody(
+    message.messageType,
+    message.content,
+    profileName,
+  );
   const response = await admin.messaging().sendEachForMulticast({
     tokens,
     notification: {
-      title: "Zara",
+      title: profileName,
       body,
     },
     data: {
@@ -154,6 +160,7 @@ export async function notifyUserOfAssistantMessages(
     content: string;
     message_type: PushMessageType;
   }[],
+  profileName = "Zara",
 ): Promise<void> {
   if (messages.length === 0) return;
 
@@ -174,5 +181,5 @@ export async function notifyUserOfAssistantMessages(
     content:
       messageType === "text" ? combinedText || last.content : last.content,
     messageType,
-  });
+  }, profileName);
 }

@@ -14,6 +14,7 @@ function validateCase(value: unknown, source: string): EvalCase {
   }
   const id = value.id;
   const title = value.title;
+  const profileSlug = value.profileSlug;
   const channel = value.channel;
   const tags = value.tags;
   const goals = value.goals;
@@ -24,6 +25,13 @@ function validateCase(value: unknown, source: string): EvalCase {
   }
   if (typeof title !== "string" || title.length === 0) {
     throw new Error(`Invalid eval case ${id}: missing string title`);
+  }
+  if (
+    profileSlug !== undefined &&
+    profileSlug !== "zara" &&
+    profileSlug !== "aryan"
+  ) {
+    throw new Error(`Invalid eval case ${id}: unsupported profileSlug`);
   }
   if (
     channel !== "text" &&

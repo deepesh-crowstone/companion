@@ -29,9 +29,18 @@ import {
   isUserPrivateModeActive,
 } from "../private-mode.js";
 import { classifyPhotoRequest } from "../photo-request.js";
-import { pickZaraPhoto } from "../zara-photos.js";
+import {
+  pickZaraPhoto,
+  profileSupportsPrivatePhotos,
+} from "../zara-photos.js";
 import { notifyUserOfAssistantMessages } from "../push-notifications.js";
 import { getProfileBySlug, resolveProfileSlug } from "../profiles/catalog.js";
+import { MAX_CONTEXT_SOURCE_MESSAGES } from "../conversation-context.js";
+import {
+  isSimpleOpeningGreeting,
+  openingRotationSeed,
+  selectOpeningGreeting,
+} from "../opening-greeting.js";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -76,6 +85,22 @@ async function listMessages(
     [userId, profileSlug],
   );
   return rows;
+}
+
+async function listContextMessages(
+  userId: number,
+  profileSlug: string,
+): Promise<DbMessage[]> {
+  const { rows } = await pool.query<DbMessage>(
+    `SELECT id, user_id, profile_slug, role, content, message_type, audio_filename, image_key,
+            COALESCE(is_private, FALSE) AS is_private, created_at
+     FROM messages
+     WHERE user_id = $1 AND profile_slug = $2
+     ORDER BY created_at DESC, id DESC
+     LIMIT $3`,
+    [userId, profileSlug, MAX_CONTEXT_SOURCE_MESSAGES],
+  );
+  return rows.reverse();
 }
 
 async function insertMessage(
@@ -179,32 +204,6 @@ function combinedAssistantFallback(messages: PublicMessage[]): PublicMessage {
   };
 }
 
-function normalizeGreeting(text: string): string {
-  return text
-    .trim()
-    .toLowerCase()
-    .replace(/[!?.…,]+$/g, "")
-    .replace(/\s+/g, " ");
-}
-
-const SIMPLE_OPENING_GREETING =
-  /^(hi|hello|hey|hii+|heyy+|yo|sup)( [a-z]+)?$/;
-
-function isFirstMessageSimpleGreeting(
-  history: DbMessage[],
-  userText: string,
-  profileName: string,
-): boolean {
-  if (history.length > 0) return false;
-  const normalized = normalizeGreeting(userText);
-  if (SIMPLE_OPENING_GREETING.test(normalized)) return true;
-  return normalized === normalizeGreeting(`hi ${profileName.toLowerCase()}`);
-}
-
-function openingGreetingReply(): string[] {
-  return ["hi", "kaise ho"];
-}
-
 async function insertAssistantImageMessage(
   userId: number,
   profileSlug: string,
@@ -229,34 +228,50 @@ async function buildTextReply(
   profileSlug: string,
 ): Promise<{ assistantMsgs: DbMessage[]; suggestPrivateMode: boolean }> {
   const userId = userMsgs[0].user_id;
-  const profileName =
-    getProfileBySlug(profileSlug)?.name ?? profileSlug;
+  const profileName = getProfileBySlug(profileSlug)?.name ?? profileSlug;
   const lastUserText = userMsgs[userMsgs.length - 1]?.content ?? "";
-
   if (
     !privateMode &&
-    isFirstMessageSimpleGreeting(history, lastUserText, profileName)
+    history.length === 0 &&
+    userMsgs.length === 1 &&
+    isSimpleOpeningGreeting(lastUserText, profileName)
   ) {
+    const greeting = selectOpeningGreeting({
+      profileSlug,
+      userText: lastUserText,
+      seed: openingRotationSeed(
+        userId,
+        profileSlug,
+        userMsgs[0].created_at,
+      ),
+    });
     const assistantMsgs = await insertAssistantTextMessages(
       userId,
       profileSlug,
-      openingGreetingReply(),
+      [greeting],
     );
     return { assistantMsgs, suggestPrivateMode: false };
   }
 
+  const canAttachPrivatePhoto =
+    privateMode &&
+    isBucketConfigured() &&
+    profileSupportsPrivatePhotos(profileSlug);
+  const conversation = [...history, ...userMsgs];
+
   const classified = privateMode
     ? { level: 3 as const }
-    : await classifyIntimacyLevel(lastUserText);
+    : await classifyIntimacyLevel(conversation);
 
   const suggestPrivateMode =
     !privateMode && userShowsRomanticIntent(classified.level);
 
-  const replySegments = await chatWithMiaText([...history, ...userMsgs], {
+  const replySegments = await chatWithMiaText(conversation, {
     intimacyLevel: classified.level,
     mood,
     privateMode,
     invitePrivateMode: suggestPrivateMode,
+    privatePhotosAvailable: canAttachPrivatePhoto,
     profileSlug,
   });
   const assistantMsgs = await insertAssistantTextMessages(
@@ -265,8 +280,11 @@ async function buildTextReply(
     replySegments,
   );
 
-  if (privateMode && isBucketConfigured()) {
-    const photoRequest = await classifyPhotoRequest(lastUserText);
+  if (canAttachPrivatePhoto) {
+    const photoRequest = await classifyPhotoRequest(
+      lastUserText,
+      getProfileBySlug(profileSlug)?.name ?? profileSlug,
+    );
     if (photoRequest.wantsPhoto) {
       const photo = pickZaraPhoto({
         emotion: photoRequest.emotion,
@@ -280,7 +298,11 @@ async function buildTextReply(
       );
       assistantMsgs.push(imageMsg);
     }
-  } else if (privateMode) {
+  } else if (
+    privateMode &&
+    profileSupportsPrivatePhotos(profileSlug) &&
+    !isBucketConfigured()
+  ) {
     console.warn(
       "Photo request skipped: Railway bucket not configured (run npm run seed:zara-photos after configuring bucket).",
     );
@@ -336,7 +358,7 @@ messagesRouter.post("/text", async (req, res) => {
       return;
     }
 
-    const history = await listMessages(auth.userId, profileSlug);
+    const history = await listContextMessages(auth.userId, profileSlug);
     const userMsg = await insertMessage(
       auth.userId,
       profileSlug,
@@ -356,9 +378,11 @@ messagesRouter.post("/text", async (req, res) => {
       assistantMsgs.map((m) => toPublicMessage(m)),
     );
 
-    void notifyUserOfAssistantMessages(auth.userId, assistantMsgs).catch((e) =>
-      console.warn("Push notification failed:", e),
-    );
+    void notifyUserOfAssistantMessages(
+      auth.userId,
+      assistantMsgs,
+      getProfileBySlug(profileSlug)?.name,
+    ).catch((e) => console.warn("Push notification failed:", e));
 
     res.json({
       userMessage: await toPublicMessage(userMsg),
@@ -380,7 +404,7 @@ messagesRouter.post("/text", async (req, res) => {
       msg.includes("Devanagari rewrite failed");
     res.status(isXai ? 502 : 500).json({
       error: isXai
-        ? "Zara could not reach xAI. Check XAI_API_KEY in server/.env and restart npm run dev."
+        ? "The companion could not reach the reply service. Check server API configuration and restart npm run dev."
         : msg,
     });
   }
@@ -415,7 +439,7 @@ messagesRouter.post("/text/batch", async (req, res) => {
       return;
     }
 
-    const history = await listMessages(auth.userId, profileSlug);
+    const history = await listContextMessages(auth.userId, profileSlug);
     const userMsgs: DbMessage[] = [];
     for (const text of trimmed) {
       userMsgs.push(
@@ -434,9 +458,11 @@ messagesRouter.post("/text/batch", async (req, res) => {
       assistantMsgs.map((m) => toPublicMessage(m)),
     );
 
-    void notifyUserOfAssistantMessages(auth.userId, assistantMsgs).catch((e) =>
-      console.warn("Push notification failed:", e),
-    );
+    void notifyUserOfAssistantMessages(
+      auth.userId,
+      assistantMsgs,
+      getProfileBySlug(profileSlug)?.name,
+    ).catch((e) => console.warn("Push notification failed:", e));
 
     res.json({
       userMessages: await Promise.all(
@@ -460,7 +486,7 @@ messagesRouter.post("/text/batch", async (req, res) => {
       msg.includes("Devanagari rewrite failed");
     res.status(isXai ? 502 : 500).json({
       error: isXai
-        ? "Zara could not reach xAI. Check XAI_API_KEY in server/.env and restart npm run dev."
+        ? "The companion could not reach the reply service. Check server API configuration and restart npm run dev."
         : msg,
     });
   }
@@ -501,7 +527,7 @@ messagesRouter.post("/voice", upload.single("audio"), async (req, res) => {
 
   try {
     const profileSlug = parseProfileSlug(req.body?.profileSlug);
-    const history = await listMessages(auth.userId, profileSlug);
+    const history = await listContextMessages(auth.userId, profileSlug);
     const transcript = await transcribeAudio(tmpPath, mime);
 
     if (!transcript) {
@@ -529,11 +555,11 @@ messagesRouter.post("/voice", upload.single("audio"), async (req, res) => {
       },
     );
 
+    const voiceHistory = [...history, userMsg];
     const classified = access.privateModeActive
       ? { level: 3 as const }
-      : await classifyIntimacyLevel(transcript);
+      : await classifyIntimacyLevel(voiceHistory);
     const voiceMood = access.privateModeActive ? ("bold" as const) : mood;
-    const voiceHistory = [...history, userMsg];
     const voiceOptions = {
       mood: voiceMood,
       intimacyLevel: classified.level,
@@ -568,9 +594,11 @@ messagesRouter.post("/voice", upload.single("audio"), async (req, res) => {
       },
     );
 
-    void notifyUserOfAssistantMessages(auth.userId, [assistantMsg]).catch((e) =>
-      console.warn("Push notification failed:", e),
-    );
+    void notifyUserOfAssistantMessages(
+      auth.userId,
+      [assistantMsg],
+      getProfileBySlug(profileSlug)?.name,
+    ).catch((e) => console.warn("Push notification failed:", e));
 
     res.json({
       userMessage: await toPublicMessage(userMsg),
@@ -594,7 +622,7 @@ messagesRouter.post("/voice", upload.single("audio"), async (req, res) => {
       msg.includes("Devanagari rewrite failed");
     res.status(isXai ? 502 : 500).json({
       error: isXai
-        ? "Zara could not process voice. Check XAI_API_KEY, ELEVENLABS_API_KEY, and ELEVENLABS_VOICE_ID in server/.env or Railway variables."
+        ? "The companion could not process voice. Check reply, transcription, and voice API configuration."
         : msg,
     });
   } finally {

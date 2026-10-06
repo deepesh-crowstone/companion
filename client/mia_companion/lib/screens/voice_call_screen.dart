@@ -8,6 +8,7 @@ import 'package:permission_handler/permission_handler.dart';
 import '../data/mia_profile.dart';
 import '../services/android_pip_service.dart';
 import '../services/api_service.dart';
+import '../services/mood_controller.dart';
 import '../services/realtime_call_service.dart';
 import '../theme/mia_theme.dart';
 import '../widgets/mia_avatar.dart';
@@ -96,7 +97,9 @@ class _VoiceCallScreenState extends State<VoiceCallScreen>
     });
 
     try {
-      final session = await ApiService.instance.createRealtimeSession();
+      final session = await ApiService.instance.createRealtimeSession(
+        profileSlug: MoodController.instance.activeProfileSlug,
+      );
       final config = session['sessionConfig'] as Map<String, dynamic>? ?? {};
       final preconfigured = session['sessionPreconfigured'] == true;
 

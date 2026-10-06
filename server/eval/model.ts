@@ -1,9 +1,9 @@
 import "../src/load-env.js";
 import { readFile } from "fs/promises";
 import {
-  MIA_TEXT_SYSTEM_PROMPT,
-  MIA_VOICE_SYSTEM_PROMPT,
   XAI_CHAT_MODEL,
+  buildTextSystemPrompt,
+  buildVoiceSystemPrompt,
 } from "../src/mia.js";
 import {
   chatWithMia,
@@ -11,6 +11,7 @@ import {
   chatWithMiaTextAsVoice,
 } from "../src/xai.js";
 import type { DbMessage } from "../src/db.js";
+import { parseTextReplySegments } from "../src/text-response.js";
 import type { EvalCase, EvalChannel, ReplyOutput } from "./types.js";
 
 const XAI_BASE = "https://api.x.ai/v1";
@@ -92,62 +93,6 @@ function currentIndiaTimeContext(): string {
   return `current India time context: ${day}, ${date}, ${time}. Use this subtly for time-of-day vibe when relevant; do not overstate it.`;
 }
 
-function cleanTextSegment(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const cleaned = value
-    .replace(/^\s*(?:[-*•]|\d+[.)])\s*/, "")
-    .replace(/^["'“”‘’]+|["'“”‘’]+$/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-  return cleaned.length > 0 ? cleaned : null;
-}
-
-export function parseTextReplySegments(raw: string): string[] {
-  const withoutFence = raw
-    .trim()
-    .replace(/^```(?:json)?\s*/i, "")
-    .replace(/\s*```$/i, "")
-    .trim();
-
-  const candidates = [withoutFence];
-  const objectMatch = withoutFence.match(/\{[\s\S]*\}/);
-  if (objectMatch) candidates.push(objectMatch[0]);
-  const arrayMatch = withoutFence.match(/\[[\s\S]*\]/);
-  if (arrayMatch) candidates.push(arrayMatch[0]);
-
-  for (const candidate of candidates) {
-    try {
-      const parsed = JSON.parse(candidate) as unknown;
-      const values =
-        Array.isArray(parsed)
-          ? parsed
-          : parsed &&
-              typeof parsed === "object" &&
-              "messages" in parsed &&
-              Array.isArray((parsed as { messages?: unknown }).messages)
-            ? (parsed as { messages: unknown[] }).messages
-            : null;
-      const segments = values
-        ?.map((value) => cleanTextSegment(value))
-        .filter((value): value is string => value != null)
-        .slice(0, 3);
-      if (segments && segments.length > 0) return segments;
-    } catch {
-      // Fall through to plain-text parsing.
-    }
-  }
-
-  const lineSegments = withoutFence
-    .split(/\r?\n+/)
-    .map((value) => cleanTextSegment(value))
-    .filter((value): value is string => value != null);
-  if (lineSegments.length > 1) return lineSegments.slice(0, 3);
-
-  const oneLine = cleanTextSegment(withoutFence);
-  if (!oneLine) return ["hmm"];
-  return [oneLine];
-}
-
 function outputFromMessages(messages: string[]): ReplyOutput {
   return {
     messages,
@@ -174,7 +119,7 @@ function messagesForPrompt(
   ];
 }
 
-function textSystemPrompt(prompt = MIA_TEXT_SYSTEM_PROMPT): string {
+function textSystemPrompt(prompt = buildTextSystemPrompt("zara")): string {
   return `${prompt}
 
 ${currentIndiaTimeContext()}
@@ -187,7 +132,7 @@ output format:
 - Do not include Devanagari, markdown, explanations, labels, numbering, or separators.`;
 }
 
-function voiceSystemPrompt(prompt = MIA_VOICE_SYSTEM_PROMPT): string {
+function voiceSystemPrompt(prompt = buildVoiceSystemPrompt("zara")): string {
   return `${prompt}
 
 ${currentIndiaTimeContext()}`;
@@ -198,16 +143,27 @@ async function generateWithOverride(
   history: DbMessage[],
   variant: PromptVariant,
 ): Promise<ReplyOutput> {
+  const profileSlug = evalCase.profileSlug ?? "zara";
   if (evalCase.channel === "text") {
     const raw = await xaiChatCompletion(
-      messagesForPrompt(textSystemPrompt(variant.textSystemPrompt), history),
+      messagesForPrompt(
+        textSystemPrompt(
+          variant.textSystemPrompt ?? buildTextSystemPrompt(profileSlug),
+        ),
+        history,
+      ),
       0.78,
     );
     return outputFromMessages(parseTextReplySegments(raw));
   }
 
   const raw = await xaiChatCompletion(
-    messagesForPrompt(voiceSystemPrompt(variant.voiceSystemPrompt), history),
+    messagesForPrompt(
+      voiceSystemPrompt(
+        variant.voiceSystemPrompt ?? buildVoiceSystemPrompt(profileSlug),
+      ),
+      history,
+    ),
     0.78,
   );
   return {
@@ -220,19 +176,23 @@ async function generateWithOverride(
 async function generateWithProductionPath(
   channel: EvalChannel,
   history: DbMessage[],
+  profileSlug: string,
 ): Promise<ReplyOutput> {
   if (channel === "text") {
-    return outputFromMessages(await chatWithMiaText(history));
+    return outputFromMessages(await chatWithMiaText(history, { profileSlug }));
   }
   if (channel === "text_tagged_voice") {
-    const text = await chatWithMiaTextAsVoice(history);
+    const text = await chatWithMiaTextAsVoice(history, { profileSlug });
     return {
       messages: [text],
       text,
       displayText: stripSpeechTagsForDisplay(text),
     };
   }
-  const text = await chatWithMia(history, { expressiveTts: true });
+  const text = await chatWithMia(history, {
+    expressiveTts: true,
+    profileSlug,
+  });
   return {
     messages: [text],
     text,
@@ -272,5 +232,9 @@ export async function generateReply(
   if (variant) {
     return generateWithOverride(evalCase, history, variant);
   }
-  return generateWithProductionPath(evalCase.channel, history);
+  return generateWithProductionPath(
+    evalCase.channel,
+    history,
+    evalCase.profileSlug ?? "zara",
+  );
 }

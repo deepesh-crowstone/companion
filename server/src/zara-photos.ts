@@ -61,6 +61,10 @@ export function userLikelyWantsPhoto(text: string): boolean {
   return PHOTO_KEYWORDS.test(text);
 }
 
+export function profileSupportsPrivatePhotos(profileSlug: string): boolean {
+  return profileSlug.trim().toLowerCase() === "zara";
+}
+
 export function pickZaraPhoto(options: {
   emotion?: string | null;
   clothingLevel?: string | null;

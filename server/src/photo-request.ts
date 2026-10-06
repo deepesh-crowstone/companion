@@ -38,6 +38,7 @@ function parsePhotoClassification(raw: string): PhotoRequestClassification {
 
 export async function classifyPhotoRequest(
   text: string,
+  profileName = "Zara",
 ): Promise<PhotoRequestClassification> {
   if (!userLikelyWantsPhoto(text)) {
     return { wantsPhoto: false, emotion: null, clothingLevel: null };
@@ -51,7 +52,7 @@ export async function classifyPhotoRequest(
       messages: [
         {
           role: "system",
-          content: `The user may be asking Zara (romantic AI companion) for a photo/selfie/picture.
+          content: `The user may be asking ${profileName} (an AI companion persona) for an available curated photo/selfie/picture.
 
 Output only JSON:
 {"wantsPhoto":true|false,"emotion":"happy|romantic|flirty|shy|playful|bold|soft|null","clothingLevel":"casual|modest|romantic|bold|null"}

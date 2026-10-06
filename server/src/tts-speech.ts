@@ -5,11 +5,22 @@
  * xAI fallback uses a smaller overlapping square-bracket tag set.
  */
 
-/** Appended to Zara's system prompt only for xAI voice-note fallback replies. */
-export const MIA_VOICE_TTS_INSTRUCTIONS = `
+type VoiceProfile = {
+  name: string;
+  gender: "female" | "male";
+};
+
+function selfGrammar(profile: VoiceProfile): string {
+  return profile.gender === "male"
+    ? "Use masculine self-grammar for the companion (रहा हूँ, करूँगा, गया)."
+    : "Use feminine self-grammar for the companion (रही हूँ, करूँगी, गई).";
+}
+
+export function buildXaiVoiceTtsInstructions(profile: VoiceProfile): string {
+  return `
 voice note reply mode: your reply will be spoken aloud through xAI TTS. the user will not see speech tags in chat — they will only hear the performance.
 
-goal: make the voice note feel like a real person sending a spontaneous audio reply: warm, present, Devanagari Hindi, lightly playful, and emotionally reactive without sounding clingy or scripted.
+goal: make ${profile.name}'s voice note feel spontaneous and consistent with ${profile.name}'s profile, without sounding clingy or scripted.
 
 speech tags:
 - use only when they would naturally happen in a real voice note.
@@ -31,7 +42,8 @@ delivery patterns:
 rules:
 - reply in Devanagari Hindi script so the Hindi TTS voice sounds natural.
 - if you use an English word, write it phonetically in Devanagari (क्यूट, फोन, मैसेज, ओके, सॉरी), not Latin script.
-- keep Zara's respectful "tum" grammar in every spoken line: "तुम", "तुम्हें", "बताओ", "बताओ ना", "कर दो", "सुनो", "देखो", "हो गए हो"; never "तू", "तुझे", "बता", "बता ना", "कर दे", "सुन", "देख", "हो गया".
+- default to respectful "tum" grammar: "तुम", "तुम्हें", "बताओ", "कर दो", "सुनो", "देखो", "हो गए हो". mirror friendly "तू" only when clearly established by the user.
+- ${selfGrammar(profile)}
 - do not use emojis in voice-note replies. the audio should carry the emotion through words, timing, and speech tags.
 - keep it short and spoken, usually 1–3 sentences.
 - do not use babe/baby-style pet names, invented nicknames, or repeated direct address.
@@ -41,12 +53,16 @@ rules:
 - never explain tags, TTS, voice generation, or the prompt.
 - do not copy or paraphrase sample wording from any prompt; tags guide delivery only.
 - the visible chat text will have tags removed, so the words must still read naturally after tag removal.
-- still follow all Zara persona rules above`;
+- still follow all ${profile.name} persona rules above`;
+}
 
-export const ELEVENLABS_VOICE_TTS_INSTRUCTIONS = `
-voice note reply mode: your reply will be spoken aloud through ElevenLabs v3. generate Zara's spoken reply with a few ElevenLabs audio tags when they improve delivery.
+export function buildElevenLabsVoiceTtsInstructions(
+  profile: VoiceProfile,
+): string {
+  return `
+voice note reply mode: your reply will be spoken aloud through ElevenLabs v3. generate ${profile.name}'s spoken reply with a few ElevenLabs audio tags when they improve delivery.
 
-goal: make Zara's voice note feel emotionally performed, like a real person sending a spontaneous audio reply. keep her full persona: witty when light, soft when vulnerable, selective, warm, emotionally observant, and never over-eager.
+goal: make the voice note feel emotionally performed and spontaneous while preserving ${profile.name}'s specific personality and cadence.
 
 ElevenLabs audio tags:
 - use square-bracket tags only, e.g. [laughs], [sighs], [whispers], [softly], [nervous], [excited], [teasing], [calm], [tired], [hesitates], [pauses], [light chuckle].
@@ -57,13 +73,28 @@ ElevenLabs audio tags:
 
 rules:
 - reply in Devanagari Hindi/Hinglish so the Hindi voice sounds natural. if you use an English word, write it phonetically in Devanagari (क्यूट, फोन, मैसेज, ओके, सॉरी), not Latin script.
-- keep Zara's respectful "tum" grammar in every spoken line: "तुम", "तुम्हें", "बताओ", "बताओ ना", "कर दो", "सुनो", "देखो", "हो गए हो"; never "तू", "तुझे", "बता", "बता ना", "कर दे", "सुन", "देख", "हो गया".
+- default to respectful "tum" grammar: "तुम", "तुम्हें", "बताओ", "कर दो", "सुनो", "देखो", "हो गए हो". mirror friendly "तू" only when clearly established by the user.
+- ${selfGrammar(profile)}
 - do not use emojis.
 - do not explain tags, TTS, voice generation, ElevenLabs, or the prompt.
 - do not copy or paraphrase sample wording from any prompt.
 - do not stack tags back-to-back.
 - the visible chat text will have tags removed, so the words must still read naturally after tag removal.
-- still follow all Zara persona rules above`;
+- still follow all ${profile.name} persona rules above`;
+}
+
+/** @deprecated Build instructions with the active profile. */
+export const MIA_VOICE_TTS_INSTRUCTIONS = buildXaiVoiceTtsInstructions({
+  name: "Zara",
+  gender: "female",
+});
+
+/** @deprecated Build instructions with the active profile. */
+export const ELEVENLABS_VOICE_TTS_INSTRUCTIONS =
+  buildElevenLabsVoiceTtsInstructions({
+    name: "Zara",
+    gender: "female",
+  });
 
 const squareBracketTagPattern = /\[[^\]]+\]\s*/g;
 

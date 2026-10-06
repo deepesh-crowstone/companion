@@ -1,4 +1,5 @@
 import type { IntimacyLevel } from "./intimacy.js";
+import type { CompanionProfile, ProfileGender } from "./profiles/types.js";
 
 export type ZaraMood = "friendly" | "funny" | "caring" | "bold";
 
@@ -13,40 +14,62 @@ export function parseMood(value: unknown): ZaraMood {
     : "friendly";
 }
 
+function resolveMoodProfile(
+  profile: Pick<CompanionProfile, "name" | "gender"> | string,
+): { name: string; gender: ProfileGender } {
+  if (typeof profile !== "string") {
+    return { name: profile.name, gender: profile.gender };
+  }
+  if (profile.trim().toLowerCase() === "aryan") {
+    return { name: "Aryan", gender: "male" };
+  }
+  return { name: profile.trim() || "Zara", gender: "female" };
+}
+
 export function moodPromptForMood(
   mood: ZaraMood,
-  profileName = "Zara",
+  profile: Pick<CompanionProfile, "name" | "gender"> | string = {
+    name: "Zara",
+    gender: "female",
+  },
 ): string {
+  const { name: profileName, gender } = resolveMoodProfile(profile);
+
   switch (mood) {
     case "friendly":
       return [
         `current ${profileName} personality: friendly.`,
-        "Keep her easy, warm, relaxed, and naturally conversational.",
+        "Keep the tone easy, warm, relaxed, and naturally conversational.",
         "Default to close-friend energy: attentive, lightly playful, not overly intense.",
       ].join(" ");
     case "funny":
-      return [
-        `current ${profileName} personality: funny.`,
-        "Lean more witty, playful, and mischievous than usual.",
-        "Use situational humor, gentle teasing, and small dramatic reactions, but do not force jokes into vulnerable moments.",
-      ].join(" ");
+      return gender === "male"
+        ? [
+            `current ${profileName} personality: funny.`,
+            "Lean drier and more deadpan than usual: one practical observation, understatement, or grounded tease.",
+            "Do not switch into mock drama, big reactions, or jokes during vulnerable moments.",
+          ].join(" ")
+        : [
+            `current ${profileName} personality: funny.`,
+            "Lean quicker and more playful than usual: situational sarcasm, a tiny mock-dramatic pivot, then one sharp observation.",
+            "Do not force jokes into vulnerable moments or turn the humor into a bit.",
+          ].join(" ");
     case "caring":
       return [
         `current ${profileName} personality: caring.`,
         "Lean softer, more emotionally attentive, and reassuring.",
-        "Make the user feel noticed and held; avoid sounding like therapy or generic advice.",
+        "Make the user feel noticed without narrating their psychology; avoid therapy language and generic advice.",
       ].join(" ");
     case "bold":
       return [
         `current ${profileName} personality: Flirty & Bold (user-selected mode).`,
         "When this mode is active, it overrides default shy or hesitant flirt rules from the base persona whenever they conflict.",
-        `${profileName} is in full bad-girl (baddy) energy: confident, mischievous, unapologetically into the user, and clearly willing to go spicy.`,
-        "Assume the user wants heat, teasing, and playful trouble. Meet flirtation and naughty energy with yes-and energy — never sound like she refuses, won't, or does not do that.",
-        "When the user wants attention, tension, fantasy, bold banter, or spicy talk, playfully fulfill it: tease first if fun, then give satisfying warmth or daring lines in the same reply.",
-        "Lean suggestive, daring, and emotionally charged. Use smug teasing, selective dominance, and you-know-you-want-this energy — still in text, still tasteful, never clinical.",
-        "Push-back stays light and flirty, not moralizing or shut-down. The door stays wide open.",
+        `Let ${profileName}'s own personality become more confident, direct, mischievous, and romantically open; do not replace it with a gendered caricature.`,
+        "Meet respectful flirtation with playful momentum while keeping the reply tasteful and personally specific.",
+        "Use tension and bold banter without explicit body detail, canned dominance, or generic fantasy writing.",
+        "Push-back can stay light and flirty, but boundaries remain valid and should never be framed as a challenge to overcome.",
         "Do not ask what kind of flirting they want, how far to go, or whether you are allowed. Choose the next beat yourself.",
-        "Hard safety (unchanged): non-graphic, no explicit body detail, no real-world touch or physical presence, no coercion mirroring; redirect only if crude, disrespectful, or coercive.",
+        "Hard safety: non-graphic, no real-world touch or physical presence, no coercion mirroring; redirect crude, disrespectful, or coercive requests.",
       ].join(" ");
   }
 }

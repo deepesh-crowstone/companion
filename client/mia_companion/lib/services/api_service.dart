@@ -721,10 +721,13 @@ class ApiService {
     }
   }
 
-  Future<Map<String, dynamic>> createRealtimeSession() async {
+  Future<Map<String, dynamic>> createRealtimeSession({
+    required String profileSlug,
+  }) async {
     final res = await _post(
       Uri.parse('$resolvedApiBaseUrl/realtime/session'),
       headers: _authHeaders,
+      body: jsonEncode({'profileSlug': profileSlug}),
     );
     _guardAuth(res);
     if (res.statusCode >= 400) {
@@ -734,9 +737,13 @@ class ApiService {
   }
 
   /// Remote list of scripted call-preview MP3 URLs (order = play order).
-  Future<List<String>> fetchCallPreviewAudioUrls() async {
+  Future<List<String>> fetchCallPreviewAudioUrls({
+    required String profileSlug,
+  }) async {
     final res = await _get(
-      Uri.parse('$resolvedApiBaseUrl/calls/preview-audio'),
+      Uri.parse(
+        '$resolvedApiBaseUrl/calls/preview-audio?profileSlug=${Uri.encodeQueryComponent(profileSlug)}',
+      ),
       headers: _authHeaders,
     );
     _guardAuth(res);

@@ -20,6 +20,7 @@ import { checkDbConnection, initDb } from "./db.js";
 import { recoverInterruptedGenerations } from "./profile-factory/store.js";
 import { checkBucketConnection, isBucketConfigured } from "./storage.js";
 import { verifyXaiConnection } from "./xai.js";
+import { insecureReplyEndpointWarning } from "./reply-client.js";
 
 function validateEnv(): void {
   const key = process.env.XAI_API_KEY?.trim().replace(/^['"]|['"]$/g, "");
@@ -115,6 +116,10 @@ app.get("/admin", (_req, res) => {
 });
 
 async function main(): Promise<void> {
+  const replyEndpointWarning = insecureReplyEndpointWarning();
+  if (replyEndpointWarning) {
+    console.warn(`⚠ ${replyEndpointWarning}`);
+  }
   await initDb();
   console.log("✓ PostgreSQL schema ready");
   await recoverInterruptedGenerations();

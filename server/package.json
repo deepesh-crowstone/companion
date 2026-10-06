@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "eval": "tsx eval/run.ts",
+    "test": "tsx --test test/*.test.ts",
+    "typecheck:eval": "tsc -p tsconfig.eval.json",
     "build": "tsc",
     "start": "node dist/index.js",
     "seed:zara-photos": "tsx scripts/upload-zara-photos.ts",

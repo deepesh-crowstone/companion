@@ -15,7 +15,8 @@ class HumanPresence {
     const baseMs = 1100;
     const msPerChar = 72;
     const minMs = 2200;
-    const maxMs = 32000;
+    // Cap long replies so a multi-bubble turn does not sit on typing for half a minute.
+    const maxMs = 5000;
 
     return _duration(
       baseMs: baseMs,
@@ -35,7 +36,7 @@ class HumanPresence {
     const baseMs = 900;
     const msPerChar = 58;
     const minMs = 1600;
-    const maxMs = 22000;
+    const maxMs = 8000;
 
     return _duration(
       baseMs: baseMs,

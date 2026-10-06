@@ -11,7 +11,7 @@ const PROFILE_CATALOG: CompanionProfile[] = [
     tagline: "soft chaos, sharp timing, good coffee",
     gender: "female",
     openingTraits:
-      "feel warm, alive, playful, emotionally tuned-in, and a little mischievous - not like an assistant, therapist, customer-support bot, or romance-script chatbot.",
+      "sound quick, warm, and lightly mock-dramatic when the moment is playful - not like an assistant, therapist, customer-support bot, or romance-script chatbot.",
     identityPrompt: ZARA_IDENTITY_PROMPT,
   },
   {
@@ -20,7 +20,7 @@ const PROFILE_CATALOG: CompanionProfile[] = [
     tagline: "quiet reads, warm wit, steady heart",
     gender: "male",
     openingTraits:
-      "feel calm, perceptive, gently witty, and emotionally steady - not like an assistant, therapist, customer-support bot, or romance-script chatbot.",
+      "sound measured, dry, and practical, with slower disclosure and grounded teasing - not like an assistant, therapist, customer-support bot, or romance-script chatbot.",
     identityPrompt: ARYAN_IDENTITY_PROMPT,
   },
 ];

@@ -22,6 +22,20 @@ function replyApiBase(): string {
   );
 }
 
+export function insecureReplyEndpointWarning(): string | null {
+  const base = replyApiBase();
+  try {
+    const url = new URL(base);
+    const localHosts = new Set(["localhost", "127.0.0.1", "::1"]);
+    if (url.protocol === "http:" && !localHosts.has(url.hostname)) {
+      return `Reply API uses unencrypted HTTP (${url.host}). Requests and responses are not protected in transit; keep this only while the configured provider requires HTTP.`;
+    }
+  } catch {
+    return "REPLY_API_BASE_URL is not a valid URL.";
+  }
+  return null;
+}
+
 function replyApiKey(): string {
   const key = envValue("REPLY_API_KEY");
   if (!key) {
@@ -42,14 +56,27 @@ export type ReplyChatOptions = {
   label?: string;
 };
 
-/** Drops Qwen thinking traces if the server still wraps them in the reply. */
+/**
+ * Drops Qwen thinking traces so the chat shows only the answer.
+ * Covers a closed <think> block, a truncated unclosed block, and the
+ * common case where the chat template prefills <think> so the completion
+ * starts inside the trace and only includes </think>.
+ * reasoning / reasoning_content are never read; they must not be appended.
+ */
 function visibleReply(content: string): string {
-  return content.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+  let text = content.replace(/<think>[\s\S]*?<\/think>/gi, "");
+  text = text.replace(/<think>[\s\S]*$/gi, "");
+  const close = text.search(/<\/think>/i);
+  if (close !== -1) {
+    text = text.slice(close).replace(/<\/think>/i, "");
+  }
+  return text.trim();
 }
 
 /**
  * Generates a reply from the OpenAI-compatible chat server.
- * Request shape matches the Qwen endpoint: thinking disabled, short output.
+ * Thinking is on. Those tokens count against max_tokens on this
+ * vLLM/Qwen template, so the cap is 1024 to leave room for a short reply.
  */
 export async function replyChatCompletion(
   messages: ReplyChatMessage[],
@@ -64,10 +91,10 @@ export async function replyChatCompletion(
     model: envValue("REPLY_MODEL") ?? DEFAULT_REPLY_MODEL,
     messages,
     stream: false,
-    max_tokens: 256,
+    max_tokens: 1024,
     temperature: 0.7,
     top_p: 0.8,
-    chat_template_kwargs: { enable_thinking: false },
+    chat_template_kwargs: { enable_thinking: true },
   };
 
   let lastError: Error = new Error(`${label} failed`);
@@ -96,9 +123,16 @@ export async function replyChatCompletion(
 
     if (res.ok) {
       const data = (await res.json()) as {
-        choices?: { message?: { content?: string | null } }[];
+        choices?: {
+          message?: {
+            content?: string | null;
+            reasoning?: string | null;
+            reasoning_content?: string | null;
+          };
+        }[];
       };
-      const content = visibleReply(data.choices?.[0]?.message?.content ?? "");
+      const message = data.choices?.[0]?.message;
+      const content = visibleReply(message?.content ?? "");
       if (!content) {
         throw new Error(`${label} failed: empty response`);
       }

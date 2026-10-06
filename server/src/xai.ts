@@ -7,8 +7,8 @@ import {
 } from "./mia.js";
 import { getProfileBySlug, resolveProfileSlug } from "./profiles/catalog.js";
 import {
-  ELEVENLABS_VOICE_TTS_INSTRUCTIONS,
-  MIA_VOICE_TTS_INSTRUCTIONS,
+  buildElevenLabsVoiceTtsInstructions,
+  buildXaiVoiceTtsInstructions,
 } from "./tts-speech.js";
 import { buildClientSecretRequest } from "./realtime-session.js";
 import type { DbMessage } from "./db.js";
@@ -21,13 +21,19 @@ import {
 import {
   privateModeInvitePrompt,
   privateModeRomanticPrompt,
-} from "./private-mode.js";
+} from "./private-mode-prompts.js";
 import { replyChatCompletion } from "./reply-client.js";
+import { prepareConversationContext } from "./conversation-context.js";
+import type { CompanionProfile } from "./profiles/types.js";
+import {
+  addressGuidance,
+  friendlyTuEstablished,
+  parseTextReplySegments,
+  resolveReplyLanguageMode,
+} from "./text-response.js";
 
 const XAI_BASE = "https://api.x.ai/v1";
 const ELEVENLABS_BASE = "https://api.elevenlabs.io/v1";
-const MAX_TEXT_REPLY_SEGMENTS = 3;
-
 const LATIN_LETTER_RE = /[A-Za-z]/;
 const EMOJI_RE = /[\p{Extended_Pictographic}\uFE0F\u200D]/gu;
 const INDIA_TIME_ZONE = "Asia/Kolkata";
@@ -85,220 +91,48 @@ function stripEmojis(text: string): string {
   return text.replace(EMOJI_RE, "").replace(/\s{2,}/g, " ").trim();
 }
 
-function normalizeRespectfulUserGrammar(text: string): string {
-  return text
-    .replace(/\btu\b/gi, "tum")
-    .replace(/\btujhe\b/gi, "tumhe")
-    .replace(/\btera\b/gi, "tumhara")
-    .replace(/\bteri\b/gi, "tumhari")
-    .replace(/\btere\b/gi, "tumhare")
-    .replace(/\bbata\s+na\b/gi, "batao na")
-    .replace(/\bbata\b(?!\s+(?:diya|di|raha|rahi|rahe|chuka|chuki|chuke)\b)/gi, "batao")
-    .replace(/\bsun\b(?!\s+(?:raha|rahi|rahe|liya|lo)\b)/gi, "suno")
-    .replace(/\bdekh\b(?!\s+(?:raha|rahi|rahe|liya|lo)\b)/gi, "dekho")
-    .replace(/\bja\b(?!\s+(?:raha|rahi|rahe)\b)/gi, "jao")
-    .replace(/\bkha\b(?!\s+(?:raha|rahi|rahe|liya)\b)/gi, "khao")
-    .replace(/\bkar\s+de\b/gi, "kar do")
-    .replace(/\bbol\s+de\b/gi, "bol do")
-    .replace(/\bbhej\s+de\b/gi, "bhej do")
-    .replace(/\bde\s+de\b/gi, "de do")
-    .replace(/\brehne\s+de\b/gi, "rehne do")
-    .replace(/\bmaar\s+de\b/gi, "maar do")
-    .replace(/\ble\s+raha\s+hai\b/gi, "le rahe ho")
-    .replace(/\bkar\s+raha\s+hai\b/gi, "kar rahe ho")
-    .replace(/\bso\s+raha\s+hai\b/gi, "so rahe ho")
-    .replace(/\bja\s+raha\s+hai\b/gi, "ja rahe ho")
-    .replace(/\bthak\s+gaya\b/gi, "thak gaye")
-    .replace(/\bho\s+gaya\s+hai\b/gi, "ho gaye ho")
-    .replace(/\bho\s+gaya\b/gi, "ho gaye")
-    .replace(/(^|[\s,.:;!?'"“”‘’()[\]{}-])तू(?=$|[\s,.:;!?'"“”‘’()[\]{}-])/gu, "$1तुम")
-    .replace(/(^|[\s,.:;!?'"“”‘’()[\]{}-])तुझे(?=$|[\s,.:;!?'"“”‘’()[\]{}-])/gu, "$1तुम्हें")
-    .replace(/(^|[\s,.:;!?'"“”‘’()[\]{}-])तेरा(?=$|[\s,.:;!?'"“”‘’()[\]{}-])/gu, "$1तुम्हारा")
-    .replace(/(^|[\s,.:;!?'"“”‘’()[\]{}-])तेरी(?=$|[\s,.:;!?'"“”‘’()[\]{}-])/gu, "$1तुम्हारी")
-    .replace(/(^|[\s,.:;!?'"“”‘’()[\]{}-])तेरे(?=$|[\s,.:;!?'"“”‘’()[\]{}-])/gu, "$1तुम्हारे")
-    .replace(/(^|[\s,.:;!?'"“”‘’()[\]{}-])बता\s+ना(?=$|[\s,.:;!?'"“”‘’()[\]{}-])/gu, "$1बताओ ना")
-    .replace(/(^|[\s,.:;!?'"“”‘’()[\]{}-])बता(?=$|[\s,.:;!?'"“”‘’()[\]{}-])/gu, "$1बताओ")
-    .replace(/(^|[\s,.:;!?'"“”‘’()[\]{}-])सुन(?=$|[\s,.:;!?'"“”‘’()[\]{}-])/gu, "$1सुनो")
-    .replace(/(^|[\s,.:;!?'"“”‘’()[\]{}-])देख(?=$|[\s,.:;!?'"“”‘’()[\]{}-])/gu, "$1देखो")
-    .replace(/(^|[\s,.:;!?'"“”‘’()[\]{}-])जा(?=$|[\s,.:;!?'"“”‘’()[\]{}-])/gu, "$1जाओ")
-    .replace(/(^|[\s,.:;!?'"“”‘’()[\]{}-])खा(?=$|[\s,.:;!?'"“”‘’()[\]{}-])/gu, "$1खाओ")
-    .replace(/कर\s+दे/gu, "कर दो")
-    .replace(/बोल\s+दे/gu, "बोल दो")
-    .replace(/भेज\s+दे/gu, "भेज दो")
-    .replace(/दे\s+दे/gu, "दे दो")
-    .replace(/रहने\s+दे/gu, "रहने दो")
-    .replace(/मार\s+दे/gu, "मार दो")
-    .replace(/ले\s+रहा\s+है/gu, "ले रहे हो")
-    .replace(/कर\s+रहा\s+है/gu, "कर रहे हो")
-    .replace(/सो\s+रहा\s+है/gu, "सो रहे हो")
-    .replace(/जा\s+रहा\s+है/gu, "जा रहे हो")
-    .replace(/थक\s+गया/gu, "थक गए")
-    .replace(/हो\s+गया\s+है/gu, "हो गए हो")
-    .replace(/हो\s+गया/gu, "हो गए");
-}
-
-function normalizeNonPhysicalPresence(text: string): string {
-  return text
-    .replace(/\bcome\s+here\b/gi, "stay right there")
-    .replace(/\bcome\s+closer\b/gi, "stay right there")
-    .replace(/\bsit\s+closer\b/gi, "stay right there")
-    .replace(/\bpull\s+you\s+closer\b/gi, "make you blush a little")
-    .replace(/\btouch\s+you\b/gi, "get under your skin a little")
-    .replace(/\bkiss\s+you\b/gi, "make you think about this later");
-}
-
-function cleanTextSegment(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const cleaned = normalizeNonPhysicalPresence(
-    normalizeRespectfulUserGrammar(
-      stripEmojis(value)
-        .replace(/^\s*(?:[-*•]|\d+[.)])\s*/, "")
-        .replace(/^["'“”‘’]+|["'“”‘’]+$/g, "")
-        .replace(/\s+/g, " ")
-        .trim(),
-    ),
-  );
-  return cleaned.length > 0 ? cleaned : null;
-}
-
-function parseJsonSegments(raw: string): string[] | null {
-  const withoutFence = raw
-    .trim()
-    .replace(/^```(?:json)?\s*/i, "")
-    .replace(/\s*```$/i, "")
-    .trim();
-  const candidates = [withoutFence];
-  const objectMatch = withoutFence.match(/\{[\s\S]*\}/);
-  if (objectMatch && objectMatch[0] !== withoutFence) {
-    candidates.push(objectMatch[0]);
-  }
-  const arrayMatch = withoutFence.match(/\[[\s\S]*\]/);
-  if (arrayMatch) {
-    candidates.push(arrayMatch[0]);
-  }
-
-  for (const candidate of candidates) {
-    try {
-      const parsed = JSON.parse(candidate) as unknown;
-      const values =
-        Array.isArray(parsed)
-          ? parsed
-          : parsed &&
-              typeof parsed === "object" &&
-              "messages" in parsed &&
-              Array.isArray((parsed as { messages?: unknown }).messages)
-            ? (parsed as { messages: unknown[] }).messages
-            : null;
-      if (!values) continue;
-      const segments = values
-        .map((v) => cleanTextSegment(v))
-        .filter((v): v is string => v != null)
-        .slice(0, MAX_TEXT_REPLY_SEGMENTS);
-      if (segments.length > 0) return segments;
-    } catch {
-      // Try the next candidate, then fall back to plain-text splitting.
-    }
-  }
-
-  return null;
-}
-
-function splitPlainTextSegments(raw: string): string[] {
-  const lineSegments = raw
-    .split(/\r?\n+/)
-    .map((v) => cleanTextSegment(v))
-    .filter((v): v is string => v != null);
-  if (lineSegments.length > 1) {
-    return lineSegments.slice(0, MAX_TEXT_REPLY_SEGMENTS);
-  }
-
-  const oneLine = cleanTextSegment(raw);
-  if (!oneLine) return ["hmm"];
-  const sentenceSegments = oneLine
-    .split(/(?<=[.!?])\s+/)
-    .map((v) => cleanTextSegment(v))
-    .filter((v): v is string => v != null);
-  if (sentenceSegments.length > 1) {
-    return sentenceSegments.slice(0, MAX_TEXT_REPLY_SEGMENTS);
-  }
-  return [oneLine];
-}
-
-function parseTextReplySegments(raw: string): string[] {
-  const parsed = parseJsonSegments(raw) ?? splitPlainTextSegments(raw);
-  return parsed.slice(0, MAX_TEXT_REPLY_SEGMENTS);
-}
-
-type TextLanguageMode =
-  | "english"
-  | "hinglish"
-  | "mixed"
-  | "hindi_devanagari";
-
-const DEVANAGARI_RE = /[\u0900-\u097F]/;
-
-const HINGLISH_LANGUAGE_TOKEN_RE =
-  /\b(?:haan|han|hain|nahi|nahin|na|kya|kyun|kyu|kaise|kaisa|aisa|waisa|raha|rahi|rahe|rha|rhi|yaar|yrr|yr|thoda|bas|aaj|abhi|ajeeb|matlab|samajh|suno|dekho|batao|btao|bhejo|tum|tumhe|tumhara|tumhari|mera|meri|bina|wajah|dil|arre|arey|acha|accha|theek|thik|hoon|hun|hai|ho|aa|ji|pls|please|miss|love|flirt|romantic|pyaar|ishq)\b/gi;
-
-function containsDevanagari(text: string): boolean {
-  return DEVANAGARI_RE.test(text);
-}
-
-function detectTextLanguageMode(text: string): TextLanguageMode {
-  const trimmed = text.trim();
-  if (!trimmed) return "hinglish";
-
-  if (containsDevanagari(trimmed)) {
-    return "hindi_devanagari";
-  }
-
-  const words = trimmed.match(/[A-Za-z]+/g) ?? [];
-  if (words.length === 0) return "hinglish";
-
-  const hinglishMatches = trimmed.match(HINGLISH_LANGUAGE_TOKEN_RE) ?? [];
-  const ratio = hinglishMatches.length / words.length;
-
-  if (hinglishMatches.length >= 2 || ratio >= 0.14) return "hinglish";
-  if (hinglishMatches.length >= 1 || ratio >= 0.05) return "mixed";
-
-  const hasEnglishCue =
-    /\b(?:i|you|we|the|and|what|how|why|hey|hi|hello|my|your|are|is|am)\b/i.test(
-      trimmed,
-    );
-  const looksMostlyEnglish =
-    words.length >= 4 && hinglishMatches.length === 0 && hasEnglishCue;
-
-  if (looksMostlyEnglish) return "english";
-
-  return "hinglish";
-}
-
 function latestUserLanguageInstruction(history: DbMessage[]): string {
-  const latestUserText =
-    [...history].reverse().find((m) => m.role === "user")?.content ?? "";
-  const mode = detectTextLanguageMode(latestUserText);
+  const userTexts = history
+    .filter((message) => message.role === "user")
+    .map((message) => message.content);
+  const latestUserText = userTexts[userTexts.length - 1] ?? "";
+  const mode = resolveReplyLanguageMode(
+    latestUserText,
+    userTexts.slice(0, -1),
+  );
+  const address = addressGuidance(friendlyTuEstablished(userTexts));
+  const override =
+    "This turn's language decision overrides the broader language heuristic.";
+
   if (mode === "hindi_devanagari") {
     return `latest user language mode: Hindi (Devanagari script in user message).
+- ${override}
 - Reply in natural Latin-script Hinglish (romanized Hindi + light English). Do not use Devanagari in text chat.
 - Match the user's Hindi tone and vocabulary. Prefer Hinglish over pure English.
-- Use respectful tum-grammar in romanized form (tum, tumhe, batao — never tu/tujhe).`;
+- ${address}`;
   }
   if (mode === "hinglish") {
     return `latest user language mode: Hinglish / romanized Hindi.
-- The next Zara text reply must be in natural Latin-script Hinglish.
+- ${override}
+- The next companion text reply must be in natural Latin-script Hinglish.
 - Do not answer with mostly-English chunks.
-- Include natural Hinglish words, grammar, and phrasing (tum-form, batao, yaar, etc.).`;
+- Use natural Hinglish grammar and phrasing without forcing filler words.
+- ${address}`;
   }
   if (mode === "mixed") {
     return `latest user language mode: mixed English + Hinglish.
+- ${override}
 - Lean Hinglish: at least half the reply should feel like casual Indian texting in romanized Hindi.
 - Mirror the user's mix; do not switch to fully English unless they clearly wrote in English only.
-- Keep the script Latin-only (no Devanagari).`;
+- Keep the script Latin-only (no Devanagari).
+- ${address}`;
   }
   return `latest user language mode: English.
-- The user wrote mostly in English. Reply in English for this turn.
+- ${override}
+- The user wrote mostly in English, or the short message has no established Hinglish context. Reply in English for this turn.
 - Do not use Hinglish filler or romanized Hindi grammar unless the user mixes it in.
-- If the user switches to Hinglish or Hindi on the next message, switch immediately.`;
+- If the user switches to Hinglish or Hindi on the next message, switch immediately.
+- ${address}`;
 }
 
 function apiKey(): string {
@@ -364,14 +198,16 @@ export async function verifyXaiConnection(): Promise<void> {
   }
 }
 
-export async function createRealtimeClientSecret(): Promise<{
+export async function createRealtimeClientSecret(
+  profileSlug = "zara",
+): Promise<{
   value: string;
   expires_at: number;
 }> {
   const res = await fetch(`${XAI_BASE}/realtime/client_secrets`, {
     method: "POST",
     headers: headers(),
-    body: JSON.stringify(buildClientSecretRequest()),
+    body: JSON.stringify(buildClientSecretRequest(profileSlug)),
   });
 
   if (!res.ok) {
@@ -496,8 +332,12 @@ export type ChatWithMiaOptions = {
   profileSlug?: string;
 };
 
-function profileNameForSlug(profileSlug: string): string {
-  return getProfileBySlug(resolveProfileSlug(profileSlug))?.name ?? "Zara";
+function profileForSlug(profileSlug: string): CompanionProfile {
+  const profile = getProfileBySlug(resolveProfileSlug(profileSlug));
+  if (!profile) {
+    throw new Error(`Unknown profile slug: ${profileSlug}`);
+  }
+  return profile;
 }
 
 function resolveChatProfileSlug(
@@ -518,10 +358,12 @@ function ttsProvider(): string {
   return (envValue("MIA_TTS_PROVIDER") ?? "elevenlabs").toLowerCase();
 }
 
-function voiceTtsInstructions(): string {
+function voiceTtsInstructions(
+  profile: Pick<CompanionProfile, "name" | "gender">,
+): string {
   return ttsProvider() === "xai"
-    ? MIA_VOICE_TTS_INSTRUCTIONS
-    : ELEVENLABS_VOICE_TTS_INSTRUCTIONS;
+    ? buildXaiVoiceTtsInstructions(profile)
+    : buildElevenLabsVoiceTtsInstructions(profile);
 }
 
 export function voiceReplyPipeline(): string {
@@ -531,28 +373,36 @@ export function voiceReplyPipeline(): string {
 async function rewriteToDevanagariHindi(
   text: string,
   preserveSpeechTags: boolean,
-  name = "Zara",
+  profile: Pick<CompanionProfile, "name" | "gender"> = {
+    name: "Zara",
+    gender: "female",
+  },
 ): Promise<string> {
   if (!containsLatinOutsideSpeechTags(text)) {
-    return normalizeRespectfulUserGrammar(text);
+    return text.trim();
   }
 
   const tagRule = preserveSpeechTags
     ? "Preserve any existing TTS delivery tags exactly as-is, including square-bracket tags like [laughs], [sighs], [teasing], [pauses], [light chuckle], and any <whisper>...</whisper> tags. Only rewrite the human-readable words around them."
     : "Do not add speech tags or markup.";
+  const selfGrammar =
+    profile.gender === "male"
+      ? "Use masculine self-grammar for the companion (रहा हूँ, करूँगा, गया)."
+      : "Use feminine self-grammar for the companion (रही हूँ, करूँगी, गई).";
 
   const rewritten = await replyChatCompletion(
     [
         {
           role: "system",
-          content: `Rewrite the given ${name} reply into natural Devanagari Hindi only.
+          content: `Rewrite the given ${profile.name} reply into natural Devanagari Hindi only.
 
 Rules:
 - Output only the rewritten reply, no explanation.
 - All visible words must be in Devanagari script.
 - Transliterate English loanwords phonetically into Devanagari: cute -> क्यूट, phone -> फोन, message -> मैसेज, online -> ऑनलाइन, okay -> ओके, sorry -> सॉरी, drama -> ड्रामा.
-- Keep ${name}'s natural, warm, close-friend tone and the same meaning.
-- Keep respectful "tum" grammar: "तुम", "तुम्हें", "बताओ", "बताओ ना", "कर दो", "हो गए हो"; never "तू", "तुझे", "बता", "बता ना", "कर दे", "हो गया".
+- Keep ${profile.name}'s specific personality, cadence, and exact meaning.
+- Preserve the original choice of tum/tu address; do not change who any third-person Hindi refers to.
+- ${selfGrammar}
 - Keep it short and conversational.
 - Do not add pet names, extra direct address, or a new follow-up question while rewriting.
 - ${tagRule}`,
@@ -562,7 +412,7 @@ Rules:
     { label: "Devanagari rewrite" },
   );
 
-  return normalizeRespectfulUserGrammar(rewritten);
+  return rewritten.trim();
 }
 
 export async function chatWithMia(
@@ -574,9 +424,10 @@ export async function chatWithMia(
   }
 
   const profileSlug = resolveChatProfileSlug(history, options);
-  const profileName = profileNameForSlug(profileSlug);
+  const profile = profileForSlug(profileSlug);
+  const profileName = profile.name;
   const mood = options?.mood ?? "friendly";
-  const moodLine = moodPromptForMood(mood, profileName);
+  const moodLine = moodPromptForMood(mood, profile);
   const intimacyLevel = effectiveIntimacyLevel(
     mood,
     options?.intimacyLevel ?? 1,
@@ -584,20 +435,17 @@ export async function chatWithMia(
   const voicePrompt = buildVoiceSystemPrompt(profileSlug);
   const systemPrompt = `${
     options?.expressiveTts
-      ? `${voicePrompt}\n${voiceTtsInstructions()}`
+      ? `${voicePrompt}\n${voiceTtsInstructions(profile)}`
       : voicePrompt
-  }\n\n${intimacyPromptForLevel(intimacyLevel)}\n\n${moodLine}\n\n${currentIndiaTimeContext()}`;
+  }\n\n${intimacyPromptForLevel(intimacyLevel, profileName)}\n\n${moodLine}\n\n${currentIndiaTimeContext()}`;
+  const context = prepareConversationContext(history);
 
   const messages: { role: string; content: string }[] = [
     { role: "system", content: systemPrompt },
+    { role: "system", content: context.contextNote },
   ];
 
-  for (const msg of history) {
-    messages.push({
-      role: msg.role,
-      content: msg.content,
-    });
-  }
+  messages.push(...context.recentMessages);
 
   const reply = await replyChatCompletion(messages);
 
@@ -605,7 +453,7 @@ export async function chatWithMia(
   const rewritten = await rewriteToDevanagariHindi(
     voiceReply,
     options?.expressiveTts ?? false,
-    profileName,
+    profile,
   );
 
   return options?.expressiveTts ? stripEmojis(rewritten) : rewritten;
@@ -613,8 +461,9 @@ export async function chatWithMia(
 
 async function addVoiceDeliveryToTextReply(
   textReply: string,
-  profileName: string,
+  profile: Pick<CompanionProfile, "name" | "gender">,
 ): Promise<string> {
+  const profileName = profile.name;
   const cleanReply = stripEmojis(textReply).trim();
   if (!cleanReply) {
     throw new Error("Empty text reply for voice delivery");
@@ -628,9 +477,9 @@ async function addVoiceDeliveryToTextReply(
 
 Rules:
 - Keep the same meaning, emotional stance, and ${profileName}'s personality. Do not add new ideas, questions, advice, facts, pet names, or extra intimacy.
-- Preserve the user's respectful/plural grammar style as a hard rule: tum/tumhe/tumhara, batao, batao na, kar do, le rahe ho, ho gaye. Never use tu/tujhe/tera, bata, bata na, kar de, le raha hai, ho gaya.
+- Preserve the text reply's existing tum/tu choice and every third-person reference exactly; do not "correct" grammar in a way that changes who an action refers to.
 - Convert the spoken words to Devanagari Hindi/Hinglish so the Hindi voice sounds natural. Transliterate English loanwords phonetically when possible.
-- Add only a few delivery tags for performance. ${voiceTtsInstructions()}
+- Add only a few delivery tags for performance. ${voiceTtsInstructions(profile)}
 - Output only the final tagged voice-note script.`,
         },
         { role: "user", content: cleanReply },
@@ -638,7 +487,7 @@ Rules:
     { label: "Voice delivery tagging" },
   );
 
-  return rewriteToDevanagariHindi(stripEmojis(tagged), true, profileName);
+  return rewriteToDevanagariHindi(stripEmojis(tagged), true, profile);
 }
 
 export async function chatWithMiaText(
@@ -648,6 +497,7 @@ export async function chatWithMiaText(
     mood?: ZaraMood;
     privateMode?: boolean;
     invitePrivateMode?: boolean;
+    privatePhotosAvailable?: boolean;
     profileSlug?: string;
   },
 ): Promise<string[]> {
@@ -656,7 +506,8 @@ export async function chatWithMiaText(
   }
 
   const profileSlug = resolveChatProfileSlug(history, options);
-  const profileName = profileNameForSlug(profileSlug);
+  const profile = profileForSlug(profileSlug);
+  const profileName = profile.name;
   const privateMode = options?.privateMode ?? false;
   const invitePrivateMode = options?.invitePrivateMode ?? false;
   const mood = privateMode ? "bold" : (options?.mood ?? "friendly");
@@ -665,18 +516,22 @@ export async function chatWithMiaText(
     : invitePrivateMode
       ? 1
       : effectiveIntimacyLevel(mood, options?.intimacyLevel ?? 1);
-  const profileGender =
-    getProfileBySlug(profileSlug)?.gender ?? "female";
   const privateLine = privateMode
-    ? `\n\n${privateModeRomanticPrompt(profileName, profileGender)}`
+    ? `\n\n${privateModeRomanticPrompt(profileName, profile.gender)}`
     : invitePrivateMode
-      ? `\n\n${privateModeInvitePrompt(profileName, profileGender)}`
+      ? `\n\n${privateModeInvitePrompt(profileName, profile.gender)}`
+      : "";
+  const mediaLine =
+    privateMode && options?.privatePhotosAvailable === false
+      ? `\n\nprivate media availability:
+- No private photo is available for ${profileName} in this chat. If the user asks for one, say so briefly and naturally.
+- Do not promise to send or take a photo, and never substitute another companion's image.`
       : "";
   const systemPrompt = `${buildTextSystemPrompt(profileSlug)}
 
-${intimacyPromptForLevel(intimacyLevel)}
+${intimacyPromptForLevel(intimacyLevel, profileName)}
 
-${moodPromptForMood(mood, profileName)}${privateLine}
+${moodPromptForMood(mood, profile)}${privateLine}${mediaLine}
 
 ${currentIndiaTimeContext()}
 
@@ -684,21 +539,19 @@ ${latestUserLanguageInstruction(history)}
 
 output format:
 - Output only valid JSON.
-- Shape: {"messages":["first small text","second small text"]}
-- Use 1 to 3 messages total.
+- Shape: {"messages":["one concise text"]}
+- Default to exactly 1 message. Use 2 only for a real pause or second beat; use 3 rarely.
+- Keep each message under 280 characters unless urgent safety guidance needs more.
 - Each message must be Latin-script Hinglish/English only.
 - Do not include Devanagari, markdown, explanations, labels, numbering, or separators.`;
+  const context = prepareConversationContext(history);
 
   const messages: { role: string; content: string }[] = [
     { role: "system", content: systemPrompt },
+    { role: "system", content: context.contextNote },
   ];
 
-  for (const msg of history) {
-    messages.push({
-      role: msg.role,
-      content: msg.content,
-    });
-  }
+  messages.push(...context.recentMessages);
 
   const reply = await replyChatCompletion(messages);
 
@@ -710,11 +563,11 @@ export async function chatWithMiaTextAsVoice(
   options?: { mood?: ZaraMood; intimacyLevel?: IntimacyLevel; profileSlug?: string },
 ): Promise<string> {
   const profileSlug = resolveChatProfileSlug(history, options);
-  const profileName = profileNameForSlug(profileSlug);
+  const profile = profileForSlug(profileSlug);
   const textSegments = await chatWithMiaText(history, {
     mood: options?.mood,
     intimacyLevel: options?.intimacyLevel,
     profileSlug,
   });
-  return addVoiceDeliveryToTextReply(textSegments.join(" "), profileName);
+  return addVoiceDeliveryToTextReply(textSegments.join(" "), profile);
 }

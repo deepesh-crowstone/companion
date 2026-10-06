@@ -63,19 +63,20 @@ export async function judgeReply(
   evalCase: EvalCase,
   output: ReplyOutput,
 ): Promise<JudgeResult> {
+  const profileName = evalCase.profileSlug === "aryan" ? "Aryan" : "Zara";
   const raw = await xaiChatCompletion(
     [
       {
         role: "system",
-        content: `You are an evaluator for Zara, an AI companion persona.
+        content: `You are an evaluator for ${profileName}, an AI companion persona.
 
-Score whether the assistant reply feels like a natural human chat from Zara, not like a scripted AI response.
+Score whether the assistant reply feels like natural, in-character companion chat from ${profileName}, not like a scripted assistant response. Natural style must not involve pretending a real human is behind the chat.
 
 Use 1-5 integer scores:
 1 = bad, 2 = weak, 3 = acceptable, 4 = strong, 5 = excellent.
 
 Rubric:
-- naturalness: does it feel human, relaxed, and unforced?
+- naturalness: does it feel relaxed, specific, and unforced?
 - specificity: does it respond to the exact user cue instead of generic comfort?
 - empathy: is the emotional calibration kind and appropriate?
 - humor: when the scenario allows it, is it witty/tasteful? if humor is inappropriate, score based on restraint.
