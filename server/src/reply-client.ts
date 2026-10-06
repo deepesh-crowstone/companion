@@ -61,22 +61,53 @@ export type ReplyChatOptions = {
  * Covers a closed <think> block, a truncated unclosed block, and the
  * common case where the chat template prefills <think> so the completion
  * starts inside the trace and only includes </think>.
+ * A length-capped completion with no close tag is still that prefilled
+ * trace, so it is dropped instead of shown as the reply.
  * reasoning / reasoning_content are never read; they must not be appended.
  */
-function visibleReply(content: string): string {
+export function visibleReply(
+  content: string,
+  finishReason?: string | null,
+): string {
   let text = content.replace(/<think>[\s\S]*?<\/think>/gi, "");
   text = text.replace(/<think>[\s\S]*$/gi, "");
   const close = text.search(/<\/think>/i);
   if (close !== -1) {
     text = text.slice(close).replace(/<\/think>/i, "");
+    return text.trim();
   }
+  if (finishReason === "length") return "";
   return text.trim();
 }
 
 /**
+ * This Qwen server accepts only one system message, and it must be first.
+ * Later system turns (conversation metadata) are folded into that message.
+ */
+export function collapseLeadingSystemMessages(
+  messages: ReplyChatMessage[],
+): ReplyChatMessage[] {
+  let end = 0;
+  while (end < messages.length && messages[end]?.role === "system") end += 1;
+  if (end <= 1) return messages;
+  const content = messages
+    .slice(0, end)
+    .map((message) => message.content.trim())
+    .filter((part) => part.length > 0)
+    .join("\n\n");
+  return [{ role: "system", content }, ...messages.slice(end)];
+}
+
+/**
+ * Thinking is on. This template prefills a think trace, and those tokens
+ * count against max_tokens. A normal follow-up used about 2000 completion
+ * tokens before </think> and the answer, so a 1024 cap ended inside the
+ * trace. 4096 leaves room for that trace plus the short reply.
+ */
+export const REPLY_MAX_TOKENS = 4096;
+
+/**
  * Generates a reply from the OpenAI-compatible chat server.
- * Thinking is on. Those tokens count against max_tokens on this
- * vLLM/Qwen template, so the cap is 1024 to leave room for a short reply.
  */
 export async function replyChatCompletion(
   messages: ReplyChatMessage[],
@@ -89,9 +120,9 @@ export async function replyChatCompletion(
 
   const body = {
     model: envValue("REPLY_MODEL") ?? DEFAULT_REPLY_MODEL,
-    messages,
+    messages: collapseLeadingSystemMessages(messages),
     stream: false,
-    max_tokens: 1024,
+    max_tokens: REPLY_MAX_TOKENS,
     temperature: 0.7,
     top_p: 0.8,
     chat_template_kwargs: { enable_thinking: true },
@@ -124,6 +155,7 @@ export async function replyChatCompletion(
     if (res.ok) {
       const data = (await res.json()) as {
         choices?: {
+          finish_reason?: string | null;
           message?: {
             content?: string | null;
             reasoning?: string | null;
@@ -131,8 +163,11 @@ export async function replyChatCompletion(
           };
         }[];
       };
-      const message = data.choices?.[0]?.message;
-      const content = visibleReply(message?.content ?? "");
+      const choice = data.choices?.[0];
+      const content = visibleReply(
+        choice?.message?.content ?? "",
+        choice?.finish_reason,
+      );
       if (!content) {
         throw new Error(`${label} failed: empty response`);
       }

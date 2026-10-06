@@ -24,7 +24,12 @@ import {
   buildRealtimeInstructions,
   buildTextSystemPrompt,
 } from "../src/profiles/prompts.js";
-import { insecureReplyEndpointWarning } from "../src/reply-client.js";
+import {
+  REPLY_MAX_TOKENS,
+  collapseLeadingSystemMessages,
+  insecureReplyEndpointWarning,
+  visibleReply,
+} from "../src/reply-client.js";
 import {
   buildElevenLabsVoiceTtsInstructions,
   buildXaiVoiceTtsInstructions,
@@ -209,6 +214,34 @@ test("bounded context keeps recent chronology and verbatim older excerpts", () =
   assert.match(prepared.contextNote, /older user excerpts/);
   assert.match(prepared.contextNote, /must not be guessed/);
   assert.doesNotMatch(prepared.contextNote, /continuity text 1"/);
+});
+
+test("reply request keeps one leading system message and a finished think trace", () => {
+  const collapsed = collapseLeadingSystemMessages([
+    { role: "system", content: "persona" },
+    { role: "system", content: "conversation context metadata" },
+    { role: "user", content: "Hi" },
+    { role: "assistant", content: "you caught me mid-scroll, hi" },
+    { role: "user", content: "What were you scrolling" },
+  ]);
+  assert.equal(collapsed.filter((message) => message.role === "system").length, 1);
+  assert.equal(collapsed[0]?.role, "system");
+  assert.match(collapsed[0]?.content ?? "", /persona/);
+  assert.match(collapsed[0]?.content ?? "", /conversation context metadata/);
+  assert.equal(collapsed.at(-1)?.content, "What were you scrolling");
+
+  const answer =
+    '{"messages":["mostly reels, and one very serious kitchen renovation."]}';
+  assert.equal(
+    visibleReply(`Here's a thinking process:\nkeep going\n</think>\n\n${answer}`),
+    answer,
+  );
+  assert.equal(
+    visibleReply("Here's a thinking process:\nstill inside the prefilled trace", "length"),
+    "",
+  );
+  assert.equal(visibleReply(answer, "stop"), answer);
+  assert.ok(REPLY_MAX_TOKENS >= 4096);
 });
 
 test("non-local HTTP reply endpoint produces a key-free warning", () => {
