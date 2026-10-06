@@ -50,7 +50,7 @@ export async function xaiChatCompletion(
     },
     body: JSON.stringify({
       model: chatModel(),
-      reasoning_effort: "none",
+      reasoning_effort: "low",
       messages,
       temperature,
     }),

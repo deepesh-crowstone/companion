@@ -65,7 +65,7 @@ export async function classifyIntimacyLevel(
   const content = await xaiChatCompletion(
     {
       model: XAI_CHAT_MODEL,
-      reasoning_effort: "none",
+      reasoning_effort: "low",
       temperature: 0.1,
       messages: [
         {

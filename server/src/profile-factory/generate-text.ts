@@ -166,6 +166,7 @@ async function completeJson(userPrompt: string, label: string): Promise<unknown>
   const raw = await xaiChatCompletion(
     {
       model: XAI_CHAT_MODEL,
+      reasoning_effort: "low",
       temperature: 0.95,
       response_format: { type: "json_object" },
       messages: [

@@ -545,7 +545,7 @@ async function rewriteToDevanagariHindi(
   const rewritten = await xaiChatCompletion(
     {
       model: XAI_CHAT_MODEL,
-      reasoning_effort: "none",
+      reasoning_effort: "low",
       temperature: 0.2,
       messages: [
         {
@@ -607,7 +607,7 @@ export async function chatWithMia(
 
   const reply = await xaiChatCompletion({
     model: XAI_CHAT_MODEL,
-    reasoning_effort: "none",
+    reasoning_effort: "low",
     messages,
     temperature: MIA_CHAT_TEMPERATURE,
   });
@@ -633,7 +633,7 @@ async function addVoiceDeliveryToTextReply(
   const tagged = await xaiChatCompletion(
     {
       model: XAI_CHAT_MODEL,
-      reasoning_effort: "none",
+      reasoning_effort: "low",
       temperature: 0.35,
       messages: [
         {
@@ -715,7 +715,7 @@ output format:
 
   const reply = await xaiChatCompletion({
     model: XAI_CHAT_MODEL,
-    reasoning_effort: "none",
+    reasoning_effort: "low",
     messages,
     temperature: MIA_CHAT_TEMPERATURE,
   });
