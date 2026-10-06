@@ -13,10 +13,12 @@ class MiaPresenceRow extends StatelessWidget {
   const MiaPresenceRow({
     super.key,
     required this.kind,
+    this.avatarAsset,
     this.compactTop = false,
   });
 
   final MiaPresenceKind kind;
+  final String? avatarAsset;
   final bool compactTop;
 
   static const double _avatarSize = 28;
@@ -34,7 +36,7 @@ class MiaPresenceRow extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          MiaAvatar(size: _avatarSize),
+          MiaAvatar(size: _avatarSize, assetPath: avatarAsset),
           const SizedBox(width: 8),
           _PresenceBubble(kind: kind),
         ],

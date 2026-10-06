@@ -58,7 +58,6 @@ class ChatInputBar extends StatefulWidget {
 
 class _ChatInputBarState extends State<ChatInputBar> {
   static const _iconGrey = Color(0xFFA89FA3);
-  static const _showVoiceNoteMic = false;
 
   bool _hasText = false;
 
@@ -214,7 +213,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
             const SizedBox(width: 10),
             if (showLockedSend)
               _SendButton(canSend: true, onSend: widget.onHoldSend)
-            else if (showMic && _showVoiceNoteMic)
+            else if (showMic)
               VoiceNoteMicButton(
                 enabled: widget.enabled,
                 holdActive: holdActive,

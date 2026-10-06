@@ -27,7 +27,6 @@ import '../services/voice_recording_platform.dart';
 import '../theme/mia_theme.dart';
 import '../widgets/chat_pattern_background.dart';
 import '../utils/web_keyboard_inset.dart';
-import '../utils/voice_waveform_levels.dart';
 import '../widgets/chat_input_bar.dart';
 import '../widgets/chat_message_tile.dart';
 import '../widgets/empty_chat.dart';
@@ -473,7 +472,11 @@ class _ChatScreenState extends State<ChatScreen> {
           ? MiaPresenceKind.recording
           : MiaPresenceKind.typing;
       return RepaintBoundary(
-        child: MiaPresenceRow(kind: kind, compactTop: compact),
+        child: MiaPresenceRow(
+          kind: kind,
+          avatarAsset: widget.profile.avatarAsset,
+          compactTop: compact,
+        ),
       );
     }
 
@@ -533,7 +536,10 @@ class _ChatScreenState extends State<ChatScreen> {
           children: [
             if (_showDateHeader(timelineIndex))
               DateSeparator(date: entry.createdAt),
-            FreeMessagesLeftChip(remaining: _freeMessages.remaining),
+            FreeMessagesLeftChip(
+              remaining: _freeMessages.remaining,
+              companionName: widget.profile.displayName,
+            ),
           ],
         ),
       );
@@ -874,73 +880,6 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  Future<void> _startVoiceRecording() async {
-    if (_recording) return;
-
-    FocusScope.of(context).unfocus();
-    final hasPermission = await _recorder.hasPermission();
-    if (!hasPermission) {
-      if (!mounted) return;
-      MiaTheme.showMessage(
-        context,
-        'microphone permission is needed for voice notes',
-      );
-      return;
-    }
-
-    final path = await createVoiceRecordingPath();
-
-    await _recorder.start(voiceRecordConfig(), path: path);
-
-    if (!mounted) return;
-
-    _startAmplitudeListener();
-    _recordDurationTimer?.cancel();
-    _recordingDuration = Duration.zero;
-    _recordDurationTimer = Timer.periodic(const Duration(milliseconds: 200), (
-      _,
-    ) {
-      if (!mounted || !_recording) return;
-      setState(() {
-        _recordingDuration += const Duration(milliseconds: 200);
-      });
-    });
-
-    setState(() {
-      _recording = true;
-      _recordingLocked = false;
-      _statusText = 'listening…';
-      _slideCancelActive = false;
-      _voiceSlideOffset = 0;
-    });
-  }
-
-  void _lockVoiceRecording() {
-    if (!_recording || _recordingLocked) return;
-    setState(() {
-      _recordingLocked = true;
-      _slideCancelActive = false;
-      _voiceSlideOffset = 0;
-    });
-  }
-
-  void _startAmplitudeListener() {
-    _amplitudeSub?.cancel();
-    _recordingLevels = [];
-    _amplitudeSub = _recorder
-        .onAmplitudeChanged(const Duration(milliseconds: 120))
-        .listen((amp) {
-          if (!mounted || !_recording) return;
-          setState(() {
-            _recordingLevels.add(normalizeRecordingAmplitude(amp.current));
-            const maxSamples = 72;
-            if (_recordingLevels.length > maxSamples) {
-              _recordingLevels.removeAt(0);
-            }
-          });
-        });
-  }
-
   void _stopAmplitudeListener() {
     _amplitudeSub?.cancel();
     _amplitudeSub = null;
@@ -955,10 +894,11 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
-  Future<void> _tapStartAndLockVoiceNote() async {
-    await _startVoiceRecording();
-    if (!mounted || !_recording) return;
-    _lockVoiceRecording();
+  /// Composer mic. The earlier control recorded a note; it now opens the
+  /// existing unlimited-chats paywall for every user.
+  Future<void> _onVoiceNotePressed() async {
+    _dismissKeyboard();
+    await _openUnlimitedPaywall();
   }
 
   Future<void> _cancelVoiceRecording() async {
@@ -1436,8 +1376,8 @@ class _ChatScreenState extends State<ChatScreen> {
                 sending: _showMiaActivity,
                 enabled: !_loading,
                 onSend: _sendText,
-                onTapStartAndLock: _tapStartAndLockVoiceNote,
-                onHoldStart: _startVoiceRecording,
+                onTapStartAndLock: _onVoiceNotePressed,
+                onHoldStart: _onVoiceNotePressed,
                 onHoldSend: () => unawaited(_sendVoiceRecording()),
                 onHoldCancel: () => unawaited(_cancelVoiceRecording()),
                 onSlideUpdate: _onVoiceSlideUpdate,

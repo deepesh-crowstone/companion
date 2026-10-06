@@ -7,17 +7,23 @@ import '../data/mia_profile.dart';
 /// daily limit. Deliberately low-key so it primes the upsell without making the
 /// companion feel like a metered service.
 class FreeMessagesLeftChip extends StatelessWidget {
-  const FreeMessagesLeftChip({super.key, required this.remaining});
+  const FreeMessagesLeftChip({
+    super.key,
+    required this.remaining,
+    this.companionName,
+  });
 
   final int remaining;
+  final String? companionName;
 
   static const _textColor = Color(0xFF5F269F);
 
   @override
   Widget build(BuildContext context) {
+    final name = companionName ?? MiaProfile.name;
     final label = remaining <= 1
-        ? 'Last free message with ${MiaProfile.name} today'
-        : '$remaining free messages left with ${MiaProfile.name} today';
+        ? 'Last free message with $name today'
+        : '$remaining free messages left with $name today';
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),

@@ -64,10 +64,15 @@ class _ProfilesGridScreenState extends State<ProfilesGridScreen> {
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-              child: Text(
-                'Choose someone to chat with',
-                style: MiaTheme.serifTitle(size: 28),
-                textAlign: TextAlign.center,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  'Choose someone to chat with',
+                  maxLines: 1,
+                  softWrap: false,
+                  style: MiaTheme.serifTitle(size: 26),
+                  textAlign: TextAlign.center,
+                ),
               ),
             ),
             Expanded(child: _buildBody()),
