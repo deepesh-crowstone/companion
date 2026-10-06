@@ -103,6 +103,8 @@ export function collapseLeadingSystemMessages(
  * count against max_tokens. A normal follow-up used about 2000 completion
  * tokens before </think> and the answer, so a 1024 cap ended inside the
  * trace. 4096 leaves room for that trace plus the short reply.
+ * Visible bubble length is enforced after generation; do not lower this
+ * cap to shorten the reply, or the think trace gets cut off before </think>.
  */
 export const REPLY_MAX_TOKENS = 4096;
 

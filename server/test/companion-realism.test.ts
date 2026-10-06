@@ -14,7 +14,10 @@ import {
   openingRotationSeed,
   selectOpeningGreeting,
 } from "../src/opening-greeting.js";
-import { buildPlatformBehavior } from "../src/platform-behavior.js";
+import {
+  TEXT_REPLY_OUTPUT_FORMAT,
+  buildPlatformBehavior,
+} from "../src/platform-behavior.js";
 import { getProfileBySlug } from "../src/profiles/catalog.js";
 import {
   privateModeInvitePrompt,
@@ -35,6 +38,9 @@ import {
   buildXaiVoiceTtsInstructions,
 } from "../src/tts-speech.js";
 import {
+  MAX_TEXT_REPLY_SEGMENTS,
+  MAX_TEXT_SEGMENT_CHARS,
+  TARGET_TEXT_SEGMENT_CHARS,
   addressGuidance,
   detectTextLanguageMode,
   friendlyTuEstablished,
@@ -185,19 +191,123 @@ test("text cleanup preserves safety meaning, third-person Hindi, and apt emoji",
   const safetySegments = parseTextReplySegments(
     JSON.stringify({ messages: [`${"word ".repeat(400)}${safetyTail}`] }),
   );
-  assert.ok(safetySegments.length <= 3);
+  assert.ok(safetySegments.length <= MAX_TEXT_REPLY_SEGMENTS);
+  assert.ok(
+    safetySegments.every((segment) => segment.length <= MAX_TEXT_SEGMENT_CHARS),
+  );
   assert.match(safetySegments.join(" "), /hurting yourself/);
   assert.match(safetySegments.join(" "), /emergency services/);
 });
 
-test("response cadence defaults intact and bounds oversized bubbles", () => {
-  assert.deepEqual(parseTextReplySegments("one sentence. another sentence."), [
-    "one sentence. another sentence.",
+test("long replies become a few short chat bubbles", () => {
+  assert.deepEqual(parseTextReplySegments("that actually sounds nice"), [
+    "that actually sounds nice",
   ]);
-  const oversized = "word ".repeat(400);
-  const segments = parseTextReplySegments(JSON.stringify({ messages: [oversized] }));
-  assert.ok(segments.length <= 3);
-  assert.ok(segments.every((segment) => segment.length <= 320));
+  assert.deepEqual(parseTextReplySegments("one sentence. another sentence."), [
+    "one sentence.",
+    "another sentence.",
+  ]);
+  assert.deepEqual(parseTextReplySegments("yes. totally."), ["yes.", "totally."]);
+  assert.deepEqual(parseTextReplySegments("Dr. Shah called. He said wait."), [
+    "Dr. Shah called.",
+    "He said wait.",
+  ]);
+  assert.deepEqual(parseTextReplySegments("It is 3.14 exactly."), [
+    "It is 3.14 exactly.",
+  ]);
+  assert.deepEqual(parseTextReplySegments("on my way\nsave me a seat"), [
+    "on my way",
+    "save me a seat",
+  ]);
+  assert.deepEqual(parseTextReplySegments("- leave it\n- I'm here"), [
+    "leave it",
+    "I'm here",
+  ]);
+
+  const longAnswer =
+    "I saw your message and I was going to reply right away, but then the studio got loud. You do not have to sort the whole week tonight. Eat something and text me after.";
+  assert.deepEqual(parseTextReplySegments(longAnswer), [
+    "I saw your message and I was going to reply right away, but then the studio got loud.",
+    "You do not have to sort the whole week tonight.",
+    "Eat something and text me after.",
+  ]);
+
+  const longSentence =
+    "I was halfway through answering and then I reread what you sent, because it sounded heavier than the version you told me this morning.";
+  assert.ok(longSentence.length > MAX_TEXT_SEGMENT_CHARS);
+  const clauseSplit = parseTextReplySegments(longSentence);
+  assert.deepEqual(clauseSplit, [
+    "I was halfway through answering and then I reread what you sent,",
+    "because it sounded heavier than the version you told me this morning.",
+  ]);
+  assert.ok(clauseSplit.every((segment) => segment.length <= TARGET_TEXT_SEGMENT_CHARS));
+  assert.ok(clauseSplit.every((segment) => segment.split(/\s+/).length >= 2));
+
+  const roomy =
+    "I keep thinking about yesterday and it still feels unfinished, like there was another half you never sent.";
+  assert.ok(roomy.length > TARGET_TEXT_SEGMENT_CHARS);
+  assert.ok(roomy.length <= MAX_TEXT_SEGMENT_CHARS);
+  const roomySplit = parseTextReplySegments(roomy);
+  assert.ok(roomySplit.length === 2);
+  assert.ok(roomySplit.every((segment) => segment.length <= TARGET_TEXT_SEGMENT_CHARS));
+  assert.equal(roomySplit.join(" "), roomy);
+
+  const run = "word ".repeat(30).trim();
+  const runSegments = parseTextReplySegments(run);
+  assert.ok(runSegments.length >= 2);
+  assert.ok(runSegments.length <= MAX_TEXT_REPLY_SEGMENTS);
+  assert.ok(runSegments.every((segment) => segment.length <= MAX_TEXT_SEGMENT_CHARS));
+  assert.ok(runSegments.every((segment) => segment.split(/\s+/).length >= 2));
+  assert.equal(runSegments.join(" "), run);
+
+  const beat = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda.";
+  assert.ok(beat.length > 60 && beat.length <= MAX_TEXT_SEGMENT_CHARS);
+  assert.ok(beat.length * 2 + 1 > MAX_TEXT_SEGMENT_CHARS);
+  const safety =
+    "If you feel like hurting yourself, contact local emergency services now.";
+  const crowded = parseTextReplySegments(
+    `${beat} ${beat} ${beat} ${beat} ${safety}`,
+  );
+  assert.ok(crowded.length <= MAX_TEXT_REPLY_SEGMENTS);
+  assert.ok(crowded.every((segment) => segment.length <= MAX_TEXT_SEGMENT_CHARS));
+  assert.match(crowded.join(" "), /hurting yourself/);
+  assert.match(crowded.join(" "), /emergency services/);
+
+  const four = parseTextReplySegments("yes. totally. okay. fine.");
+  assert.ok(four.length <= MAX_TEXT_REPLY_SEGMENTS);
+  assert.match(four.join(" "), /yes/);
+  assert.match(four.join(" "), /totally/);
+  assert.match(four.join(" "), /okay/);
+  assert.match(four.join(" "), /fine/);
+
+  assert.deepEqual(
+    parseTextReplySegments("<think>secret plan</think>{\"messages\":[\"hey\"]}"),
+    ["hey"],
+  );
+  assert.deepEqual(
+    parseTextReplySegments("hidden reasoning\n</think>\n\nstill here"),
+    ["still here"],
+  );
+  assert.deepEqual(parseTextReplySegments("<think>no answer yet"), ["hmm"]);
+
+  for (const slug of ["zara", "aryan"] as const) {
+    const prompt = buildTextSystemPrompt(slug);
+    assert.match(prompt, /WhatsApp/);
+    assert.match(prompt, /no stacked sentences/i);
+    assert.match(prompt, new RegExp(`under ${TARGET_TEXT_SEGMENT_CHARS} characters`));
+    assert.match(prompt, new RegExp(`under ${MAX_TEXT_SEGMENT_CHARS}`));
+    assert.match(prompt, /output 1 to 3 separate message chunks, and never more/);
+    assert.doesNotMatch(prompt, /280 characters/);
+    assert.match(prompt, /one short sentence/i);
+  }
+  assert.match(buildTextSystemPrompt("zara"), /Warmth stays in the wording/);
+  assert.match(buildTextSystemPrompt("aryan"), /drier or more practical/);
+  assert.doesNotMatch(buildTextSystemPrompt("aryan"), /Warmth stays in the wording/);
+  assert.match(TEXT_REPLY_OUTPUT_FORMAT, /WhatsApp bubble/);
+  assert.match(TEXT_REPLY_OUTPUT_FORMAT, /Never output more than 3/);
+  assert.match(moodPromptForMood("caring", profile("zara")), /one short sentence/);
+  assert.match(moodPromptForMood("funny", profile("aryan")), /one short sentence/);
+  assert.match(moodPromptForMood("bold", profile("zara")), /one short sentence/);
 });
 
 test("bounded context keeps recent chronology and verbatim older excerpts", () => {
@@ -271,6 +381,7 @@ test("openers are profile-specific, language-aware, and stable", () => {
         seed,
       });
       assert.equal(line.includes("\n"), false);
+      assert.ok(line.length <= TARGET_TEXT_SEGMENT_CHARS);
       assert.doesNotMatch(line, /kaise ho/i);
       assert.equal(detectTextLanguageMode(line), "english");
       assert.equal(

@@ -11,6 +11,7 @@ import {
   chatWithMiaTextAsVoice,
 } from "../src/xai.js";
 import type { DbMessage } from "../src/db.js";
+import { TEXT_REPLY_OUTPUT_FORMAT } from "../src/platform-behavior.js";
 import { parseTextReplySegments } from "../src/text-response.js";
 import type { EvalCase, EvalChannel, ReplyOutput } from "./types.js";
 
@@ -124,12 +125,7 @@ function textSystemPrompt(prompt = buildTextSystemPrompt("zara")): string {
 
 ${currentIndiaTimeContext()}
 
-output format:
-- Output only valid JSON.
-- Shape: {"messages":["first small text","second small text"]}
-- Use 1 to 3 messages total.
-- Each message must be Latin-script Hinglish/English only.
-- Do not include Devanagari, markdown, explanations, labels, numbering, or separators.`;
+${TEXT_REPLY_OUTPUT_FORMAT}`;
 }
 
 function voiceSystemPrompt(prompt = buildVoiceSystemPrompt("zara")): string {

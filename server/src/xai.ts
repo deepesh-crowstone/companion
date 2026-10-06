@@ -22,6 +22,7 @@ import {
   privateModeInvitePrompt,
   privateModeRomanticPrompt,
 } from "./private-mode-prompts.js";
+import { TEXT_REPLY_OUTPUT_FORMAT } from "./platform-behavior.js";
 import { replyChatCompletion } from "./reply-client.js";
 import { prepareConversationContext } from "./conversation-context.js";
 import type { CompanionProfile } from "./profiles/types.js";
@@ -537,13 +538,7 @@ ${currentIndiaTimeContext()}
 
 ${latestUserLanguageInstruction(history)}
 
-output format:
-- Output only valid JSON.
-- Shape: {"messages":["one concise text"]}
-- Default to exactly 1 message. Use 2 only for a real pause or second beat; use 3 rarely.
-- Keep each message under 280 characters unless urgent safety guidance needs more.
-- Each message must be Latin-script Hinglish/English only.
-- Do not include Devanagari, markdown, explanations, labels, numbering, or separators.`;
+${TEXT_REPLY_OUTPUT_FORMAT}`;
   const context = prepareConversationContext(history);
 
   const messages: { role: string; content: string }[] = [
