@@ -583,6 +583,28 @@ export function detectTextLanguageMode(text: string): TextLanguageMode {
   return "english";
 }
 
+/**
+ * A short reply that picks the chat language. Longer messages are real talk,
+ * so a passing mention of "English" does not lock the language.
+ */
+export function explicitLanguageChoice(
+  text: string,
+): "english" | "hinglish" | null {
+  const normalized = text
+    .trim()
+    .toLowerCase()
+    .replace(/[!?.…]+$/g, "")
+    .replace(/\s+/g, " ");
+  if (!normalized) return null;
+  const words = normalized.split(" ");
+  if (words.length > 6) return null;
+  const wantsHinglish = /\b(?:hinglish|hindi)\b/.test(normalized);
+  const wantsEnglish = /\b(?:english|angrezi|angreji)\b/.test(normalized);
+  if (wantsHinglish && !wantsEnglish) return "hinglish";
+  if (wantsEnglish && !wantsHinglish) return "english";
+  return null;
+}
+
 export function isLowSignalText(text: string): boolean {
   const trimmed = text.trim();
   if (!trimmed || LOW_SIGNAL_RE.test(trimmed)) return true;
@@ -600,14 +622,27 @@ export function resolveReplyLanguageMode(
   latestUserText: string,
   priorUserTexts: string[] = [],
 ): TextLanguageMode {
+  const latestChoice = explicitLanguageChoice(latestUserText);
+  if (latestChoice) return latestChoice;
   if (!isLowSignalText(latestUserText)) {
     return detectTextLanguageMode(latestUserText);
   }
   for (let index = priorUserTexts.length - 1; index >= 0; index -= 1) {
     const prior = priorUserTexts[index] ?? "";
+    const priorChoice = explicitLanguageChoice(prior);
+    if (priorChoice) return priorChoice;
     if (!isLowSignalText(prior)) return detectTextLanguageMode(prior);
   }
   return "english";
+}
+
+/** True once the student has written real talk or named Hinglish or English. */
+export function userHasShownLanguage(userTexts: string[]): boolean {
+  for (const text of userTexts) {
+    if (explicitLanguageChoice(text)) return true;
+    if (!isLowSignalText(text)) return true;
+  }
+  return false;
 }
 
 export function friendlyTuEstablished(userTexts: string[]): boolean {

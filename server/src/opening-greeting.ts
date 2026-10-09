@@ -32,12 +32,11 @@ const ARYAN_HINGLISH = [
   "theek, aa gaya",
 ];
 
-const ALAKH_ENGLISH = [
-  "Hi. Tell me where you're stuck.",
-  "Hello. Which exam is this for?",
-  "Hey. Start with the real problem.",
-  "Hi. I'm here. What's the doubt?",
-];
+/** First Alakh Sir text. Neutral "hi" has not chosen a language yet. */
+export const ALAKH_LANGUAGE_ASK =
+  "hello beta, which language would you like to talk in: Hinglish or English?";
+
+const ALAKH_ENGLISH = [ALAKH_LANGUAGE_ASK];
 
 const ALAKH_HINGLISH = [
   "haan, batao. aaj kya samajh nahi aa raha",

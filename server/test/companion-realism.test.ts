@@ -6,6 +6,7 @@ import { prepareConversationContext } from "../src/conversation-context.js";
 import type { DbMessage } from "../src/db.js";
 import { moodPromptForMood } from "../src/mood.js";
 import {
+  ALAKH_LANGUAGE_ASK,
   isSimpleOpeningGreeting,
   openingRotationSeed,
   selectOpeningGreeting,
@@ -43,6 +44,7 @@ import {
   friendlyTuEstablished,
   parseTextReplySegments,
   resolveReplyLanguageMode,
+  userHasShownLanguage,
 } from "../src/text-response.js";
 import { profileSupportsPrivatePhotos } from "../src/zara-photos.js";
 
@@ -495,12 +497,25 @@ test("openers are profile-specific, language-aware, and stable", () => {
   assert.match(zaraHinglish, /gayi/);
   assert.match(aryanHinglish, /gaya/);
   assert.doesNotMatch(aryanHinglish, /gayi|rahi/);
+  assert.equal(
+    selectOpeningGreeting({ profileSlug: "alakh", userText: "hi", seed: 0 }),
+    ALAKH_LANGUAGE_ASK,
+  );
+  assert.equal(
+    selectOpeningGreeting({ profileSlug: "alakh", userText: "hi", seed: 2 }),
+    ALAKH_LANGUAGE_ASK,
+  );
   const alakhHinglish = selectOpeningGreeting({
     profileSlug: "alakh",
     userText: "hey yaar",
     seed: 3,
   });
   assert.equal(detectTextLanguageMode(alakhHinglish), "hinglish");
+  assert.equal(resolveReplyLanguageMode("Hinglish", []), "hinglish");
+  assert.equal(resolveReplyLanguageMode("ok", ["Hinglish"]), "hinglish");
+  assert.equal(resolveReplyLanguageMode("English please", []), "english");
+  assert.equal(userHasShownLanguage(["hi"]), false);
+  assert.equal(userHasShownLanguage(["Hinglish"]), true);
   assert.notEqual(
     selectOpeningGreeting({ profileSlug: "alakh", userText: "hi", seed: 0 }),
     selectOpeningGreeting({ profileSlug: "aryan", userText: "hi", seed: 0 }),

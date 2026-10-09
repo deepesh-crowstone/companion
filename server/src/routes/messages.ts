@@ -37,10 +37,12 @@ import { getProfileBySlug, resolveProfileSlug } from "../profiles/catalog.js";
 import { displayNameForSlug } from "../profiles/display-name.js";
 import { MAX_CONTEXT_SOURCE_MESSAGES } from "../conversation-context.js";
 import {
+  ALAKH_LANGUAGE_ASK,
   isSimpleOpeningGreeting,
   openingRotationSeed,
   selectOpeningGreeting,
 } from "../opening-greeting.js";
+import { userHasShownLanguage } from "../text-response.js";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -257,6 +259,23 @@ async function buildTextReply(
     return assistantMsgs;
   }
 
+  const userTexts = [
+    ...history
+      .filter((message) => message.role === "user")
+      .map((message) => message.content),
+    ...userMsgs.map((message) => message.content),
+  ];
+  if (isMentorProfile(profileSlug) && !userHasShownLanguage(userTexts)) {
+    const alreadyAsked = history.some(
+      (message) =>
+        message.role === "assistant" &&
+        message.content.includes("which language would you like to talk in"),
+    );
+    return insertAssistantTextMessages(userId, profileSlug, [
+      alreadyAsked ? "Hinglish ya English, beta?" : ALAKH_LANGUAGE_ASK,
+    ]);
+  }
+
   const canAttachPrivatePhoto =
     allowPrivate &&
     isBucketConfigured() &&
@@ -338,10 +357,40 @@ export async function replyToProfileText(input: {
     .map((message) => message.content);
 }
 
+async function ensureAlakhLanguageAsk(
+  userId: number,
+  profileSlug: string,
+): Promise<void> {
+  if (profileSlug !== "alakh") return;
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SELECT pg_advisory_xact_lock($1::int, 4401)", [userId]);
+    const { rows } = await client.query<{ id: number }>(
+      `SELECT id FROM messages WHERE user_id = $1 AND profile_slug = $2 LIMIT 1`,
+      [userId, profileSlug],
+    );
+    if (rows.length === 0) {
+      await client.query(
+        `INSERT INTO messages (user_id, profile_slug, role, content, message_type, audio_filename, image_key, is_private)
+         VALUES ($1, $2, 'assistant', $3, 'text', NULL, NULL, FALSE)`,
+        [userId, profileSlug, ALAKH_LANGUAGE_ASK],
+      );
+    }
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 messagesRouter.get("/", async (req, res) => {
   const auth = getAuth(req);
   const profileSlug = parseProfileSlug(req.query.profileSlug);
   try {
+    await ensureAlakhLanguageAsk(auth.userId, profileSlug);
     const messages = await listMessages(auth.userId, profileSlug);
     const publicMessages = await Promise.all(
       messages.map((m) => toPublicMessage(m)),
