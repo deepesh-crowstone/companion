@@ -38,7 +38,7 @@ export const ALAKH_LANGUAGE_ASK =
 
 /** What Alakh Sir says back when the student opens with a greeting. */
 export const ALAKH_OPENING_GREETINGS = [
-  "Hello, bata kaise ho?",
+  "Hello, beta kaise ho?",
   "Hello beta, kaise chal rahi hai padhai?",
 ];
 
