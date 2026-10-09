@@ -227,6 +227,7 @@ async function buildTextReply(
   mood: ZaraMood,
   privateMode: boolean,
   profileSlug: string,
+  options?: { allowPrivateModeInvite?: boolean },
 ): Promise<{ assistantMsgs: DbMessage[]; suggestPrivateMode: boolean }> {
   const userId = userMsgs[0].user_id;
   const profileName =
@@ -265,8 +266,10 @@ async function buildTextReply(
     ? { level: 3 as const }
     : await classifyIntimacyLevel(conversation);
 
-  const suggestPrivateMode =
+  const romantic =
     !privateMode && userShowsRomanticIntent(classified.level);
+  const suggestPrivateMode =
+    options?.allowPrivateModeInvite === false ? false : romantic;
 
   const replySegments = await chatWithMiaText(conversation, {
     intimacyLevel: classified.level,
@@ -311,6 +314,40 @@ async function buildTextReply(
   }
 
   return { assistantMsgs, suggestPrivateMode };
+}
+
+/** Saves one user text and returns Riva/Aryan's short reply bubbles. */
+export async function replyToProfileText(input: {
+  userId: number;
+  profileSlug: string;
+  text: string;
+  mood?: ZaraMood;
+  privateMode?: boolean;
+  allowPrivateModeInvite?: boolean;
+}): Promise<string[]> {
+  const profileSlug = parseProfileSlug(input.profileSlug);
+  const trimmed = input.text.trim();
+  if (!trimmed) return [];
+
+  const history = await listContextMessages(input.userId, profileSlug);
+  const userMsg = await insertMessage(
+    input.userId,
+    profileSlug,
+    "user",
+    trimmed,
+    "text",
+  );
+  const { assistantMsgs } = await buildTextReply(
+    history,
+    [userMsg],
+    input.mood ?? "friendly",
+    input.privateMode ?? false,
+    profileSlug,
+    { allowPrivateModeInvite: input.allowPrivateModeInvite ?? true },
+  );
+  return assistantMsgs
+    .filter((message) => message.message_type === "text" && message.content.trim())
+    .map((message) => message.content);
 }
 
 messagesRouter.get("/", async (req, res) => {

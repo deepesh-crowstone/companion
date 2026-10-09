@@ -15,6 +15,8 @@ import { devicesRouter } from "./routes/devices.js";
 import { adminProfilesRouter } from "./routes/admin-profiles.js";
 import { profilesRouter } from "./routes/profiles.js";
 import { supportRouter } from "./routes/support.js";
+import { telegramRouter } from "./routes/telegram.js";
+import { registerRivaTelegramWebhook } from "./telegram-bot.js";
 import { isPushConfigured } from "./push-notifications.js";
 import { checkDbConnection, initDb } from "./db.js";
 import { recoverInterruptedGenerations } from "./profile-factory/store.js";
@@ -108,6 +110,7 @@ app.use("/devices", devicesRouter);
 app.use("/admin/profiles", adminProfilesRouter);
 app.use("/profiles", profilesRouter);
 app.use("/support", supportRouter);
+app.use("/telegram", telegramRouter);
 
 // Profile factory review dashboard (static page; the API it calls is token-gated).
 app.get("/admin", (_req, res) => {
@@ -122,6 +125,14 @@ async function main(): Promise<void> {
   }
   await initDb();
   console.log("✓ PostgreSQL schema ready");
+  try {
+    await registerRivaTelegramWebhook();
+  } catch (error) {
+    console.error(
+      "✗ Telegram webhook registration failed:",
+      error instanceof Error ? error.message : error,
+    );
+  }
   await recoverInterruptedGenerations();
   if (isBucketConfigured()) {
     console.log("✓ Object storage: voice + Zara photos (presigned URLs)");

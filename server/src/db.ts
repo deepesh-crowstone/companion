@@ -229,6 +229,17 @@ export async function initDb(): Promise<void> {
       CREATE INDEX IF NOT EXISTS idx_messages_user_profile_created
         ON messages (user_id, profile_slug, created_at, id);
 
+      CREATE TABLE IF NOT EXISTS telegram_identities (
+        telegram_user_id BIGINT PRIMARY KEY,
+        user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS telegram_updates (
+        update_id BIGINT PRIMARY KEY,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
       ALTER TABLE personality_pass ADD COLUMN IF NOT EXISTS profile_slug TEXT;
       UPDATE personality_pass SET profile_slug = 'zara' WHERE profile_slug IS NULL;
       ALTER TABLE personality_pass ALTER COLUMN profile_slug SET DEFAULT 'zara';
