@@ -9,7 +9,6 @@ import 'package:flutter_web_plugins/url_strategy.dart';
 import 'models/app_deep_link.dart';
 import 'models/companion_profile.dart';
 import 'navigation/deep_link_navigation.dart';
-import 'screens/chat_screen.dart';
 import 'screens/new_user_screen.dart';
 import 'screens/profiles_grid_screen.dart';
 import 'package:posthog_flutter/posthog_flutter.dart';
@@ -105,7 +104,7 @@ class _MiaAppState extends State<MiaApp> {
         darkTheme: MiaTheme.dark(),
         themeMode: _theme.mode,
         // Web uses real paths (e.g. /chat/). Route every entry through the
-        // bootstrap, which decides between the landing page and chat interface.
+        // bootstrap, which opens the same profile picker as the Android app.
         onGenerateInitialRoutes: (initialRoute) => <Route<dynamic>>[
           MaterialPageRoute<dynamic>(
             builder: (_) => _Bootstrap(initialPath: initialRoute),
@@ -136,7 +135,6 @@ class _Bootstrap extends StatefulWidget {
 class _BootstrapState extends State<_Bootstrap> {
   bool _ready = false;
   bool _showNewUser = false;
-  Key _chatScreenKey = UniqueKey();
 
   @override
   void initState() {
@@ -217,7 +215,6 @@ class _BootstrapState extends State<_Bootstrap> {
     setState(() {
       _showNewUser = true;
       _ready = true;
-      _chatScreenKey = UniqueKey();
     });
     _syncBrowserUrl();
     if (kIsWeb) {
@@ -235,40 +232,15 @@ class _BootstrapState extends State<_Bootstrap> {
   }
 
   Future<void> _init() async {
-    final startOnChat = kIsWeb && _pathIsChat(widget.initialPath);
-    if (startOnChat) {
-      if (!mounted) return;
-      setState(() {
-        _ready = true;
-        _showNewUser = false;
-      });
-      _syncBrowserUrl();
-      _onDeepLinkChanged();
-      unawaited(_warmUpSession());
-      return;
-    }
-
-    // Mobile opens straight into chat; the video welcome screen is web-only.
-    var showNewUser = false;
-    if (kIsWeb) {
-      showNewUser = true;
-      try {
-        showNewUser = !await hasStartedChatting();
-      } catch (_) {
-        // Default to the landing page if local prefs are unavailable.
-      }
-    }
+    // Android opens on the profile picker. Web uses that same home, including
+    // for / and /chat/, instead of the Riva landing page.
     if (!mounted) return;
     setState(() {
       _ready = true;
-      _showNewUser = showNewUser;
+      _showNewUser = false;
     });
     _syncBrowserUrl();
-    if (showNewUser) {
-      _trackSiteVisited();
-    } else {
-      unawaited(_warmUpSession());
-    }
+    unawaited(_warmUpSession());
     _onDeepLinkChanged();
   }
 
@@ -309,18 +281,6 @@ class _BootstrapState extends State<_Bootstrap> {
       return NewUserScreen(onStarted: _onStartedChatting);
     }
 
-    if (!kIsWeb && Platform.isAndroid) {
-      return const ProfilesGridScreen();
-    }
-
-    return ChatScreen(
-      key: _chatScreenKey,
-      profile: const CompanionProfile(
-        slug: 'zara',
-        name: CompanionProfile.zaraDisplayName,
-        tagline: 'soft chaos, sharp timing, good coffee',
-        avatarAsset: 'assets/images/mia_profile.webp',
-      ),
-    );
+    return const ProfilesGridScreen();
   }
 }
