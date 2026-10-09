@@ -16,7 +16,7 @@ test("Riva bot username is the BotFather bot", () => {
 });
 
 test("Alakh Sir bot is a separate webhook and profile", () => {
-  assert.equal(ALAKH_BOT_USERNAME, "alakhpandeysir1bot");
+  assert.equal(ALAKH_BOT_USERNAME, "alakhpandeysir1Bot");
   assert.equal(TELEGRAM_BOTS.alakh.profileSlug, "alakh");
   assert.equal(TELEGRAM_BOTS.alakh.tokenEnv, "TELEGRAM_ALAKH_BOT_TOKEN");
   const previous = process.env.TELEGRAM_WEBHOOK_SECRET;

@@ -252,7 +252,7 @@ export async function registerTelegramWebhook(botId: TelegramBotId): Promise<voi
 
   const me = await telegramCall(token, "getMe");
   const username = me.result?.username ?? "";
-  if (username.toLowerCase() !== bot.username) {
+  if (username.toLowerCase() !== bot.username.toLowerCase()) {
     console.warn(
       `⚠ ${bot.tokenEnv} belongs to @${username || "unknown"}, expected @${bot.username}`,
     );

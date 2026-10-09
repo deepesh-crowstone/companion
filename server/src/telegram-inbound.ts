@@ -7,7 +7,7 @@ export const RIVA_BOT_USERNAME = "riva_pwtalk_bot";
 export const RIVA_PROFILE_SLUG = "zara";
 
 /** BotFather username for the open Alakh Sir bot. */
-export const ALAKH_BOT_USERNAME = "alakhpandeysir1bot";
+export const ALAKH_BOT_USERNAME = "alakhpandeysir1Bot";
 
 export type TelegramBotId = "riva" | "alakh";
 
