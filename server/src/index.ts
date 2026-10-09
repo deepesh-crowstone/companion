@@ -16,7 +16,8 @@ import { adminProfilesRouter } from "./routes/admin-profiles.js";
 import { profilesRouter } from "./routes/profiles.js";
 import { supportRouter } from "./routes/support.js";
 import { telegramRouter } from "./routes/telegram.js";
-import { registerRivaTelegramWebhook } from "./telegram-bot.js";
+import { registerTelegramWebhook } from "./telegram-bot.js";
+import type { TelegramBotId } from "./telegram-inbound.js";
 import { isPushConfigured } from "./push-notifications.js";
 import { checkDbConnection, initDb } from "./db.js";
 import { recoverInterruptedGenerations } from "./profile-factory/store.js";
@@ -125,13 +126,15 @@ async function main(): Promise<void> {
   }
   await initDb();
   console.log("✓ PostgreSQL schema ready");
-  try {
-    await registerRivaTelegramWebhook();
-  } catch (error) {
-    console.error(
-      "✗ Telegram webhook registration failed:",
-      error instanceof Error ? error.message : error,
-    );
+  for (const botId of ["riva", "alakh"] as const satisfies readonly TelegramBotId[]) {
+    try {
+      await registerTelegramWebhook(botId);
+    } catch (error) {
+      console.error(
+        `✗ ${botId} Telegram webhook registration failed:`,
+        error instanceof Error ? error.message : error,
+      );
+    }
   }
   await recoverInterruptedGenerations();
   if (isBucketConfigured()) {

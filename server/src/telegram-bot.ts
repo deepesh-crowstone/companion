@@ -3,17 +3,18 @@ import bcrypt from "bcryptjs";
 import { pool } from "./db.js";
 import { replyToProfileText } from "./routes/messages.js";
 import {
-  RIVA_BOT_USERNAME,
-  RIVA_PROFILE_SLUG,
+  TELEGRAM_BOTS,
   parseTelegramUpdate,
+  readTelegramBotToken,
   readUpdateId,
-  telegramBotToken,
   telegramWebhookSecret,
   telegramWebhookUrl,
   webhookSecretMatches,
+  type TelegramBotConfig,
+  type TelegramBotId,
 } from "./telegram-inbound.js";
 
-const lanes = new Map<number, Promise<void>>();
+const lanes = new Map<string, Promise<void>>();
 
 function botApi(token: string, method: string): string {
   return `https://api.telegram.org/bot${token}/${method}`;
@@ -56,13 +57,13 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function claimUpdate(updateId: number): Promise<boolean> {
+async function claimUpdate(botId: TelegramBotId, updateId: number): Promise<boolean> {
   const { rows } = await pool.query<{ update_id: string }>(
-    `INSERT INTO telegram_updates (update_id)
-     VALUES ($1)
-     ON CONFLICT (update_id) DO NOTHING
+    `INSERT INTO telegram_updates (bot, update_id)
+     VALUES ($1, $2)
+     ON CONFLICT (bot, update_id) DO NOTHING
      RETURNING update_id`,
-    [updateId],
+    [botId, updateId],
   );
   if (rows.length === 0) return false;
   await pool.query(
@@ -78,7 +79,7 @@ async function userIdForTelegram(telegramUserId: number): Promise<number> {
   );
   if (existing.rows[0]) return existing.rows[0].user_id;
 
-  const username = `tg_riva_${telegramUserId}`;
+  const username = `tg_${telegramUserId}`;
   const passwordHash = bcrypt.hashSync(randomBytes(24).toString("hex"), 8);
   const client = await pool.connect();
   try {
@@ -128,9 +129,10 @@ async function deliverBubbles(
   token: string,
   chatId: number,
   bubbles: string[],
+  emptyReply: string,
 ): Promise<void> {
   const texts = bubbles.map((bubble) => bubble.trim()).filter(Boolean);
-  const outgoing = texts.length > 0 ? texts : ["got stuck, say that again"];
+  const outgoing = texts.length > 0 ? texts : [emptyReply];
   for (let index = 0; index < outgoing.length; index += 1) {
     if (index > 0) {
       await sendChatAction(token, chatId);
@@ -141,6 +143,7 @@ async function deliverBubbles(
 }
 
 async function replyInChat(
+  bot: TelegramBotConfig,
   token: string,
   chatId: number,
   telegramUserId: number,
@@ -154,60 +157,82 @@ async function replyInChat(
     const userId = await userIdForTelegram(telegramUserId);
     const bubbles = await replyToProfileText({
       userId,
-      profileSlug: RIVA_PROFILE_SLUG,
+      profileSlug: bot.profileSlug,
       text,
       mood: "friendly",
       privateMode: false,
     });
-    await deliverBubbles(token, chatId, bubbles);
+    await deliverBubbles(token, chatId, bubbles, bot.emptyReply);
   } finally {
     clearInterval(typing);
   }
 }
 
-function enqueue(chatId: number, job: () => Promise<void>): void {
-  const previous = lanes.get(chatId) ?? Promise.resolve();
+function enqueue(laneKey: string, job: () => Promise<void>): void {
+  const previous = lanes.get(laneKey) ?? Promise.resolve();
   const next = previous
     .catch(() => undefined)
     .then(job)
     .finally(() => {
-      if (lanes.get(chatId) === next) lanes.delete(chatId);
+      if (lanes.get(laneKey) === next) lanes.delete(laneKey);
     });
-  lanes.set(chatId, next);
+  lanes.set(laneKey, next);
 }
 
-export function telegramWebhookAuthorized(header: string | undefined): boolean {
-  const token = telegramBotToken();
+function botConfig(botId: TelegramBotId): TelegramBotConfig {
+  return TELEGRAM_BOTS[botId];
+}
+
+function botSecret(bot: TelegramBotConfig, token: string): string {
+  return telegramWebhookSecret(token, {
+    salt: bot.secretSalt,
+    secretEnv: bot.secretEnv,
+  });
+}
+
+export function telegramWebhookAuthorized(
+  header: string | undefined,
+  botId: TelegramBotId = "riva",
+): boolean {
+  const bot = botConfig(botId);
+  const token = readTelegramBotToken(bot.tokenEnv);
   if (!token) return false;
-  return webhookSecretMatches(telegramWebhookSecret(token), header);
+  return webhookSecretMatches(botSecret(bot, token), header);
 }
 
-export async function acceptTelegramUpdate(body: unknown): Promise<void> {
-  const token = telegramBotToken();
+export async function acceptTelegramUpdate(
+  body: unknown,
+  botId: TelegramBotId = "riva",
+): Promise<void> {
+  const bot = botConfig(botId);
+  const token = readTelegramBotToken(bot.tokenEnv);
   if (!token) return;
 
   const updateId = readUpdateId(body);
   if (updateId == null) return;
-  const claimed = await claimUpdate(updateId);
+  const claimed = await claimUpdate(botId, updateId);
   if (!claimed) return;
 
   const inbound = parseTelegramUpdate(body);
   if (inbound.kind === "ignore") return;
 
-  enqueue(inbound.chatId, async () => {
+  enqueue(`${botId}:${inbound.chatId}`, async () => {
     try {
       if (inbound.kind === "unsupported") {
-        await sendText(token, inbound.chatId, "text me yaar, i can't open that here");
+        await sendText(token, inbound.chatId, bot.unsupportedReply);
         return;
       }
-      await replyInChat(token, inbound.chatId, inbound.telegramUserId, inbound.text);
+      await replyInChat(bot, token, inbound.chatId, inbound.telegramUserId, inbound.text);
     } catch (error) {
-      console.error("Telegram reply failed:", error instanceof Error ? error.message : error);
+      console.error(
+        `${bot.username} reply failed:`,
+        error instanceof Error ? error.message : error,
+      );
       try {
-        await sendText(token, inbound.chatId, "something glitched, text me again");
+        await sendText(token, inbound.chatId, bot.errorReply);
       } catch (sendError) {
         console.error(
-          "Telegram error reply failed:",
+          `${bot.username} error reply failed:`,
           sendError instanceof Error ? sendError.message : sendError,
         );
       }
@@ -215,27 +240,33 @@ export async function acceptTelegramUpdate(body: unknown): Promise<void> {
   });
 }
 
-/** Points the Riva bot at this API. Safe to call on every production boot. */
-export async function registerRivaTelegramWebhook(): Promise<void> {
-  const token = telegramBotToken();
+/** Points one Telegram bot at this API. Safe to call on every production boot. */
+export async function registerTelegramWebhook(botId: TelegramBotId): Promise<void> {
+  const bot = botConfig(botId);
+  const token = readTelegramBotToken(bot.tokenEnv);
   if (!token) {
-    console.warn("⚠ Telegram bot disabled until TELEGRAM_BOT_TOKEN is set");
+    console.warn(`⚠ @${bot.username} disabled until ${bot.tokenEnv} is set`);
     return;
   }
   if (process.env.NODE_ENV !== "production") return;
 
   const me = await telegramCall(token, "getMe");
   const username = me.result?.username ?? "";
-  if (username.toLowerCase() !== RIVA_BOT_USERNAME) {
+  if (username.toLowerCase() !== bot.username) {
     console.warn(
-      `⚠ TELEGRAM_BOT_TOKEN belongs to @${username || "unknown"}, expected @${RIVA_BOT_USERNAME}`,
+      `⚠ ${bot.tokenEnv} belongs to @${username || "unknown"}, expected @${bot.username}`,
     );
   }
   await telegramCall(token, "setWebhook", {
-    url: telegramWebhookUrl(),
-    secret_token: telegramWebhookSecret(token),
+    url: telegramWebhookUrl(bot.webhookPath),
+    secret_token: botSecret(bot, token),
     allowed_updates: ["message"],
     drop_pending_updates: false,
   });
-  console.log(`✓ Telegram webhook registered for @${username || RIVA_BOT_USERNAME}`);
+  console.log(`✓ Telegram webhook registered for @${username || bot.username}`);
+}
+
+/** Points the Riva bot at this API. Safe to call on every production boot. */
+export async function registerRivaTelegramWebhook(): Promise<void> {
+  await registerTelegramWebhook("riva");
 }

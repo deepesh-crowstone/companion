@@ -1,15 +1,51 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  ALAKH_BOT_USERNAME,
   RIVA_BOT_USERNAME,
+  TELEGRAM_BOTS,
   parseTelegramUpdate,
   readUpdateId,
   telegramWebhookSecret,
+  telegramWebhookUrl,
   webhookSecretMatches,
 } from "../src/telegram-inbound.ts";
 
 test("Riva bot username is the BotFather bot", () => {
   assert.equal(RIVA_BOT_USERNAME, "riva_pwtalk_bot");
+});
+
+test("Alakh Sir bot is a separate webhook and profile", () => {
+  assert.equal(ALAKH_BOT_USERNAME, "alakhpandeysir1bot");
+  assert.equal(TELEGRAM_BOTS.alakh.profileSlug, "alakh");
+  assert.equal(TELEGRAM_BOTS.alakh.tokenEnv, "TELEGRAM_ALAKH_BOT_TOKEN");
+  const previous = process.env.TELEGRAM_WEBHOOK_SECRET;
+  const previousAlakh = process.env.TELEGRAM_ALAKH_WEBHOOK_SECRET;
+  const previousBase = process.env.TELEGRAM_WEBHOOK_BASE_URL;
+  delete process.env.TELEGRAM_WEBHOOK_SECRET;
+  delete process.env.TELEGRAM_ALAKH_WEBHOOK_SECRET;
+  delete process.env.TELEGRAM_WEBHOOK_BASE_URL;
+  assert.equal(
+    telegramWebhookUrl(TELEGRAM_BOTS.alakh.webhookPath),
+    "https://api.chatlife.online/telegram/alakh/webhook",
+  );
+  assert.notEqual(
+    telegramWebhookUrl(TELEGRAM_BOTS.alakh.webhookPath),
+    telegramWebhookUrl(TELEGRAM_BOTS.riva.webhookPath),
+  );
+  assert.notEqual(
+    telegramWebhookSecret("shared-token"),
+    telegramWebhookSecret("shared-token", {
+      salt: TELEGRAM_BOTS.alakh.secretSalt,
+      secretEnv: TELEGRAM_BOTS.alakh.secretEnv,
+    }),
+  );
+  if (previous == null) delete process.env.TELEGRAM_WEBHOOK_SECRET;
+  else process.env.TELEGRAM_WEBHOOK_SECRET = previous;
+  if (previousAlakh == null) delete process.env.TELEGRAM_ALAKH_WEBHOOK_SECRET;
+  else process.env.TELEGRAM_ALAKH_WEBHOOK_SECRET = previousAlakh;
+  if (previousBase == null) delete process.env.TELEGRAM_WEBHOOK_BASE_URL;
+  else process.env.TELEGRAM_WEBHOOK_BASE_URL = previousBase;
 });
 
 test("private text is delivered to Riva and /start opens like a hello", () => {

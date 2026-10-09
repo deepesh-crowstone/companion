@@ -6,6 +6,51 @@ export const RIVA_BOT_USERNAME = "riva_pwtalk_bot";
 /** Stored profile slug whose spoken name is Riva. */
 export const RIVA_PROFILE_SLUG = "zara";
 
+/** BotFather username for the open Alakh Sir bot. */
+export const ALAKH_BOT_USERNAME = "alakhpandeysir1bot";
+
+export type TelegramBotId = "riva" | "alakh";
+
+export type TelegramBotConfig = {
+  id: TelegramBotId;
+  username: string;
+  profileSlug: string;
+  tokenEnv: string;
+  secretEnv: string;
+  secretSalt: string;
+  webhookPath: string;
+  unsupportedReply: string;
+  errorReply: string;
+  emptyReply: string;
+};
+
+export const TELEGRAM_BOTS: Record<TelegramBotId, TelegramBotConfig> = {
+  riva: {
+    id: "riva",
+    username: RIVA_BOT_USERNAME,
+    profileSlug: RIVA_PROFILE_SLUG,
+    tokenEnv: "TELEGRAM_BOT_TOKEN",
+    secretEnv: "TELEGRAM_WEBHOOK_SECRET",
+    secretSalt: "riva-telegram-webhook",
+    webhookPath: "webhook",
+    unsupportedReply: "text me yaar, i can't open that here",
+    errorReply: "something glitched, text me again",
+    emptyReply: "got stuck, say that again",
+  },
+  alakh: {
+    id: "alakh",
+    username: ALAKH_BOT_USERNAME,
+    profileSlug: "alakh",
+    tokenEnv: "TELEGRAM_ALAKH_BOT_TOKEN",
+    secretEnv: "TELEGRAM_ALAKH_WEBHOOK_SECRET",
+    secretSalt: "alakh-telegram-webhook",
+    webhookPath: "alakh/webhook",
+    unsupportedReply: "beta, yahan text likh ke bhejo",
+    errorReply: "ek second beta, phir se bhej dena",
+    emptyReply: "phir se likh dena beta",
+  },
+};
+
 const DEFAULT_PUBLIC_API_BASE = "https://api.chatlife.online";
 
 export type TelegramInbound =
@@ -22,8 +67,8 @@ type TelegramUpdate = {
   };
 };
 
-export function telegramBotToken(): string | null {
-  const token = process.env.TELEGRAM_BOT_TOKEN
+export function readTelegramBotToken(envName: string): string | null {
+  const token = process.env[envName]
     ?.trim()
     .replace(/^['"]|['"]$/g, "")
     .replace(/\s+/g, "");
@@ -31,19 +76,25 @@ export function telegramBotToken(): string | null {
   return token;
 }
 
-/** Stable webhook secret so random callers cannot post fake updates. */
-export function telegramWebhookSecret(token: string): string {
-  const explicit = process.env.TELEGRAM_WEBHOOK_SECRET?.trim();
-  if (explicit) return explicit;
-  return createHash("sha256")
-    .update(`riva-telegram-webhook:${token}`)
-    .digest("hex");
+export function telegramBotToken(): string | null {
+  return readTelegramBotToken("TELEGRAM_BOT_TOKEN");
 }
 
-export function telegramWebhookUrl(): string {
+/** Stable webhook secret so random callers cannot post fake updates. */
+export function telegramWebhookSecret(
+  token: string,
+  options?: { salt?: string; secretEnv?: string },
+): string {
+  const explicit = process.env[options?.secretEnv ?? "TELEGRAM_WEBHOOK_SECRET"]?.trim();
+  if (explicit) return explicit;
+  const salt = options?.salt ?? "riva-telegram-webhook";
+  return createHash("sha256").update(`${salt}:${token}`).digest("hex");
+}
+
+export function telegramWebhookUrl(path = "webhook"): string {
   const configured = process.env.TELEGRAM_WEBHOOK_BASE_URL?.trim().replace(/\/+$/, "");
   const base = configured || DEFAULT_PUBLIC_API_BASE;
-  return `${base}/telegram/webhook`;
+  return `${base}/telegram/${path}`;
 }
 
 export function webhookSecretMatches(

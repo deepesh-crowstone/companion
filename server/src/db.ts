@@ -240,6 +240,25 @@ export async function initDb(): Promise<void> {
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
 
+      ALTER TABLE telegram_updates ADD COLUMN IF NOT EXISTS bot TEXT;
+      UPDATE telegram_updates SET bot = 'riva' WHERE bot IS NULL;
+      ALTER TABLE telegram_updates ALTER COLUMN bot SET DEFAULT 'riva';
+      ALTER TABLE telegram_updates ALTER COLUMN bot SET NOT NULL;
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1
+          FROM pg_constraint
+          WHERE conrelid = 'telegram_updates'::regclass
+            AND conname = 'telegram_updates_pkey'
+            AND pg_get_constraintdef(pg_constraint.oid) ILIKE '%bot%'
+        ) THEN
+          ALTER TABLE telegram_updates DROP CONSTRAINT IF EXISTS telegram_updates_pkey;
+          ALTER TABLE telegram_updates
+            ADD CONSTRAINT telegram_updates_pkey PRIMARY KEY (bot, update_id);
+        END IF;
+      END $$;
+
       ALTER TABLE personality_pass ADD COLUMN IF NOT EXISTS profile_slug TEXT;
       UPDATE personality_pass SET profile_slug = 'zara' WHERE profile_slug IS NULL;
       ALTER TABLE personality_pass ALTER COLUMN profile_slug SET DEFAULT 'zara';
