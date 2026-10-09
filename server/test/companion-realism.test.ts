@@ -6,7 +6,7 @@ import { prepareConversationContext } from "../src/conversation-context.js";
 import type { DbMessage } from "../src/db.js";
 import { moodPromptForMood } from "../src/mood.js";
 import {
-  ALAKH_LANGUAGE_ASK,
+  ALAKH_OPENING_GREETINGS,
   isSimpleOpeningGreeting,
   openingRotationSeed,
   selectOpeningGreeting,
@@ -451,7 +451,7 @@ test("openers are profile-specific, language-aware, and stable", () => {
   assert.equal(isSimpleOpeningGreeting("I had a long day", "Aryan"), false);
   assert.equal(isSimpleOpeningGreeting("hi alakh sir", "Alakh Sir"), true);
 
-  for (const slug of ["zara", "aryan", "alakh"] as const) {
+  for (const slug of ["zara", "aryan"] as const) {
     for (let seed = 0; seed < 4; seed += 1) {
       const line = selectOpeningGreeting({
         profileSlug: slug,
@@ -499,18 +499,22 @@ test("openers are profile-specific, language-aware, and stable", () => {
   assert.doesNotMatch(aryanHinglish, /gayi|rahi/);
   assert.equal(
     selectOpeningGreeting({ profileSlug: "alakh", userText: "hi", seed: 0 }),
-    ALAKH_LANGUAGE_ASK,
+    ALAKH_OPENING_GREETINGS[0],
   );
   assert.equal(
-    selectOpeningGreeting({ profileSlug: "alakh", userText: "hi", seed: 2 }),
-    ALAKH_LANGUAGE_ASK,
+    selectOpeningGreeting({ profileSlug: "alakh", userText: "hi", seed: 1 }),
+    ALAKH_OPENING_GREETINGS[1],
   );
-  const alakhHinglish = selectOpeningGreeting({
+  assert.equal(
+    selectOpeningGreeting({ profileSlug: "alakh", userText: "hello", seed: 0 }),
+    selectOpeningGreeting({ profileSlug: "alakh", userText: "hey yaar", seed: 0 }),
+  );
+  const alakhGreeting = selectOpeningGreeting({
     profileSlug: "alakh",
     userText: "hey yaar",
-    seed: 3,
+    seed: 1,
   });
-  assert.equal(detectTextLanguageMode(alakhHinglish), "hinglish");
+  assert.ok(ALAKH_OPENING_GREETINGS.includes(alakhGreeting));
   assert.equal(resolveReplyLanguageMode("Hinglish", []), "hinglish");
   assert.equal(resolveReplyLanguageMode("ok", ["Hinglish"]), "hinglish");
   assert.equal(resolveReplyLanguageMode("English please", []), "english");

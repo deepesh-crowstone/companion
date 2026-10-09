@@ -32,18 +32,18 @@ const ARYAN_HINGLISH = [
   "theek, aa gaya",
 ];
 
-/** First Alakh Sir text. Neutral "hi" has not chosen a language yet. */
+/** Asked only when a mentor chat starts without a greeting or a language. */
 export const ALAKH_LANGUAGE_ASK =
   "hello beta, which language would you like to talk in: Hinglish or English?";
 
-const ALAKH_ENGLISH = [ALAKH_LANGUAGE_ASK];
-
-const ALAKH_HINGLISH = [
-  "haan, batao. aaj kya samajh nahi aa raha",
-  "dekho, tum kya padh rahe ho abhi",
-  "haan, batao. mock mein kya galat hua",
-  "haan, dekho. concept hai ya practice nahi hui",
+/** What Alakh Sir says back when the student opens with a greeting. */
+export const ALAKH_OPENING_GREETINGS = [
+  "Hello, bata kaise ho?",
+  "Hello beta, kaise chal rahi hai padhai?",
 ];
+
+const ALAKH_ENGLISH = ALAKH_OPENING_GREETINGS;
+const ALAKH_HINGLISH = ALAKH_OPENING_GREETINGS;
 
 function normalizeGreeting(text: string): string {
   return text
