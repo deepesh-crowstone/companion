@@ -3,6 +3,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../data/alakh_profile.dart';
 import '../data/aryan_profile.dart';
 import '../data/mia_profile.dart';
 import '../models/companion_profile.dart';
@@ -17,21 +18,39 @@ class MiaProfileScreen extends StatelessWidget {
 
   bool get _aryan => profile?.isAryan ?? false;
 
+  bool get _alakh => profile?.isMentor ?? false;
+
   String get _name => profile?.displayName ?? MiaProfile.name;
 
-  String get _avatar =>
-      _aryan ? AryanProfile.avatarAsset : MiaProfile.avatarAsset;
+  String get _avatar => _alakh
+      ? AlakhProfile.avatarAsset
+      : _aryan
+      ? AryanProfile.avatarAsset
+      : MiaProfile.avatarAsset;
 
-  String get _about => _aryan ? AryanProfile.about : MiaProfile.about;
+  String get _about => _alakh
+      ? AlakhProfile.about
+      : _aryan
+      ? AryanProfile.about
+      : MiaProfile.about;
 
-  List<String> get _gallery =>
-      _aryan ? AryanProfile.galleryAssets : MiaProfile.galleryAssets;
+  List<String> get _gallery => _alakh
+      ? AlakhProfile.galleryAssets
+      : _aryan
+      ? AryanProfile.galleryAssets
+      : MiaProfile.galleryAssets;
 
-  List<String> get _hobbies =>
-      _aryan ? AryanProfile.hobbies : MiaProfile.hobbies;
+  List<String> get _hobbies => _alakh
+      ? AlakhProfile.hobbies
+      : _aryan
+      ? AryanProfile.hobbies
+      : MiaProfile.hobbies;
 
-  List<MiaSocialLink> get _links =>
-      _aryan ? AryanProfile.followLinks : MiaProfile.followLinks;
+  List<MiaSocialLink> get _links => _alakh
+      ? AlakhProfile.followLinks
+      : _aryan
+      ? AryanProfile.followLinks
+      : MiaProfile.followLinks;
 
   @override
   Widget build(BuildContext context) {
@@ -147,6 +166,8 @@ class _FollowMeRow extends StatelessWidget {
     switch (link.icon) {
       case 'instagram':
         return FontAwesomeIcons.instagram;
+      case 'youtube':
+        return FontAwesomeIcons.youtube;
       case 'x':
         return FontAwesomeIcons.xTwitter;
       case 'facebook':

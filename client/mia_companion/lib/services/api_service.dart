@@ -449,7 +449,6 @@ class ApiService {
       List<ChatMessage> users,
       ChatMessage assistant,
       List<ChatMessage> assistants,
-      bool suggestPrivateMode,
     })
   >
   sendTextBatch(
@@ -491,7 +490,6 @@ class ApiService {
         data['assistantMessage'] as Map<String, dynamic>,
       ),
       assistants: assistants,
-      suggestPrivateMode: data['suggestPrivateMode'] as bool? ?? false,
     );
   }
 

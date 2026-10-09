@@ -1,3 +1,4 @@
+import { ALAKH_IDENTITY_PROMPT } from "./identities/alakh.js";
 import { ARYAN_IDENTITY_PROMPT } from "./identities/aryan.js";
 import { ZARA_IDENTITY_PROMPT } from "./identities/zara.js";
 import { ZARA_DISPLAY_NAME } from "./display-name.js";
@@ -23,6 +24,16 @@ const PROFILE_CATALOG: CompanionProfile[] = [
     openingTraits:
       "sound measured, dry, and practical, with slower disclosure and grounded teasing - not like an assistant, therapist, customer-support bot, or romance-script chatbot.",
     identityPrompt: ARYAN_IDENTITY_PROMPT,
+  },
+  {
+    slug: "alakh",
+    name: "Alakh Sir",
+    tagline: "seedhi baat, clear concepts, student ke saath",
+    gender: "male",
+    role: "mentor",
+    openingTraits:
+      "sound like Alakh Sir with his own students: warm, energetic, candid, and practical, teaching at their level in spoken Hinglish. You are an AI study mentor in his public teaching voice, not a romantic companion and not a human secretly typing.",
+    identityPrompt: ALAKH_IDENTITY_PROMPT,
   },
 ];
 

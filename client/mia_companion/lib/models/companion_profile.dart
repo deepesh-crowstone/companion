@@ -9,6 +9,9 @@ class CompanionProfile {
   /// Spoken name for the companion stored as slug `zara`.
   static const zaraDisplayName = 'Riva';
 
+  /// Spoken name for the study mentor stored as slug `alakh`.
+  static const alakhDisplayName = 'Alakh Sir';
+
   final String slug;
   final String name;
   final String tagline;
@@ -19,10 +22,13 @@ class CompanionProfile {
 
   bool get isZara => slug.trim().toLowerCase() == 'zara';
 
+  bool get isMentor => slug.trim().toLowerCase() == 'alakh';
+
   /// Name to show or address. Slug `zara` is always Riva, even if [name] is stale.
   String get displayName {
     if (isAryan) return 'Aryan';
     if (isZara) return zaraDisplayName;
+    if (isMentor) return alakhDisplayName;
     return name;
   }
 
@@ -34,6 +40,7 @@ class CompanionProfile {
         normalized == 'mira') {
       return 'Aryan';
     }
+    if (normalized == 'alakh') return alakhDisplayName;
     return zaraDisplayName;
   }
 

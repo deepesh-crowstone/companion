@@ -6,6 +6,13 @@ export const TARGET_TEXT_SEGMENT_CHARS = 80;
 export const MAX_TEXT_SEGMENT_CHARS = 120;
 export const MAX_TEXT_REPLY_SEGMENTS = 3;
 
+/** Study-mentor replies can explain a concept across several spoken beats. */
+export const MENTOR_TARGET_TEXT_SEGMENT_CHARS = 220;
+export const MENTOR_MAX_TEXT_SEGMENT_CHARS = 340;
+export const MENTOR_MAX_TEXT_REPLY_SEGMENTS = 6;
+
+export type TextReplyStyle = "companion" | "mentor";
+
 const MIN_SPLIT_CHARS = 24;
 const CLAUSE_TARGET_SLACK = 40;
 const ORPHAN_JOIN_CHARS = MAX_TEXT_SEGMENT_CHARS + 16;
@@ -421,7 +428,7 @@ function linePieces(value: string): string[] {
     .filter((line): line is string => line != null);
 }
 
-function parseJsonSegments(raw: string): string[] | null {
+function readStructuredSegments(raw: string): string[] | null {
   const withoutFence = raw
     .trim()
     .replace(/^```(?:json)?\s*/i, "")
@@ -451,12 +458,83 @@ function parseJsonSegments(raw: string): string[] | null {
       const segments = values.flatMap((value) =>
         typeof value === "string" ? linePieces(value) : [],
       );
-      if (segments.length > 0) return fitTextSegments(segments);
+      if (segments.length > 0) return segments;
     } catch {
       // Try the next candidate, then fall back to plain-text parsing.
     }
   }
   return null;
+}
+
+function parseJsonSegments(raw: string): string[] | null {
+  const segments = readStructuredSegments(raw);
+  if (!segments) return null;
+  return fitTextSegments(segments);
+}
+
+function hardWrapMentor(text: string, limit: number): string[] {
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return [];
+  const out: string[] = [];
+  let buf = "";
+  for (const word of words) {
+    const next = buf ? `${buf} ${word}` : word;
+    if (buf && next.length > limit) {
+      out.push(buf);
+      buf = word;
+      continue;
+    }
+    buf = next;
+  }
+  if (buf) out.push(buf);
+  return out;
+}
+
+function wrapMentorPiece(text: string): string[] {
+  const clean = text.replace(/\s+/g, " ").trim();
+  if (!clean) return [];
+  if (clean.length <= MENTOR_MAX_TEXT_SEGMENT_CHARS) return [clean];
+  const sentences = clean.split(/(?<=[.?!])\s+/).map((part) => part.trim()).filter(Boolean);
+  if (sentences.length <= 1) {
+    return hardWrapMentor(clean, MENTOR_MAX_TEXT_SEGMENT_CHARS);
+  }
+  const out: string[] = [];
+  let buf = "";
+  for (const sentence of sentences) {
+    if (sentence.length > MENTOR_MAX_TEXT_SEGMENT_CHARS) {
+      if (buf) out.push(buf);
+      buf = "";
+      out.push(...hardWrapMentor(sentence, MENTOR_MAX_TEXT_SEGMENT_CHARS));
+      continue;
+    }
+    const next = buf ? `${buf} ${sentence}` : sentence;
+    if (buf && next.length > MENTOR_MAX_TEXT_SEGMENT_CHARS) {
+      out.push(buf);
+      buf = sentence;
+    } else {
+      buf = next;
+    }
+  }
+  if (buf) out.push(buf);
+  return out;
+}
+
+function packMentorSegments(pieces: string[]): string[] {
+  const items = pieces.flatMap((piece) => wrapMentorPiece(piece));
+  while (items.length > MENTOR_MAX_TEXT_REPLY_SEGMENTS) {
+    let best = 0;
+    let bestLength = Number.POSITIVE_INFINITY;
+    for (let index = 0; index < items.length - 1; index += 1) {
+      const combined = (items[index]?.length ?? 0) + (items[index + 1]?.length ?? 0);
+      if (combined < bestLength) {
+        bestLength = combined;
+        best = index;
+      }
+    }
+    const merged = `${items[best] ?? ""} ${items[best + 1] ?? ""}`.replace(/\s+/g, " ").trim();
+    items.splice(best, 2, merged);
+  }
+  return items.length > 0 ? items : ["hmm"];
 }
 
 function splitPlainTextSegments(raw: string): string[] {
@@ -465,8 +543,16 @@ function splitPlainTextSegments(raw: string): string[] {
   return fitTextSegments(pieces);
 }
 
-export function parseTextReplySegments(raw: string): string[] {
+export function parseTextReplySegments(
+  raw: string,
+  style: TextReplyStyle = "companion",
+): string[] {
   const visible = visibleReply(raw);
+  if (style === "mentor") {
+    const pieces = readStructuredSegments(visible) ?? linePieces(visible);
+    if (pieces.length === 0) return ["hmm"];
+    return packMentorSegments(pieces);
+  }
   return parseJsonSegments(visible) ?? splitPlainTextSegments(visible);
 }
 

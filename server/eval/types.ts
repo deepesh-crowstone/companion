@@ -9,7 +9,7 @@ export type EvalMessage = {
 export type EvalCase = {
   id: string;
   title: string;
-  profileSlug?: "zara" | "aryan";
+  profileSlug?: "zara" | "aryan" | "alakh";
   channel: EvalChannel;
   tags: string[];
   goals: string[];

@@ -158,7 +158,6 @@ async function replyInChat(
       text,
       mood: "friendly",
       privateMode: false,
-      allowPrivateModeInvite: false,
     });
     await deliverBubbles(token, chatId, bubbles);
   } finally {

@@ -98,6 +98,7 @@ async function loadPromptNgrams(): Promise<Set<string>> {
     path.join(process.cwd(), "src", "platform-behavior.ts"),
     path.join(process.cwd(), "src", "profiles", "identities", "zara.ts"),
     path.join(process.cwd(), "src", "profiles", "identities", "aryan.ts"),
+    path.join(process.cwd(), "src", "profiles", "identities", "alakh.ts"),
     path.join(process.cwd(), "src", "mood.ts"),
     path.join(process.cwd(), "src", "private-mode.ts"),
     path.join(process.cwd(), "src", "tts-speech.ts"),
@@ -157,7 +158,7 @@ export async function runHardChecks(
   }
 
   const selfGrammarLeak =
-    evalCase.profileSlug === "aryan"
+    evalCase.profileSlug === "aryan" || evalCase.profileSlug === "alakh"
       ? visibleText.match(ARYAN_FEMININE_SELF_RE)?.[0]
       : evalCase.profileSlug === "zara"
         ? visibleText.match(ZARA_MASCULINE_SELF_RE)?.[0]

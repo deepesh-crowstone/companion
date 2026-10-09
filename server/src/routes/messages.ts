@@ -21,7 +21,6 @@ import {
   transcribeAudio,
   voiceReplyPipeline,
 } from "../xai.js";
-import { classifyIntimacyLevel } from "../intimacy.js";
 import { resolveMoodForUser } from "../personalities.js";
 import { parseMood, type ZaraMood } from "../mood.js";
 import {
@@ -73,6 +72,10 @@ function parseProfileSlug(raw: unknown): string {
   return resolveProfileSlug(typeof raw === "string" ? raw : null);
 }
 
+function isMentorProfile(profileSlug: string): boolean {
+  return getProfileBySlug(profileSlug)?.role === "mentor";
+}
+
 async function listMessages(
   userId: number,
   profileSlug: string,
@@ -116,7 +119,9 @@ async function insertMessage(
     isPrivate?: boolean;
   },
 ): Promise<DbMessage> {
-  const isPrivate = options?.isPrivate ?? (await isUserPrivateModeActive(userId));
+  const isPrivate = isMentorProfile(profileSlug)
+    ? false
+    : (options?.isPrivate ?? (await isUserPrivateModeActive(userId)));
   const { rows } = await pool.query<DbMessage>(
     `INSERT INTO messages (user_id, profile_slug, role, content, message_type, audio_filename, image_key, is_private)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -217,24 +222,20 @@ async function insertAssistantImageMessage(
   });
 }
 
-function userShowsRomanticIntent(level: 1 | 2 | 3): boolean {
-  return level === 2 || level === 3;
-}
-
 async function buildTextReply(
   history: DbMessage[],
   userMsgs: DbMessage[],
   mood: ZaraMood,
   privateMode: boolean,
   profileSlug: string,
-  options?: { allowPrivateModeInvite?: boolean },
-): Promise<{ assistantMsgs: DbMessage[]; suggestPrivateMode: boolean }> {
+): Promise<DbMessage[]> {
   const userId = userMsgs[0].user_id;
   const profileName =
     getProfileBySlug(profileSlug)?.name ?? displayNameForSlug(profileSlug);
   const lastUserText = userMsgs[userMsgs.length - 1]?.content ?? "";
+  const allowPrivate = !isMentorProfile(profileSlug) && privateMode;
   if (
-    !privateMode &&
+    !allowPrivate &&
     history.length === 0 &&
     userMsgs.length === 1 &&
     isSimpleOpeningGreeting(lastUserText, profileName)
@@ -253,29 +254,18 @@ async function buildTextReply(
       profileSlug,
       [greeting],
     );
-    return { assistantMsgs, suggestPrivateMode: false };
+    return assistantMsgs;
   }
 
   const canAttachPrivatePhoto =
-    privateMode &&
+    allowPrivate &&
     isBucketConfigured() &&
     profileSupportsPrivatePhotos(profileSlug);
   const conversation = [...history, ...userMsgs];
 
-  const classified = privateMode
-    ? { level: 3 as const }
-    : await classifyIntimacyLevel(conversation);
-
-  const romantic =
-    !privateMode && userShowsRomanticIntent(classified.level);
-  const suggestPrivateMode =
-    options?.allowPrivateModeInvite === false ? false : romantic;
-
   const replySegments = await chatWithMiaText(conversation, {
-    intimacyLevel: classified.level,
     mood,
-    privateMode,
-    invitePrivateMode: suggestPrivateMode,
+    privateMode: allowPrivate,
     privatePhotosAvailable: canAttachPrivatePhoto,
     profileSlug,
   });
@@ -304,7 +294,7 @@ async function buildTextReply(
       assistantMsgs.push(imageMsg);
     }
   } else if (
-    privateMode &&
+    allowPrivate &&
     profileSupportsPrivatePhotos(profileSlug) &&
     !isBucketConfigured()
   ) {
@@ -313,7 +303,7 @@ async function buildTextReply(
     );
   }
 
-  return { assistantMsgs, suggestPrivateMode };
+  return assistantMsgs;
 }
 
 /** Saves one user text and returns Riva/Aryan's short reply bubbles. */
@@ -323,7 +313,6 @@ export async function replyToProfileText(input: {
   text: string;
   mood?: ZaraMood;
   privateMode?: boolean;
-  allowPrivateModeInvite?: boolean;
 }): Promise<string[]> {
   const profileSlug = parseProfileSlug(input.profileSlug);
   const trimmed = input.text.trim();
@@ -337,13 +326,12 @@ export async function replyToProfileText(input: {
     trimmed,
     "text",
   );
-  const { assistantMsgs } = await buildTextReply(
+  const assistantMsgs = await buildTextReply(
     history,
     [userMsg],
     input.mood ?? "friendly",
     input.privateMode ?? false,
     profileSlug,
-    { allowPrivateModeInvite: input.allowPrivateModeInvite ?? true },
   );
   return assistantMsgs
     .filter((message) => message.message_type === "text" && message.content.trim())
@@ -392,7 +380,11 @@ messagesRouter.post("/text", async (req, res) => {
 
   try {
     const access = await getPrivateModeAccess(auth.userId);
-    if (access.privateModeActive && !access.passActive) {
+    if (
+      !isMentorProfile(profileSlug) &&
+      access.privateModeActive &&
+      !access.passActive
+    ) {
       res.status(403).json({ error: "Private mode pass has expired" });
       return;
     }
@@ -406,7 +398,7 @@ messagesRouter.post("/text", async (req, res) => {
       "text",
     );
 
-    const { assistantMsgs, suggestPrivateMode } = await buildTextReply(
+    const assistantMsgs = await buildTextReply(
       history,
       [userMsg],
       mood,
@@ -427,7 +419,6 @@ messagesRouter.post("/text", async (req, res) => {
       userMessage: await toPublicMessage(userMsg),
       assistantMessage: combinedAssistantFallback(assistantMessages),
       assistantMessages,
-      suggestPrivateMode,
     });
   } catch (e) {
     console.error(e);
@@ -473,7 +464,11 @@ messagesRouter.post("/text/batch", async (req, res) => {
 
   try {
     const access = await getPrivateModeAccess(auth.userId);
-    if (access.privateModeActive && !access.passActive) {
+    if (
+      !isMentorProfile(profileSlug) &&
+      access.privateModeActive &&
+      !access.passActive
+    ) {
       res.status(403).json({ error: "Private mode pass has expired" });
       return;
     }
@@ -486,7 +481,7 @@ messagesRouter.post("/text/batch", async (req, res) => {
       );
     }
 
-    const { assistantMsgs, suggestPrivateMode } = await buildTextReply(
+    const assistantMsgs = await buildTextReply(
       history,
       userMsgs,
       mood,
@@ -509,7 +504,6 @@ messagesRouter.post("/text/batch", async (req, res) => {
       ),
       assistantMessage: combinedAssistantFallback(assistantMessages),
       assistantMessages,
-      suggestPrivateMode,
     });
   } catch (e) {
     console.error(e);
@@ -577,7 +571,11 @@ messagesRouter.post("/voice", upload.single("audio"), async (req, res) => {
     const userAudioKey = await uploadVoiceObject(localName, file.buffer, mime);
 
     const access = await getPrivateModeAccess(auth.userId);
-    if (access.privateModeActive && !access.passActive) {
+    if (
+      !isMentorProfile(profileSlug) &&
+      access.privateModeActive &&
+      !access.passActive
+    ) {
       res.status(403).json({ error: "Private mode pass has expired" });
       return;
     }
@@ -595,13 +593,12 @@ messagesRouter.post("/voice", upload.single("audio"), async (req, res) => {
     );
 
     const voiceHistory = [...history, userMsg];
-    const classified = access.privateModeActive
-      ? { level: 3 as const }
-      : await classifyIntimacyLevel(voiceHistory);
-    const voiceMood = access.privateModeActive ? ("bold" as const) : mood;
+    const voiceMood =
+      !isMentorProfile(profileSlug) && access.privateModeActive
+        ? ("bold" as const)
+        : mood;
     const voiceOptions = {
       mood: voiceMood,
-      intimacyLevel: classified.level,
       profileSlug,
     };
     const replyForTts =

@@ -29,7 +29,8 @@ function validateCase(value: unknown, source: string): EvalCase {
   if (
     profileSlug !== undefined &&
     profileSlug !== "zara" &&
-    profileSlug !== "aryan"
+    profileSlug !== "aryan" &&
+    profileSlug !== "alakh"
   ) {
     throw new Error(`Invalid eval case ${id}: unsupported profileSlug`);
   }

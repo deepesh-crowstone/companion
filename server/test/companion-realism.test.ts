@@ -4,10 +4,6 @@ import { runHardChecks } from "../eval/checks.js";
 import type { EvalCase } from "../eval/types.js";
 import { prepareConversationContext } from "../src/conversation-context.js";
 import type { DbMessage } from "../src/db.js";
-import {
-  buildIntimacyTranscript,
-  intimacyPromptForLevel,
-} from "../src/intimacy.js";
 import { moodPromptForMood } from "../src/mood.js";
 import {
   isSimpleOpeningGreeting,
@@ -50,7 +46,7 @@ import {
 } from "../src/text-response.js";
 import { profileSupportsPrivatePhotos } from "../src/zara-photos.js";
 
-function profile(slug: "zara" | "aryan") {
+function profile(slug: "zara" | "aryan" | "alakh") {
   const value = getProfileBySlug(slug);
   assert.ok(value);
   return value;
@@ -127,11 +123,10 @@ test("Zara and Aryan prompts encode distinct, gender-safe behavior", () => {
   ].join("\n");
   assert.match(aryanTts, /masculine self-grammar/);
   assert.doesNotMatch(aryanTts, /Zara|Riva|feminine self-grammar/);
-  assert.match(intimacyPromptForLevel(3, "Aryan"), /with Aryan/);
 });
 
 test("direct AI identity guidance is honest without routine disclaimers", () => {
-  for (const slug of ["zara", "aryan"] as const) {
+  for (const slug of ["zara", "aryan", "alakh"] as const) {
     const prompt = buildTextSystemPrompt(slug);
     assert.match(prompt, /if directly asked[\s\S]*answer honestly/i);
     assert.match(prompt, /AI companion with a fictional persona/i);
@@ -150,6 +145,66 @@ test("realtime instructions use the selected profile", () => {
 test("private photo availability never substitutes Zara media for Aryan", () => {
   assert.equal(profileSupportsPrivatePhotos("zara"), true);
   assert.equal(profileSupportsPrivatePhotos("aryan"), false);
+  assert.equal(profileSupportsPrivatePhotos("alakh"), false);
+});
+
+test("alakh speaks as a study mentor in Alakh Sir's public teaching voice", () => {
+  const alakh = profile("alakh");
+  assert.equal(alakh.role, "mentor");
+  assert.equal(alakh.gender, "male");
+  assert.equal(alakh.name, "Alakh Sir");
+  assert.equal(displayNameForSlug("alakh"), "Alakh Sir");
+  assert.equal(resolveProfileSlug("alakh"), "alakh");
+
+  const prompt = buildTextSystemPrompt("alakh");
+  assert.match(prompt, /Physics Wallah/);
+  assert.match(prompt, /Prayagraj/);
+  assert.match(
+    prompt,
+    /learning, practice, revision, tests, and doubt-solving/,
+  );
+  assert.match(prompt, /not the real Alakh Pandey/);
+  assert.match(prompt, /beta/);
+  assert.match(prompt, /bol raha hoon/);
+  assert.match(prompt, /output 1 to 6 separate message chunks/);
+  assert.doesNotMatch(
+    prompt,
+    /bol rahi|karungi|mock-dramatic|bad-girl|output 1 to 3 separate message chunks/,
+  );
+  assert.match(buildRealtimeInstructions("alakh"), /student in India/);
+  assert.match(buildRealtimeInstructions("alakh"), /not the real Alakh Pandey/);
+  assert.doesNotMatch(
+    buildRealtimeInstructions("alakh"),
+    /what their usual day looks like/,
+  );
+
+  for (const mood of ["friendly", "funny", "caring", "bold"] as const) {
+    const line = moodPromptForMood(mood, alakh);
+    assert.match(line, /Alakh Sir/);
+    assert.doesNotMatch(line, /Flirty & Bold|romantically open|deadpan|mock-dramatic|spicy/i);
+  }
+  assert.match(moodPromptForMood("bold", "alakh"), /energetic/);
+  assert.match(moodPromptForMood("bold", alakh), /Stay a teacher/);
+  assert.match(moodPromptForMood("funny", alakh), /Classroom humour/);
+  assert.match(moodPromptForMood("caring", alakh), /feeling they actually showed/);
+
+  const beats = parseTextReplySegments(
+    JSON.stringify({
+      messages: [
+        "Achha, inertia pehle feel se samajhte hain.",
+        "Bus brake mare toh body aage kyun jaati hai?",
+        "Wahi tendency hai state of rest ya motion banaye rakhne ki.",
+        "Ab ek numerical khud try karo.",
+      ],
+    }),
+    "mentor",
+  );
+  assert.deepEqual(beats, [
+    "Achha, inertia pehle feel se samajhte hain.",
+    "Bus brake mare toh body aage kyun jaati hai?",
+    "Wahi tendency hai state of rest ya motion banaye rakhne ki.",
+    "Ab ek numerical khud try karo.",
+  ]);
 });
 
 test("language detection does not treat broad English words or na alone as Hinglish", () => {
@@ -392,8 +447,9 @@ test("openers are profile-specific, language-aware, and stable", () => {
   assert.equal(isSimpleOpeningGreeting("hello!!!", "Aryan"), true);
   assert.equal(isSimpleOpeningGreeting("kaise ho", "Riva"), false);
   assert.equal(isSimpleOpeningGreeting("I had a long day", "Aryan"), false);
+  assert.equal(isSimpleOpeningGreeting("hi alakh sir", "Alakh Sir"), true);
 
-  for (const slug of ["zara", "aryan"] as const) {
+  for (const slug of ["zara", "aryan", "alakh"] as const) {
     for (let seed = 0; seed < 4; seed += 1) {
       const line = selectOpeningGreeting({
         profileSlug: slug,
@@ -439,6 +495,16 @@ test("openers are profile-specific, language-aware, and stable", () => {
   assert.match(zaraHinglish, /gayi/);
   assert.match(aryanHinglish, /gaya/);
   assert.doesNotMatch(aryanHinglish, /gayi|rahi/);
+  const alakhHinglish = selectOpeningGreeting({
+    profileSlug: "alakh",
+    userText: "hey yaar",
+    seed: 3,
+  });
+  assert.equal(detectTextLanguageMode(alakhHinglish), "hinglish");
+  assert.notEqual(
+    selectOpeningGreeting({ profileSlug: "alakh", userText: "hi", seed: 0 }),
+    selectOpeningGreeting({ profileSlug: "aryan", userText: "hi", seed: 0 }),
+  );
 
   const dayOne = openingRotationSeed(
     7,
@@ -453,20 +519,6 @@ test("openers are profile-specific, language-aware, and stable", () => {
     dayOne,
     openingRotationSeed(7, "aryan", new Date("2026-05-02T02:00:00.000Z")),
   );
-});
-
-test("intimacy transcript includes recent context beyond the latest line", () => {
-  const history = Array.from({ length: 10 }, (_, index) =>
-    message(index + 1, index % 2 === 0 ? "user" : "assistant"),
-  );
-  const transcript = buildIntimacyTranscript(history);
-  assert.equal(transcript.recentConversation.length, 8);
-  assert.equal(transcript.latestUserMessage, history[8]?.content);
-  assert.equal(transcript.recentConversation[0]?.content, history[2]?.content);
-  assert.equal(buildIntimacyTranscript("hello").latestUserMessage, "hello");
-  assert.deepEqual(buildIntimacyTranscript("hello").recentConversation, [
-    { role: "user", content: "hello" },
-  ]);
 });
 
 test("older continuity keeps a verbatim cue without inventing a summary", () => {

@@ -10,10 +10,12 @@ class EmptyChat extends StatelessWidget {
     super.key,
     this.companionName,
     this.avatarAsset,
+    this.subtitle,
   });
 
   final String? companionName;
   final String? avatarAsset;
+  final String? subtitle;
 
   @override
   Widget build(BuildContext context) {
@@ -37,7 +39,8 @@ class EmptyChat extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             Text(
-              'text her, send a voice note, or tap the phone icon for a live call.',
+              subtitle ??
+                  'text her, send a voice note, or tap the phone icon for a live call.',
               textAlign: TextAlign.center,
               style: GoogleFonts.inter(
                 fontSize: 14,

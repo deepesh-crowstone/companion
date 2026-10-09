@@ -18,7 +18,6 @@ abstract final class AnalyticsEvents {
   static const pageViewed = 'page_viewed';
 
   // Private mode
-  static const privateModeUpsellTap = 'private_mode_upsell_tap';
   static const privateModeBannerTap = 'private_mode_banner_tap';
   static const paywallShown = 'paywall_shown';
   static const paywallPayClicked = 'paywall_pay_clicked';

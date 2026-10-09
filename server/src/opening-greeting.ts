@@ -32,6 +32,20 @@ const ARYAN_HINGLISH = [
   "theek, aa gaya",
 ];
 
+const ALAKH_ENGLISH = [
+  "Hi. Tell me where you're stuck.",
+  "Hello. Which exam is this for?",
+  "Hey. Start with the real problem.",
+  "Hi. I'm here. What's the doubt?",
+];
+
+const ALAKH_HINGLISH = [
+  "haan, batao. aaj kya samajh nahi aa raha",
+  "dekho, tum kya padh rahe ho abhi",
+  "haan, batao. mock mein kya galat hua",
+  "haan, dekho. concept hai ya practice nahi hui",
+];
+
 function normalizeGreeting(text: string): string {
   return text
     .trim()
@@ -78,14 +92,16 @@ export function selectOpeningGreeting(options: {
 }): string {
   const slug = resolveProfileSlug(options.profileSlug);
   const english = detectTextLanguageMode(options.userText) === "english";
-  const catalog =
-    slug === "aryan"
-      ? english
-        ? ARYAN_ENGLISH
-        : ARYAN_HINGLISH
-      : english
-        ? ZARA_ENGLISH
-        : ZARA_HINGLISH;
+  const englishBySlug: Record<string, string[]> = {
+    aryan: ARYAN_ENGLISH,
+    alakh: ALAKH_ENGLISH,
+  };
+  const hinglishBySlug: Record<string, string[]> = {
+    aryan: ARYAN_HINGLISH,
+    alakh: ALAKH_HINGLISH,
+  };
+  const catalog = (english ? englishBySlug : hinglishBySlug)[slug] ??
+    (english ? ZARA_ENGLISH : ZARA_HINGLISH);
   const index = Math.abs(options.seed) % catalog.length;
   return catalog[index] ?? catalog[0];
 }

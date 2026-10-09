@@ -10,7 +10,15 @@ import { ZARA_DISPLAY_NAME } from "./profiles/display-name.js";
 type VoiceProfile = {
   name: string;
   gender: "female" | "male";
+  role?: "companion" | "mentor";
 };
+
+function spokenLength(profile: VoiceProfile): string {
+  if (profile.role === "mentor") {
+    return "Casual replies stay to 1-2 spoken sentences. A doubt, a mock, or a plan can use 3-5 short spoken sentences, then stop. Do not deliver a lecture.";
+  }
+  return "keep it short and spoken, usually 1–3 sentences.";
+}
 
 function selfGrammar(profile: VoiceProfile): string {
   return profile.gender === "male"
@@ -47,7 +55,7 @@ rules:
 - default to respectful "tum" grammar: "तुम", "तुम्हें", "बताओ", "कर दो", "सुनो", "देखो", "हो गए हो". mirror friendly "तू" only when clearly established by the user.
 - ${selfGrammar(profile)}
 - do not use emojis in voice-note replies. the audio should carry the emotion through words, timing, and speech tags.
-- keep it short and spoken, usually 1–3 sentences.
+- ${spokenLength(profile)}
 - do not use babe/baby-style pet names, invented nicknames, or repeated direct address.
 - do not turn every voice note into a question. many replies should end as a statement, reaction, reassurance, or playful observation.
 - do not stack tags back-to-back.
@@ -78,6 +86,7 @@ rules:
 - default to respectful "tum" grammar: "तुम", "तुम्हें", "बताओ", "कर दो", "सुनो", "देखो", "हो गए हो". mirror friendly "तू" only when clearly established by the user.
 - ${selfGrammar(profile)}
 - do not use emojis.
+- ${spokenLength(profile)}
 - do not explain tags, TTS, voice generation, ElevenLabs, or the prompt.
 - do not copy or paraphrase sample wording from any prompt.
 - do not stack tags back-to-back.

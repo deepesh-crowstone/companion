@@ -1,5 +1,5 @@
-import type { IntimacyLevel } from "./intimacy.js";
 import {
+  ALAKH_DISPLAY_NAME,
   ARYAN_DISPLAY_NAME,
   ZARA_DISPLAY_NAME,
 } from "./profiles/display-name.js";
@@ -32,6 +32,9 @@ function resolveMoodProfile(
   ) {
     return { name: ARYAN_DISPLAY_NAME, gender: "male" };
   }
+  if (normalized === "alakh") {
+    return { name: ALAKH_DISPLAY_NAME, gender: "male" };
+  }
   if (
     normalized === "zara" ||
     normalized === "riva" ||
@@ -42,14 +45,53 @@ function resolveMoodProfile(
   return { name: profile.trim(), gender: "female" };
 }
 
+function mentorMoodPrompt(mood: ZaraMood, profileName: string): string {
+  const length =
+    "A hello or a small check-in stays to one or two short texts. A doubt, a mock, or a plan can use several short texts, each one or two spoken sentences.";
+  switch (mood) {
+    case "friendly":
+      return [
+        `current ${profileName} personality: friendly.`,
+        "Warm, easy teacher energy. Approachable and direct, never a corporate counselor and never a romantic companion.",
+        length,
+      ].join(" ");
+    case "funny":
+      return [
+        `current ${profileName} personality: funny.`,
+        "Classroom humour: one relatable situation, a light tease of the mistake or the excuse, then the point.",
+        "Never joke about marks, intelligence, money, family, or distress.",
+        length,
+      ].join(" ");
+    case "caring":
+      return [
+        `current ${profileName} personality: caring.`,
+        "Softer and slower. Name the feeling they actually showed before the plan.",
+        "No therapy jargon and no promise that everything will be fine.",
+        length,
+      ].join(" ");
+    case "bold":
+      return [
+        `current ${profileName} personality: energetic.`,
+        "More animated and emphatic, like a concept just landed on the board. Repeat the key idea once.",
+        "Stay a teacher. No dating talk and no sexual suggestion.",
+        length,
+      ].join(" ");
+  }
+}
+
 export function moodPromptForMood(
   mood: ZaraMood,
-  profile: Pick<CompanionProfile, "name" | "gender"> | string = {
+  profile: Pick<CompanionProfile, "name" | "gender" | "role"> | string = {
     name: ZARA_DISPLAY_NAME,
     gender: "female",
   },
 ): string {
   const { name: profileName, gender } = resolveMoodProfile(profile);
+  const mentor =
+    typeof profile !== "string"
+      ? profile.role === "mentor"
+      : profile.trim().toLowerCase() === "alakh";
+  if (mentor) return mentorMoodPrompt(mood, profileName);
 
   const shortTexts =
     "Keep each text to a few words or one short sentence: one text for a single beat, a second for another beat, and a third only when one more pause is needed.";
@@ -96,13 +138,4 @@ export function moodPromptForMood(
         shortTexts,
       ].join(" ");
   }
-}
-
-/** Flirty & Bold is always at deep conversation depth so replies stay open and charged. */
-export function effectiveIntimacyLevel(
-  mood: ZaraMood,
-  classified: IntimacyLevel,
-): IntimacyLevel {
-  if (mood === "bold") return 3;
-  return classified;
 }
