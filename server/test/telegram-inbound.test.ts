@@ -75,6 +75,26 @@ test("private text is delivered to Riva and /start opens like a hello", () => {
   );
 });
 
+test("a private voice note is transcribed before the reply model", () => {
+  assert.deepEqual(
+    parseTelegramUpdate({
+      update_id: 12,
+      message: {
+        voice: { file_id: "voice-file", mime_type: "audio/ogg" },
+        chat: { id: 55, type: "private" },
+        from: { id: 99, is_bot: false },
+      },
+    }),
+    {
+      kind: "voice",
+      chatId: 55,
+      telegramUserId: 99,
+      fileId: "voice-file",
+      mimeType: "audio/ogg",
+    },
+  );
+});
+
 test("groups, bots, and non-text messages do not enter the reply model", () => {
   assert.deepEqual(
     parseTelegramUpdate({

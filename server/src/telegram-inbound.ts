@@ -22,6 +22,8 @@ export type TelegramBotConfig = {
   unsupportedReply: string;
   errorReply: string;
   emptyReply: string;
+  /** Spoken when a voice note transcribes to nothing. */
+  voiceMissReply: string;
 };
 
 export const TELEGRAM_BOTS: Record<TelegramBotId, TelegramBotConfig> = {
@@ -36,6 +38,7 @@ export const TELEGRAM_BOTS: Record<TelegramBotId, TelegramBotConfig> = {
     unsupportedReply: "text me yaar, i can't open that here",
     errorReply: "something glitched, text me again",
     emptyReply: "got stuck, say that again",
+    voiceMissReply: "couldn't catch that, send the voice note again",
   },
   alakh: {
     id: "alakh",
@@ -48,6 +51,7 @@ export const TELEGRAM_BOTS: Record<TelegramBotId, TelegramBotConfig> = {
     unsupportedReply: "beta, yahan text likh ke bhejo",
     errorReply: "ek second beta, phir se bhej dena",
     emptyReply: "phir se likh dena beta",
+    voiceMissReply: "beta, awaaz clear nahi aayi, phir se bhej dena",
   },
 };
 
@@ -56,6 +60,13 @@ const DEFAULT_PUBLIC_API_BASE = "https://api.chatlife.online";
 export type TelegramInbound =
   | { kind: "ignore" }
   | { kind: "text"; chatId: number; telegramUserId: number; text: string }
+  | {
+      kind: "voice";
+      chatId: number;
+      telegramUserId: number;
+      fileId: string;
+      mimeType: string;
+    }
   | { kind: "unsupported"; chatId: number };
 
 type TelegramUpdate = {
@@ -64,6 +75,7 @@ type TelegramUpdate = {
     chat?: { id?: number; type?: string };
     from?: { id?: number; is_bot?: boolean };
     text?: string;
+    voice?: { file_id?: string; mime_type?: string };
   };
 };
 
@@ -115,8 +127,9 @@ export function readUpdateId(body: unknown): number | null {
 }
 
 /**
- * Private text chats become Riva replies. /start is stored as a normal hello
- * so the opening greeting runs. Groups, bots, and non-text messages are split out.
+ * Private text becomes a reply. /start is stored as a normal hello so the
+ * opening greeting runs. A voice note is transcribed, then answered as text.
+ * Groups, bots, and other attachments are split out.
  */
 export function parseTelegramUpdate(body: unknown): TelegramInbound {
   if (!body || typeof body !== "object") return { kind: "ignore" };
@@ -128,7 +141,19 @@ export function parseTelegramUpdate(body: unknown): TelegramInbound {
   }
 
   const text = message.text?.trim();
-  if (!text) return { kind: "unsupported", chatId: message.chat.id };
+  if (!text) {
+    const fileId = message.voice?.file_id?.trim();
+    if (fileId) {
+      return {
+        kind: "voice",
+        chatId: message.chat.id,
+        telegramUserId: message.from.id,
+        fileId,
+        mimeType: message.voice?.mime_type?.trim() || "audio/ogg",
+      };
+    }
+    return { kind: "unsupported", chatId: message.chat.id };
+  }
 
   const command = text.split(/\s+/, 1)[0]?.split("@", 1)[0]?.toLowerCase();
   const normalized =

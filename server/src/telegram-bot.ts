@@ -13,6 +13,7 @@ import {
   type TelegramBotConfig,
   type TelegramBotId,
 } from "./telegram-inbound.js";
+import { readTelegramSttConfig, transcribeVoiceNote } from "./telegram-stt.js";
 
 const lanes = new Map<string, Promise<void>>();
 
@@ -39,6 +40,72 @@ async function telegramCall(
     throw new Error(payload.description || `Telegram ${method} failed`);
   }
   return { ok: true, result: payload.result };
+}
+
+const MAX_VOICE_BYTES = 20 * 1024 * 1024;
+
+async function downloadTelegramVoice(
+  token: string,
+  fileId: string,
+): Promise<{ bytes: Buffer; filename: string; mimeType: string }> {
+  const response = await fetch(botApi(token, "getFile"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ file_id: fileId }),
+  });
+  const payload = (await response.json()) as {
+    ok?: boolean;
+    description?: string;
+    result?: { file_path?: string; file_size?: number };
+  };
+  const filePath = payload.result?.file_path;
+  if (!response.ok || payload.ok === false || !filePath) {
+    throw new Error(payload.description || "Telegram getFile failed");
+  }
+  if ((payload.result?.file_size ?? 0) > MAX_VOICE_BYTES) {
+    throw new Error("Voice note is too large");
+  }
+
+  let fileResponse: Response;
+  try {
+    fileResponse = await fetch(`https://api.telegram.org/file/bot${token}/${filePath}`);
+  } catch {
+    throw new Error("Telegram file download failed");
+  }
+  if (!fileResponse.ok) {
+    throw new Error(`Telegram file download failed: ${fileResponse.status}`);
+  }
+  const bytes = Buffer.from(await fileResponse.arrayBuffer());
+  if (bytes.length > MAX_VOICE_BYTES) {
+    throw new Error("Voice note is too large");
+  }
+  return {
+    bytes,
+    filename: filePath.split("/").pop() || "speech.opus",
+    mimeType: "audio/ogg",
+  };
+}
+
+async function replyToVoiceNote(
+  bot: TelegramBotConfig,
+  token: string,
+  chatId: number,
+  telegramUserId: number,
+  fileId: string,
+): Promise<void> {
+  const stt = readTelegramSttConfig();
+  if (!stt) {
+    await sendText(token, chatId, bot.unsupportedReply);
+    return;
+  }
+  await sendChatAction(token, chatId);
+  const audio = await downloadTelegramVoice(token, fileId);
+  const transcript = await transcribeVoiceNote(stt, audio);
+  if (!transcript) {
+    await sendText(token, chatId, bot.voiceMissReply);
+    return;
+  }
+  await replyInChat(bot, token, chatId, telegramUserId, transcript);
 }
 
 async function sendChatAction(token: string, chatId: number): Promise<void> {
@@ -220,6 +287,16 @@ export async function acceptTelegramUpdate(
     try {
       if (inbound.kind === "unsupported") {
         await sendText(token, inbound.chatId, bot.unsupportedReply);
+        return;
+      }
+      if (inbound.kind === "voice") {
+        await replyToVoiceNote(
+          bot,
+          token,
+          inbound.chatId,
+          inbound.telegramUserId,
+          inbound.fileId,
+        );
         return;
       }
       await replyInChat(bot, token, inbound.chatId, inbound.telegramUserId, inbound.text);
