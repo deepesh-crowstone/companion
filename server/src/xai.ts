@@ -600,6 +600,15 @@ ${spoken ? MENTOR_SPOKEN_REPLY_OUTPUT_FORMAT : textReplyOutputFormat(profile)}`;
 
 const IMAGE_MIME = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 
+/**
+ * grok-4.7 reasons before it answers, and a printed numerical with a diagram
+ * needs the high setting. The default client timeout is 40s and the previous
+ * photo timeout was 90s, so the request was aborted while the solution was
+ * still being worked out.
+ */
+export const ALAKH_IMAGE_TIMEOUT_MS = 240_000;
+export const ALAKH_IMAGE_REASONING_EFFORT = "high";
+
 /** Alakh Sir looks at a student's photo and answers in the text-chat voice. */
 export async function chatWithAlakhImage(input: {
   history: DbMessage[];
@@ -628,6 +637,8 @@ the student attached a photo:
 - Look at the image before you answer. It may be a question, handwritten work, a diagram, a score, or a screenshot.
 - Read the visible words, numbers, equations, and labels. Do not invent text, marks, or diagram details that are not visible.
 - Answer the doubt the image shows. Use the caption when they added one.
+- If the photo is a numerical, a derivation, or a diagram question, solve it in this reply. State the values you read, the relation, the calculation, and the final result. Do not stop after describing the picture, and do not ask them to resend a question you can already read.
+- Write formulas as plain text, such as F = B*I*l. This chat cannot render LaTeX.
 - If the photo is blurry or cropped, say what you can see and ask for a clearer photo.
 - If the image is inappropriate, refuse in one teacher-like line and do not describe it.
 - ${note}
@@ -647,14 +658,18 @@ ${textReplyOutputFormat(profile)}`;
             { type: "text", text: note },
             {
               type: "image_url",
-              image_url: { url: `data:${mime};base64,${input.image.toString("base64")}` },
+              image_url: {
+                url: `data:${mime};base64,${input.image.toString("base64")}`,
+                detail: "high",
+              },
             },
           ],
         },
       ],
       temperature: 0.4,
+      reasoning_effort: ALAKH_IMAGE_REASONING_EFFORT,
     },
-    { timeoutMs: 90_000, label: "Image" },
+    { timeoutMs: ALAKH_IMAGE_TIMEOUT_MS, label: "Image" },
   );
 
   return parseTextReplySegments(visibleReply(reply), "mentor");
