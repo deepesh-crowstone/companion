@@ -20,7 +20,8 @@ import {
   MENTOR_SPOKEN_REPLY_OUTPUT_FORMAT,
   textReplyOutputFormat,
 } from "./platform-behavior.js";
-import { replyChatCompletion } from "./reply-client.js";
+import { replyChatCompletion, visibleReply } from "./reply-client.js";
+import { xaiChatCompletion } from "./xai-client.js";
 import { prepareConversationContext } from "./conversation-context.js";
 import type { CompanionProfile } from "./profiles/types.js";
 import {
@@ -595,6 +596,68 @@ ${spoken ? MENTOR_SPOKEN_REPLY_OUTPUT_FORMAT : textReplyOutputFormat(profile)}`;
     spokenSegments.push(await rewriteRomanHindiForSpeech(segment, profileName));
   }
   return spokenSegments;
+}
+
+const IMAGE_MIME = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+
+/** Alakh Sir looks at a student's photo and answers in the text-chat voice. */
+export async function chatWithAlakhImage(input: {
+  history: DbMessage[];
+  image: Buffer;
+  mimeType: string;
+  caption: string;
+}): Promise<string[]> {
+  const mime = IMAGE_MIME.has(input.mimeType) ? input.mimeType : "image/jpeg";
+  const caption = input.caption.trim();
+  const note = caption
+    ? `The student sent this photo with the caption: ${caption}`
+    : "The student sent this photo and did not add a caption.";
+  const profileSlug = "alakh";
+  const profile = profileForSlug(profileSlug);
+  const context = prepareConversationContext(input.history);
+  const systemPrompt = `${buildTextSystemPrompt(profileSlug)}
+
+${moodPromptForMood("friendly", profile)}
+
+study boundary:
+- This chat is study guidance. Do not flirt or role-play romance.
+
+${currentIndiaTimeContext()}
+
+the student attached a photo:
+- Look at the image before you answer. It may be a question, handwritten work, a diagram, a score, or a screenshot.
+- Read the visible words, numbers, equations, and labels. Do not invent text, marks, or diagram details that are not visible.
+- Answer the doubt the image shows. Use the caption when they added one.
+- If the photo is blurry or cropped, say what you can see and ask for a clearer photo.
+- If the image is inappropriate, refuse in one teacher-like line and do not describe it.
+- ${note}
+
+${textReplyOutputFormat(profile)}`;
+
+  const reply = await xaiChatCompletion(
+    {
+      model: process.env.XAI_CHAT_MODEL?.trim() || "grok-4.7",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "system", content: context.contextNote },
+        ...context.recentMessages,
+        {
+          role: "user",
+          content: [
+            { type: "text", text: note },
+            {
+              type: "image_url",
+              image_url: { url: `data:${mime};base64,${input.image.toString("base64")}` },
+            },
+          ],
+        },
+      ],
+      temperature: 0.4,
+    },
+    { timeoutMs: 90_000, label: "Image" },
+  );
+
+  return parseTextReplySegments(visibleReply(reply), "mentor");
 }
 
 export async function chatWithMiaTextAsVoice(

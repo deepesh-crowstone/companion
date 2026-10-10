@@ -48,7 +48,7 @@ export const TELEGRAM_BOTS: Record<TelegramBotId, TelegramBotConfig> = {
     secretEnv: "TELEGRAM_ALAKH_WEBHOOK_SECRET",
     secretSalt: "alakh-telegram-webhook",
     webhookPath: "alakh/webhook",
-    unsupportedReply: "beta, yahan text likh ke bhejo",
+    unsupportedReply: "beta, text ya photo bhej dena",
     errorReply: "ek second beta, phir se bhej dena",
     emptyReply: "phir se likh dena beta",
     voiceMissReply: "beta, awaaz clear nahi aayi, phir se bhej dena",
@@ -67,7 +67,17 @@ export type TelegramInbound =
       fileId: string;
       mimeType: string;
     }
+  | {
+      kind: "photo";
+      chatId: number;
+      telegramUserId: number;
+      fileId: string;
+      mimeType: string;
+      caption: string;
+    }
   | { kind: "unsupported"; chatId: number };
+
+type TelegramPhotoSize = { file_id?: string; file_size?: number };
 
 type TelegramUpdate = {
   update_id?: number;
@@ -75,9 +85,24 @@ type TelegramUpdate = {
     chat?: { id?: number; type?: string };
     from?: { id?: number; is_bot?: boolean };
     text?: string;
+    caption?: string;
+    photo?: TelegramPhotoSize[];
+    document?: { file_id?: string; mime_type?: string };
     voice?: { file_id?: string; mime_type?: string };
   };
 };
+
+/** Telegram lists photo sizes smallest-first. The largest file is the one to read. */
+export function largestTelegramPhotoId(
+  photos: TelegramPhotoSize[] | undefined,
+): string | null {
+  const usable = (photos ?? []).filter((photo) => photo.file_id?.trim());
+  if (usable.length === 0) return null;
+  const best = usable.reduce((current, photo) =>
+    (photo.file_size ?? 0) >= (current.file_size ?? 0) ? photo : current,
+  );
+  return best.file_id?.trim() || null;
+}
 
 export function readTelegramBotToken(envName: string): string | null {
   const token = process.env[envName]
@@ -131,7 +156,8 @@ export function readUpdateId(body: unknown): number | null {
  * opening greeting runs. A voice note is transcribed, then answered.
  * Alakh Sir speaks that reply in Devanagari Hindi when ALAKH_TTS_URL is set.
  * Typed messages stay Latin-script text.
- * Groups, bots, and other attachments are split out.
+ * A photo is kept for Alakh Sir to read. Groups, bots, and other
+ * attachments are split out.
  */
 export function parseTelegramUpdate(body: unknown): TelegramInbound {
   if (!body || typeof body !== "object") return { kind: "ignore" };
@@ -140,6 +166,21 @@ export function parseTelegramUpdate(body: unknown): TelegramInbound {
   if (typeof message.chat.id !== "number") return { kind: "ignore" };
   if (!message.from || message.from.is_bot || typeof message.from.id !== "number") {
     return { kind: "ignore" };
+  }
+
+  const photoId = largestTelegramPhotoId(message.photo);
+  const documentMime = message.document?.mime_type?.trim() ?? "";
+  const documentId = message.document?.file_id?.trim();
+  const imageFileId = photoId || (documentMime.startsWith("image/") ? documentId : "");
+  if (imageFileId) {
+    return {
+      kind: "photo",
+      chatId: message.chat.id,
+      telegramUserId: message.from.id,
+      fileId: imageFileId,
+      mimeType: photoId ? "image/jpeg" : documentMime,
+      caption: message.caption?.trim() ?? "",
+    };
   }
 
   const text = message.text?.trim();

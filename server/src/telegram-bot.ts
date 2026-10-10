@@ -6,7 +6,7 @@ import {
   synthesizeAlakhSpeech,
 } from "./alakh-tts.js";
 import { pool } from "./db.js";
-import { replyToProfileText } from "./routes/messages.js";
+import { replyToAlakhImage, replyToProfileText } from "./routes/messages.js";
 import {
   TELEGRAM_BOTS,
   parseTelegramUpdate,
@@ -52,10 +52,22 @@ async function telegramCall(
 }
 
 const MAX_VOICE_BYTES = 20 * 1024 * 1024;
+const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
 
-async function downloadTelegramVoice(
+function mimeFromTelegramPath(filePath: string, fallback: string): string {
+  const extension = filePath.split(".").pop()?.toLowerCase();
+  if (extension === "jpg" || extension === "jpeg") return "image/jpeg";
+  if (extension === "png") return "image/png";
+  if (extension === "webp") return "image/webp";
+  if (extension === "gif") return "image/gif";
+  return fallback;
+}
+
+async function downloadTelegramFile(
   token: string,
   fileId: string,
+  maxBytes: number,
+  fallbackMime: string,
 ): Promise<{ bytes: Buffer; filename: string; mimeType: string }> {
   const response = await fetch(botApi(token, "getFile"), {
     method: "POST",
@@ -71,8 +83,8 @@ async function downloadTelegramVoice(
   if (!response.ok || payload.ok === false || !filePath) {
     throw new Error(payload.description || "Telegram getFile failed");
   }
-  if ((payload.result?.file_size ?? 0) > MAX_VOICE_BYTES) {
-    throw new Error("Voice note is too large");
+  if ((payload.result?.file_size ?? 0) > maxBytes) {
+    throw new Error("Telegram file is too large");
   }
 
   let fileResponse: Response;
@@ -85,14 +97,71 @@ async function downloadTelegramVoice(
     throw new Error(`Telegram file download failed: ${fileResponse.status}`);
   }
   const bytes = Buffer.from(await fileResponse.arrayBuffer());
-  if (bytes.length > MAX_VOICE_BYTES) {
-    throw new Error("Voice note is too large");
+  if (bytes.length > maxBytes) {
+    throw new Error("Telegram file is too large");
   }
   return {
     bytes,
-    filename: filePath.split("/").pop() || "speech.opus",
-    mimeType: "audio/ogg",
+    filename: filePath.split("/").pop() || "file",
+    mimeType: mimeFromTelegramPath(filePath, fallbackMime),
   };
+}
+
+async function downloadTelegramVoice(
+  token: string,
+  fileId: string,
+): Promise<{ bytes: Buffer; filename: string; mimeType: string }> {
+  const file = await downloadTelegramFile(
+    token,
+    fileId,
+    MAX_VOICE_BYTES,
+    "audio/ogg",
+  );
+  return { ...file, mimeType: "audio/ogg" };
+}
+
+async function replyToPhoto(
+  bot: TelegramBotConfig,
+  token: string,
+  chatId: number,
+  telegramUserId: number,
+  fileId: string,
+  mimeType: string,
+  caption: string,
+  account: LatencyAccount,
+): Promise<void> {
+  if (bot.id !== "alakh") {
+    await account.time("send", () =>
+      sendText(token, chatId, bot.unsupportedReply, account),
+    );
+    return;
+  }
+  await account.time("typing", () => sendChatAction(token, chatId));
+  const image = await account.time("download", () =>
+    downloadTelegramFile(token, fileId, MAX_PHOTO_BYTES, mimeType),
+  );
+  account.note("bytes", image.bytes.length);
+  const typing = setInterval(() => {
+    void sendChatAction(token, chatId).catch(() => undefined);
+  }, 4000);
+  try {
+    const userId = await account.time("identity", () =>
+      userIdForTelegram(telegramUserId),
+    );
+    const bubbles = await replyToAlakhImage({
+      userId,
+      image: image.bytes,
+      mimeType: image.mimeType,
+      caption,
+      stage: (name, work) => account.time(name, work),
+    });
+    account.note("bubbles", bubbles.length);
+    await account.time("send", () =>
+      deliverBubbles(token, chatId, bubbles, bot.emptyReply, account),
+    );
+  } finally {
+    clearInterval(typing);
+  }
 }
 
 async function replyToVoiceNote(
@@ -397,6 +466,17 @@ export async function acceptTelegramUpdate(
       if (inbound.kind === "unsupported") {
         await account.time("send", () =>
           sendText(token, inbound.chatId, bot.unsupportedReply, account),
+        );
+      } else if (inbound.kind === "photo") {
+        await replyToPhoto(
+          bot,
+          token,
+          inbound.chatId,
+          inbound.telegramUserId,
+          inbound.fileId,
+          inbound.mimeType,
+          inbound.caption,
+          account,
         );
       } else if (inbound.kind === "voice") {
         await replyToVoiceNote(

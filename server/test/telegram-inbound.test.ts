@@ -95,6 +95,50 @@ test("a private voice note is transcribed before the reply model", () => {
   );
 });
 
+test("a private photo keeps the largest file and the caption", () => {
+  assert.deepEqual(
+    parseTelegramUpdate({
+      update_id: 13,
+      message: {
+        caption: "  yeh doubt hai  ",
+        photo: [
+          { file_id: "small", file_size: 100 },
+          { file_id: "big", file_size: 9000 },
+        ],
+        chat: { id: 55, type: "private" },
+        from: { id: 99, is_bot: false },
+      },
+    }),
+    {
+      kind: "photo",
+      chatId: 55,
+      telegramUserId: 99,
+      fileId: "big",
+      mimeType: "image/jpeg",
+      caption: "yeh doubt hai",
+    },
+  );
+
+  assert.deepEqual(
+    parseTelegramUpdate({
+      update_id: 14,
+      message: {
+        document: { file_id: "sheet", mime_type: "image/png" },
+        chat: { id: 55, type: "private" },
+        from: { id: 99, is_bot: false },
+      },
+    }),
+    {
+      kind: "photo",
+      chatId: 55,
+      telegramUserId: 99,
+      fileId: "sheet",
+      mimeType: "image/png",
+      caption: "",
+    },
+  );
+});
+
 test("groups, bots, and non-text messages do not enter the reply model", () => {
   assert.deepEqual(
     parseTelegramUpdate({

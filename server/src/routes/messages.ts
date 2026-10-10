@@ -14,6 +14,7 @@ import {
 import { normalizePhotoStoredKey } from "../zara-photos.js";
 import { stripSpeechTagsForDisplay } from "../tts-speech.js";
 import {
+  chatWithAlakhImage,
   chatWithMia,
   chatWithMiaTextAsVoice,
   chatWithMiaText,
@@ -349,6 +350,44 @@ async function buildTextReply(
   }
 
   return assistantMsgs;
+}
+
+/** Saves a student photo and returns Alakh Sir's reply after he has seen it. */
+export async function replyToAlakhImage(input: {
+  userId: number;
+  image: Buffer;
+  mimeType: string;
+  caption: string;
+  stage?: Stage;
+}): Promise<string[]> {
+  const profileSlug = "alakh";
+  const history = await runStage(input.stage, "history", () =>
+    listContextMessages(input.userId, profileSlug),
+  );
+  const caption = input.caption.trim();
+  await runStage(input.stage, "save_user", () =>
+    insertMessage(
+      input.userId,
+      profileSlug,
+      "user",
+      caption || "Sent a photo.",
+      "text",
+    ),
+  );
+  const segments = await runStage(input.stage, "model", () =>
+    chatWithAlakhImage({
+      history,
+      image: input.image,
+      mimeType: input.mimeType,
+      caption,
+    }),
+  );
+  const assistantMsgs = await runStage(input.stage, "save_reply", () =>
+    insertAssistantTextMessages(input.userId, profileSlug, segments),
+  );
+  return assistantMsgs
+    .filter((message) => message.content.trim())
+    .map((message) => message.content);
 }
 
 /** Saves one user text and returns Riva/Aryan's short reply bubbles. */
