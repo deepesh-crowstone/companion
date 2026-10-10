@@ -1,5 +1,10 @@
 import { randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
+import {
+  alakhSpeechChunks,
+  readAlakhTtsConfig,
+  synthesizeAlakhSpeech,
+} from "./alakh-tts.js";
 import { pool } from "./db.js";
 import { replyToProfileText } from "./routes/messages.js";
 import {
@@ -120,11 +125,23 @@ async function replyToVoiceNote(
     );
     return;
   }
-  await replyInChat(bot, token, chatId, telegramUserId, transcript, account);
+  await replyInChat(
+    bot,
+    token,
+    chatId,
+    telegramUserId,
+    transcript,
+    account,
+    "voice",
+  );
 }
 
-async function sendChatAction(token: string, chatId: number): Promise<void> {
-  await telegramCall(token, "sendChatAction", { chat_id: chatId, action: "typing" });
+async function sendChatAction(
+  token: string,
+  chatId: number,
+  action: "typing" | "record_voice" = "typing",
+): Promise<void> {
+  await telegramCall(token, "sendChatAction", { chat_id: chatId, action });
 }
 
 async function sendText(
@@ -213,6 +230,59 @@ async function userIdForTelegram(telegramUserId: number): Promise<number> {
   }
 }
 
+async function sendVoice(
+  token: string,
+  chatId: number,
+  audio: Buffer,
+  account?: LatencyAccount,
+): Promise<void> {
+  const form = new FormData();
+  form.append("chat_id", String(chatId));
+  form.append(
+    "voice",
+    new Blob([new Uint8Array(audio)], { type: "audio/ogg" }),
+    "alakh.ogg",
+  );
+  const response = await fetch(botApi(token, "sendVoice"), {
+    method: "POST",
+    body: form,
+  });
+  const payload = (await response.json()) as { ok?: boolean; description?: string };
+  if (!response.ok || payload.ok === false) {
+    throw new Error(payload.description || "Telegram sendVoice failed");
+  }
+  account?.markFirstSend();
+}
+
+async function deliverAlakhVoice(
+  token: string,
+  chatId: number,
+  bubbles: string[],
+  emptyReply: string,
+  account: LatencyAccount,
+): Promise<void> {
+  const config = readAlakhTtsConfig();
+  const chunks = alakhSpeechChunks(bubbles);
+  if (!config || chunks.length === 0) {
+    await deliverBubbles(token, chatId, bubbles, emptyReply, account);
+    return;
+  }
+  try {
+    for (let index = 0; index < chunks.length; index += 1) {
+      if (index > 0) await sleep(400);
+      await sendChatAction(token, chatId, "record_voice");
+      const audio = await synthesizeAlakhSpeech(chunks[index], config);
+      await sendVoice(token, chatId, audio, account);
+    }
+  } catch (error) {
+    console.error(
+      "Alakh voice note failed, sending text:",
+      error instanceof Error ? error.message : error,
+    );
+    await deliverBubbles(token, chatId, bubbles, emptyReply, account);
+  }
+}
+
 async function deliverBubbles(
   token: string,
   chatId: number,
@@ -238,12 +308,15 @@ async function replyInChat(
   telegramUserId: number,
   text: string,
   account: LatencyAccount,
+  delivery: "text" | "voice" = "text",
 ): Promise<void> {
+  const speak = bot.id === "alakh" && delivery === "voice";
+  const action = speak ? "record_voice" : "typing";
   const typing = setInterval(() => {
-    void sendChatAction(token, chatId).catch(() => undefined);
+    void sendChatAction(token, chatId, action).catch(() => undefined);
   }, 4000);
   try {
-    await account.time("typing", () => sendChatAction(token, chatId));
+    await account.time("typing", () => sendChatAction(token, chatId, action));
     const userId = await account.time("identity", () =>
       userIdForTelegram(telegramUserId),
     );
@@ -257,7 +330,9 @@ async function replyInChat(
     });
     account.note("bubbles", bubbles.length);
     await account.time("send", () =>
-      deliverBubbles(token, chatId, bubbles, bot.emptyReply, account),
+      speak
+        ? deliverAlakhVoice(token, chatId, bubbles, bot.emptyReply, account)
+        : deliverBubbles(token, chatId, bubbles, bot.emptyReply, account),
     );
   } finally {
     clearInterval(typing);
