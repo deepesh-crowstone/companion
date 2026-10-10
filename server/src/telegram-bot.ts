@@ -7,6 +7,7 @@ import {
 } from "./alakh-tts.js";
 import { pool } from "./db.js";
 import { alakhRichMessage, plainSolutionFallback } from "./alakh-solution.js";
+import { createSolutionVideo } from "./alakh-video.js";
 import {
   replyToAlakhImage,
   replyToProfileText,
@@ -213,7 +214,7 @@ async function replyToVoiceNote(
 async function sendChatAction(
   token: string,
   chatId: number,
-  action: "typing" | "record_voice" = "typing",
+  action: "typing" | "record_voice" | "upload_video" = "typing",
 ): Promise<void> {
   await telegramCall(token, "sendChatAction", { chat_id: chatId, action });
 }
@@ -367,6 +368,61 @@ async function sendRichSolution(
   account?.markFirstSend();
 }
 
+async function sendSolutionVideo(
+  token: string,
+  chatId: number,
+  video: Buffer,
+  account?: LatencyAccount,
+): Promise<void> {
+  const form = new FormData();
+  form.append("chat_id", String(chatId));
+  form.append(
+    "video",
+    new Blob([new Uint8Array(video)], { type: "video/mp4" }),
+    "solution.mp4",
+  );
+  form.append("width", "1280");
+  form.append("height", "720");
+  form.append("supports_streaming", "true");
+  const response = await fetch(botApi(token, "sendVideo"), {
+    method: "POST",
+    body: form,
+  });
+  const payload = (await response.json()) as { ok?: boolean; description?: string };
+  if (!response.ok || payload.ok === false) {
+    throw new Error(payload.description || "Telegram sendVideo failed");
+  }
+  account?.markFirstSend();
+}
+
+async function deliverSolutionVideo(
+  token: string,
+  chatId: number,
+  markdown: string,
+  account: LatencyAccount,
+): Promise<void> {
+  try {
+    await sendChatAction(token, chatId, "upload_video");
+    const video = await createSolutionVideo(markdown);
+    if (!video) return;
+    await sendChatAction(token, chatId, "upload_video");
+    await sendSolutionVideo(token, chatId, video, account);
+  } catch (error) {
+    console.error(
+      "Alakh solution video failed:",
+      error instanceof Error ? error.message : error,
+    );
+    try {
+      await sendText(token, chatId, "video nahi ban paya beta, solution upar hai", account);
+    } catch (sendError) {
+      console.error(
+        "Alakh video failure note failed:",
+        sendError instanceof Error ? sendError.message : sendError,
+      );
+    }
+  }
+}
+
 async function deliverAlakhTexts(
   token: string,
   chatId: number,
@@ -378,15 +434,15 @@ async function deliverAlakhTexts(
   if (markdown) {
     try {
       await sendRichSolution(token, chatId, markdown, account);
-      return;
     } catch (error) {
       console.error(
         "Alakh rich solution failed, sending one text message:",
         error instanceof Error ? error.message : error,
       );
       await sendText(token, chatId, plainSolutionFallback(markdown), account);
-      return;
     }
+    await deliverSolutionVideo(token, chatId, markdown, account);
+    return;
   }
   await deliverBubbles(token, chatId, delivery.texts, emptyReply, account);
 }

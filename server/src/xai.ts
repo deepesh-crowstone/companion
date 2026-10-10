@@ -139,6 +139,11 @@ Rules:
   return rewritten.trim() || trimmed;
 }
 
+/** Spoken line for Alakh Sir's voice. Roman Hindi is rewritten; English is left as-is. */
+export async function prepareAlakhNarration(text: string): Promise<string> {
+  return rewriteRomanHindiForSpeech(text, "Alakh Sir");
+}
+
 function latestUserLanguageInstruction(history: DbMessage[]): string {
   const userTexts = history
     .filter((message) => message.role === "user")

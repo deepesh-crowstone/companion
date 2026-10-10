@@ -56,6 +56,7 @@ export type ReplyChatOptions = {
   label?: string;
   /** Overrides the default completion budget. Solution write-ups need more than a chat bubble. */
   maxTokens?: number;
+  temperature?: number;
 };
 
 /**
@@ -127,7 +128,7 @@ export async function replyChatCompletion(
     messages: collapseLeadingSystemMessages(messages),
     stream: false,
     max_tokens: options.maxTokens ?? REPLY_MAX_TOKENS,
-    temperature: 0.7,
+    temperature: options.temperature ?? 0.7,
     top_p: 0.8,
     chat_template_kwargs: { enable_thinking: true },
   };

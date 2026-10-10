@@ -37,6 +37,7 @@ export function alakhSpeechChunks(bubbles: string[]): string[] {
 export async function synthesizeAlakhSpeech(
   text: string,
   config: AlakhTtsConfig,
+  timeoutMs = 180_000,
 ): Promise<Buffer> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -50,6 +51,7 @@ export async function synthesizeAlakhSpeech(
       stream: false,
       response_format: "ogg",
     }),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   if (!response.ok) {
     const err = await response.text();
