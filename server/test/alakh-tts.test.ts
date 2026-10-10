@@ -24,6 +24,13 @@ test("a short Alakh reply is one voice note", () => {
   assert.deepEqual(alakhSpeechChunks(["  ", ""]), []);
 });
 
+test("a board explanation is spoken in short takes", () => {
+  const chunks = alakhSpeechChunks(["word ".repeat(80)], 240);
+  assert.ok(chunks.length > 1);
+  for (const chunk of chunks) assert.ok(chunk.length <= 240);
+  assert.equal(chunks.join(" "), "word ".repeat(80).trim());
+});
+
 test("a long Alakh lesson is split into voice notes on a word", () => {
   const bubbles = ["beta ".repeat(200)];
   const chunks = alakhSpeechChunks(bubbles);

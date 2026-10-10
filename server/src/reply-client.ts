@@ -57,6 +57,8 @@ export type ReplyChatOptions = {
   /** Overrides the default completion budget. Solution write-ups need more than a chat bubble. */
   maxTokens?: number;
   temperature?: number;
+  /** Qwen thinking is on for chat. Long jobs can turn it off so the answer is not spent on the trace. */
+  thinking?: boolean;
 };
 
 /**
@@ -130,7 +132,7 @@ export async function replyChatCompletion(
     max_tokens: options.maxTokens ?? REPLY_MAX_TOKENS,
     temperature: options.temperature ?? 0.7,
     top_p: 0.8,
-    chat_template_kwargs: { enable_thinking: true },
+    chat_template_kwargs: { enable_thinking: options.thinking !== false },
   };
 
   let lastError: Error = new Error(`${label} failed`);

@@ -9,13 +9,16 @@ import { TeX } from "mathjax-full/js/input/tex.js";
 import "mathjax-full/js/input/tex/ams/AmsConfiguration.js";
 import { mathjax } from "mathjax-full/js/mathjax.js";
 import { SVG } from "mathjax-full/js/output/svg.js";
-import { alakhSpeechChunks, readAlakhTtsConfig, synthesizeAlakhSpeech } from "./alakh-tts.js";
+import {
+  alakhSpeechChunks,
+  readAlakhTtsConfig,
+  synthesizeAlakhSpeech,
+  type AlakhTtsConfig,
+} from "./alakh-tts.js";
 import {
   narrationWithoutLatex,
   parseSolutionBeats,
   slideDurations,
-  SOLUTION_VIDEO_BEAT_GAP_SECONDS,
-  SOLUTION_VIDEO_END_GAP_SECONDS,
   SOLUTION_VIDEO_SCRIPT_PROMPT,
   type SolutionBeat,
 } from "./alakh-video-script.js";
@@ -263,7 +266,9 @@ function run(
     const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
+    let timedOut = false;
     const timer = setTimeout(() => {
+      timedOut = true;
       child.kill("SIGKILL");
     }, timeoutMs);
     child.stdout.on("data", (chunk: Buffer) => {
@@ -279,6 +284,7 @@ function run(
     child.on("close", (code) => {
       clearTimeout(timer);
       if (code === 0) resolve({ stdout, stderr });
+      else if (timedOut) reject(new Error(`${command} timed out after ${timeoutMs}ms`));
       else reject(new Error(`${command} failed: ${stderr.slice(-500)}`));
     });
   });
@@ -332,122 +338,160 @@ export async function assembleSolutionVideo(
   const durations: number[] = [];
   for (const file of audioFiles) durations.push(await probeDuration(file));
   const holds = slideDurations(durations);
-  const framePaths: string[] = [];
+  const clipPaths: string[] = [];
   for (let index = 0; index < frames.length; index += 1) {
-    const path = join(workDir, `frame-${index}.png`);
-    await writeFile(path, frames[index]);
-    framePaths.push(path);
-  }
-
-  const totalSeconds = holds.reduce((sum, hold) => sum + hold, 0);
-  const encodeMs = Math.min(60 * 60_000, Math.max(3 * 60_000, Math.ceil(totalSeconds * 8_000)));
-  const videoArgs = ["-y", "-loglevel", "error"];
-  for (let index = 0; index < framePaths.length; index += 1) {
-    videoArgs.push(
-      "-loop",
-      "1",
-      "-framerate",
-      "2",
-      "-t",
-      holds[index].toFixed(3),
-      "-i",
-      framePaths[index],
+    const framePath = join(workDir, `frame-${index}.png`);
+    await writeFile(framePath, frames[index]);
+    const hold = holds[index] ?? 0.4;
+    const pad = Math.max(0.05, hold - durations[index]);
+    const clip = join(workDir, `clip-${index}.mp4`);
+    const encodeMs = Math.min(10 * 60_000, Math.max(60_000, Math.ceil(hold * 8_000)));
+    await run(
+      ffmpegBin(),
+      [
+        "-y",
+        "-loglevel",
+        "error",
+        "-loop",
+        "1",
+        "-framerate",
+        "2",
+        "-i",
+        framePath,
+        "-i",
+        audioFiles[index],
+        "-f",
+        "lavfi",
+        "-t",
+        pad.toFixed(3),
+        "-i",
+        "anullsrc=r=48000:cl=mono",
+        "-filter_complex",
+        "[1:a]aformat=sample_rates=48000:channel_layouts=mono[speech];[2:a]aformat=sample_rates=48000:channel_layouts=mono[gap];[speech][gap]concat=n=2:v=0:a=1[a]",
+        "-map",
+        "0:v",
+        "-map",
+        "[a]",
+        "-t",
+        hold.toFixed(3),
+        "-r",
+        "2",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-tune",
+        "stillimage",
+        "-crf",
+        "28",
+        "-pix_fmt",
+        "yuv420p",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "96k",
+        "-ac",
+        "1",
+        "-ar",
+        "48000",
+        clip,
+      ],
+      encodeMs,
     );
+    clipPaths.push(clip);
   }
-  const videoChain = framePaths.map((_path, index) => `[${index}:v]`).join("");
-  const silentVideo = join(workDir, "silent.mp4");
-  videoArgs.push(
-    "-filter_complex",
-    `${videoChain}concat=n=${framePaths.length}:v=1:a=0,format=yuv420p[v]`,
-    "-map",
-    "[v]",
-    "-r",
-    "2",
-    "-c:v",
-    "libx264",
-    "-preset",
-    "veryfast",
-    "-crf",
-    "26",
-    "-pix_fmt",
-    "yuv420p",
-    silentVideo,
-  );
-  await run(ffmpegBin(), videoArgs, encodeMs);
 
-  const audioArgs = ["-y", "-loglevel", "error"];
-  const audioLabels: string[] = [];
-  let inputIndex = 0;
-  for (let index = 0; index < audioFiles.length; index += 1) {
-    audioArgs.push("-i", audioFiles[index]);
-    audioLabels.push(`[${inputIndex}:a]`);
-    inputIndex += 1;
-    const gap =
-      index === audioFiles.length - 1
-        ? SOLUTION_VIDEO_END_GAP_SECONDS
-        : SOLUTION_VIDEO_BEAT_GAP_SECONDS;
-    audioArgs.push("-f", "lavfi", "-t", gap.toFixed(3), "-i", "anullsrc=r=48000:cl=mono");
-    audioLabels.push(`[${inputIndex}:a]`);
-    inputIndex += 1;
-  }
-  const narration = join(workDir, "narration.ogg");
-  const formatted = audioLabels.map((label, index) => `${label}aformat=sample_rates=48000:channel_layouts=mono[a${index}]`);
-  const concat = audioLabels.map((_label, index) => `[a${index}]`).join("");
-  audioArgs.push(
-    "-filter_complex",
-    `${formatted.join(";")};${concat}concat=n=${audioLabels.length}:v=0:a=1[out]`,
-    "-map",
-    "[out]",
-    "-c:a",
-    "libopus",
-    "-b:a",
-    "64k",
-    "-ar",
-    "48000",
-    "-ac",
-    "1",
-    narration,
-  );
-  await run(ffmpegBin(), audioArgs, encodeMs);
-
+  const listPath = join(workDir, "clips.txt");
+  const list = clipPaths
+    .map((path) => `file '${path.replaceAll("'", "'\\''")}'`)
+    .join("\n");
+  await writeFile(listPath, list);
   const output = join(workDir, "solution.mp4");
-  await run(ffmpegBin(), [
-    "-y",
-    "-loglevel",
-    "error",
-    "-i",
-    silentVideo,
-    "-i",
-    narration,
-    "-c:v",
-    "copy",
-    "-c:a",
-    "aac",
-    "-b:a",
-    "128k",
-    "-movflags",
-    "+faststart",
-    output,
-  ], encodeMs);
+  const totalSeconds = holds.reduce((sum, hold) => sum + hold, 0);
+  await run(
+    ffmpegBin(),
+    [
+      "-y",
+      "-loglevel",
+      "error",
+      "-f",
+      "concat",
+      "-safe",
+      "0",
+      "-i",
+      listPath,
+      "-c",
+      "copy",
+      "-movflags",
+      "+faststart",
+      output,
+    ],
+    Math.min(10 * 60_000, Math.max(60_000, Math.ceil(totalSeconds * 1_000))),
+  );
   return readFile(output);
 }
 
-async function scriptBeats(markdown: string): Promise<SolutionBeat[]> {
-  const raw = await replyChatCompletion(
+async function requestScript(markdown: string, thinking: boolean): Promise<string> {
+  return replyChatCompletion(
     [
       { role: "system", content: SOLUTION_VIDEO_SCRIPT_PROMPT },
       { role: "user", content: markdown },
     ],
-    { timeoutMs: 180_000, maxTokens: 12288, temperature: 0.3, label: "Video script" },
+    {
+      timeoutMs: 180_000,
+      maxTokens: thinking ? 12288 : 8192,
+      temperature: 0.3,
+      retries: 0,
+      thinking,
+      label: "Video script",
+    },
   );
+}
+
+async function scriptBeats(markdown: string): Promise<SolutionBeat[]> {
+  let raw: string;
+  try {
+    raw = await requestScript(markdown, true);
+  } catch (error) {
+    console.error(
+      "Alakh video script retrying without a thinking trace:",
+      error instanceof Error ? error.message : error,
+    );
+    raw = await requestScript(markdown, false);
+  }
   const parsed = parseSolutionBeats(raw);
   const beats: SolutionBeat[] = [];
   for (const beat of parsed) {
-    const spoken = await prepareAlakhNarration(narrationWithoutLatex(beat.narration));
+    const plain = narrationWithoutLatex(beat.narration);
+    let spoken = plain;
+    try {
+      spoken = (await prepareAlakhNarration(plain)).trim() || plain;
+    } catch (error) {
+      console.error(
+        "Alakh narration rewrite failed:",
+        error instanceof Error ? error.message : error,
+      );
+    }
     if (!spoken.trim()) continue;
     beats.push({ narration: spoken, display: beat.display });
   }
   return beats;
+}
+
+/** A long lesson is spoken in short takes so one slow clip cannot abort the video. */
+const VIDEO_SPEECH_CHARS = 240;
+
+async function speakTake(text: string, config: AlakhTtsConfig): Promise<Buffer> {
+  let last: Error = new Error("Alakh TTS failed");
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      return await synthesizeAlakhSpeech(text, config);
+    } catch (error) {
+      last = error instanceof Error ? error : new Error(String(error));
+      if (attempt === 0) await new Promise((resolve) => setTimeout(resolve, 1500));
+    }
+  }
+  throw last;
 }
 
 /**
@@ -464,9 +508,9 @@ export async function createSolutionVideo(markdown: string): Promise<Buffer | nu
   try {
     const audioFiles: string[] = [];
     for (let index = 0; index < beats.length; index += 1) {
-      const chunks = alakhSpeechChunks([beats[index].narration]);
+      const chunks = alakhSpeechChunks([beats[index].narration], VIDEO_SPEECH_CHARS);
       const pieces: Buffer[] = [];
-      for (const chunk of chunks) pieces.push(await synthesizeAlakhSpeech(chunk, config));
+      for (const chunk of chunks) pieces.push(await speakTake(chunk, config));
       if (pieces.length === 1) {
         const path = join(workDir, `beat-${index}.ogg`);
         await writeFile(path, pieces[0]);
@@ -486,6 +530,8 @@ export async function createSolutionVideo(markdown: string): Promise<Buffer | nu
       const joined = partPaths.map((_path, part) => `[a${part}]`).join("");
       await run(ffmpegBin(), [
         "-y",
+        "-loglevel",
+        "error",
         ...partPaths.flatMap((path) => ["-i", path]),
         "-filter_complex",
         `${labels.join(";")};${joined}concat=n=${partPaths.length}:v=0:a=1[out]`,
@@ -494,7 +540,9 @@ export async function createSolutionVideo(markdown: string): Promise<Buffer | nu
         "-c:a",
         "libopus",
         merged,
-      ]);
+      ],
+      120_000,
+      );
       audioFiles.push(merged);
     }
     return await assembleSolutionVideo(frames, audioFiles, workDir);

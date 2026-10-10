@@ -16,7 +16,7 @@ export function readAlakhTtsConfig(
 }
 
 /** One spoken take per chunk, split on a word so a long lesson still fits a voice note. */
-export function alakhSpeechChunks(bubbles: string[]): string[] {
+export function alakhSpeechChunks(bubbles: string[], maxChars = MAX_CHARS): string[] {
   const text = bubbles
     .map((bubble) => bubble.trim())
     .filter(Boolean)
@@ -24,9 +24,9 @@ export function alakhSpeechChunks(bubbles: string[]): string[] {
   if (!text) return [];
   const chunks: string[] = [];
   let rest = text;
-  while (rest.length > MAX_CHARS) {
-    let cut = rest.lastIndexOf(" ", MAX_CHARS);
-    if (cut < 80) cut = MAX_CHARS;
+  while (rest.length > maxChars) {
+    let cut = rest.lastIndexOf(" ", maxChars);
+    if (cut < 80) cut = maxChars;
     chunks.push(rest.slice(0, cut).trim());
     rest = rest.slice(cut).trim();
   }

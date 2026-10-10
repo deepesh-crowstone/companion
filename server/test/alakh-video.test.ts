@@ -117,6 +117,17 @@ test("frames reveal the steps and mux into one video", async () => {
     }
     const video = await assembleSolutionVideo(frames, audio, workDir);
     assert.equal(video.subarray(4, 8).toString(), "ftyp");
+    const out = join(workDir, "out.mp4");
+    await writeFile(out, video);
+    const probed = spawnSync(
+      "ffprobe",
+      ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", out],
+      { encoding: "utf8" },
+    );
+    if (probed.status === 0) {
+      const seconds = Number(probed.stdout.trim());
+      assert.ok(seconds > 3 && seconds < 4.5, `video duration ${seconds}`);
+    }
   } finally {
     await rm(workDir, { recursive: true, force: true });
   }
