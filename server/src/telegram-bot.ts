@@ -6,7 +6,12 @@ import {
   synthesizeAlakhSpeech,
 } from "./alakh-tts.js";
 import { pool } from "./db.js";
-import { replyToAlakhImage, replyToProfileText } from "./routes/messages.js";
+import { alakhRichMessage, plainSolutionFallback } from "./alakh-solution.js";
+import {
+  replyToAlakhImage,
+  replyToProfileText,
+  type ProfileTextDelivery,
+} from "./routes/messages.js";
 import {
   TELEGRAM_BOTS,
   parseTelegramUpdate,
@@ -148,16 +153,16 @@ async function replyToPhoto(
     const userId = await account.time("identity", () =>
       userIdForTelegram(telegramUserId),
     );
-    const bubbles = await replyToAlakhImage({
+    const delivery = await replyToAlakhImage({
       userId,
       image: image.bytes,
       mimeType: image.mimeType,
       caption,
       stage: (name, work) => account.time(name, work),
     });
-    account.note("bubbles", bubbles.length);
+    account.note("bubbles", delivery.richMarkdown ? 1 : delivery.texts.length);
     await account.time("send", () =>
-      deliverBubbles(token, chatId, bubbles, bot.emptyReply, account),
+      deliverAlakhTexts(token, chatId, delivery, bot.emptyReply, account),
     );
   } finally {
     clearInterval(typing);
@@ -352,6 +357,40 @@ async function deliverAlakhVoice(
   }
 }
 
+async function sendRichSolution(
+  token: string,
+  chatId: number,
+  markdown: string,
+  account?: LatencyAccount,
+): Promise<void> {
+  await telegramCall(token, "sendRichMessage", alakhRichMessage(chatId, markdown));
+  account?.markFirstSend();
+}
+
+async function deliverAlakhTexts(
+  token: string,
+  chatId: number,
+  delivery: ProfileTextDelivery,
+  emptyReply: string,
+  account: LatencyAccount,
+): Promise<void> {
+  const markdown = delivery.richMarkdown?.trim();
+  if (markdown) {
+    try {
+      await sendRichSolution(token, chatId, markdown, account);
+      return;
+    } catch (error) {
+      console.error(
+        "Alakh rich solution failed, sending one text message:",
+        error instanceof Error ? error.message : error,
+      );
+      await sendText(token, chatId, plainSolutionFallback(markdown), account);
+      return;
+    }
+  }
+  await deliverBubbles(token, chatId, delivery.texts, emptyReply, account);
+}
+
 async function deliverBubbles(
   token: string,
   chatId: number,
@@ -389,7 +428,7 @@ async function replyInChat(
     const userId = await account.time("identity", () =>
       userIdForTelegram(telegramUserId),
     );
-    const bubbles = await replyToProfileText({
+    const delivery = await replyToProfileText({
       userId,
       profileSlug: bot.profileSlug,
       text,
@@ -398,11 +437,13 @@ async function replyInChat(
       spoken: speak,
       stage: (name, work) => account.time(name, work),
     });
-    account.note("bubbles", bubbles.length);
+    account.note("bubbles", delivery.richMarkdown ? 1 : delivery.texts.length);
     await account.time("send", () =>
       speak
-        ? deliverAlakhVoice(token, chatId, bubbles, bot.emptyReply, account)
-        : deliverBubbles(token, chatId, bubbles, bot.emptyReply, account),
+        ? deliverAlakhVoice(token, chatId, delivery.texts, bot.emptyReply, account)
+        : bot.id === "alakh"
+          ? deliverAlakhTexts(token, chatId, delivery, bot.emptyReply, account)
+          : deliverBubbles(token, chatId, delivery.texts, bot.emptyReply, account),
     );
   } finally {
     clearInterval(typing);

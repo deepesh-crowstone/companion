@@ -24,20 +24,32 @@ test("a student photo is solved with high-detail vision and enough time to finis
     body = JSON.parse(String(init?.body));
     return new Response(
       JSON.stringify({
-        choices: [{ message: { content: '{"messages":["N is close to 5000."]}' } }],
+        choices: [
+          {
+            message: {
+              content:
+                "SOLUTION\n## Answer\n$$\nN \\approx 5000\n$$\nThe amplitude, not the energy, falls by a factor of e.",
+            },
+          },
+        ],
       }),
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
   }) as typeof fetch;
 
   try {
-    const segments = await chatWithAlakhImage({
+    const turn = await chatWithAlakhImage({
       history: [],
       image: Buffer.from("question-photo"),
       mimeType: "image/jpeg",
       caption: "",
     });
-    assert.deepEqual(segments, ["N is close to 5000."]);
+    assert.equal(turn.kind, "solution");
+    if (turn.kind === "solution") {
+      assert.match(turn.markdown, /N \\approx 5000/);
+      assert.match(turn.markdown, /## Answer/);
+      assert.equal(turn.markdown.includes("SOLUTION"), false);
+    }
     assert.equal(body.reasoning_effort, ALAKH_IMAGE_REASONING_EFFORT);
     assert.equal(ALAKH_IMAGE_REASONING_EFFORT, "high");
     assert.ok(ALAKH_IMAGE_TIMEOUT_MS >= 240_000);
@@ -47,7 +59,9 @@ test("a student photo is solved with high-detail vision and enough time to finis
       : undefined;
     assert.equal(image?.image_url?.detail, "high");
     const system = body.messages?.find((message) => message.role === "system");
-    assert.match(String(system?.content), /solve it in this reply/);
+    assert.match(String(system?.content), /first line must be exactly SOLUTION/);
+    assert.match(String(system?.content), /one message/);
+    assert.doesNotMatch(String(system?.content), /cannot render LaTeX/);
     assert.equal(sawTimeoutSignal, true);
   } finally {
     globalThis.fetch = originalFetch;

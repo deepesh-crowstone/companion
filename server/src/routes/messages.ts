@@ -15,6 +15,7 @@ import { normalizePhotoStoredKey } from "../zara-photos.js";
 import { stripSpeechTagsForDisplay } from "../tts-speech.js";
 import {
   chatWithAlakhImage,
+  chatWithAlakhText,
   chatWithMia,
   chatWithMiaTextAsVoice,
   chatWithMiaText,
@@ -240,6 +241,11 @@ function linesForDelivery(lines: string[], spoken: boolean): string[] {
   return spoken ? lines.map(alakhSpokenLine) : lines;
 }
 
+type BuiltReply = {
+  messages: DbMessage[];
+  richMarkdown: string | null;
+};
+
 async function buildTextReply(
   history: DbMessage[],
   userMsgs: DbMessage[],
@@ -248,7 +254,7 @@ async function buildTextReply(
   profileSlug: string,
   stage?: Stage,
   spoken = false,
-): Promise<DbMessage[]> {
+): Promise<BuiltReply> {
   const userId = userMsgs[0].user_id;
   const profileName =
     getProfileBySlug(profileSlug)?.name ?? displayNameForSlug(profileSlug);
@@ -260,7 +266,7 @@ async function buildTextReply(
     userMsgs.length === 1 &&
     isSimpleOpeningGreeting(lastUserText, profileName)
   ) {
-    return runStage(stage, "greeting", async () => {
+    const messages = await runStage(stage, "greeting", async () => {
       const greeting = selectOpeningGreeting({
         profileSlug,
         userText: lastUserText,
@@ -276,6 +282,7 @@ async function buildTextReply(
         linesForDelivery([greeting], spoken),
       );
     });
+    return { messages, richMarkdown: null };
   }
 
   const userTexts = [
@@ -290,7 +297,7 @@ async function buildTextReply(
         message.role === "assistant" &&
         message.content.includes("which language would you like to talk in"),
     );
-    return runStage(stage, "language", () =>
+    const messages = await runStage(stage, "language", () =>
       insertAssistantTextMessages(
         userId,
         profileSlug,
@@ -300,13 +307,29 @@ async function buildTextReply(
         ),
       ),
     );
+    return { messages, richMarkdown: null };
+  }
+
+  const conversation = [...history, ...userMsgs];
+
+  if (profileSlug === "alakh" && !spoken) {
+    const turn = await runStage(stage, "model", () =>
+      chatWithAlakhText(conversation, { mood }),
+    );
+    const contents = turn.kind === "solution" ? [turn.markdown] : turn.messages;
+    const messages = await runStage(stage, "save_reply", () =>
+      insertAssistantTextMessages(userId, profileSlug, contents),
+    );
+    return {
+      messages,
+      richMarkdown: turn.kind === "solution" ? turn.markdown : null,
+    };
   }
 
   const canAttachPrivatePhoto =
     allowPrivate &&
     isBucketConfigured() &&
     profileSupportsPrivatePhotos(profileSlug);
-  const conversation = [...history, ...userMsgs];
 
   const replySegments = await runStage(stage, "model", () =>
     chatWithMiaText(conversation, {
@@ -349,7 +372,25 @@ async function buildTextReply(
     );
   }
 
-  return assistantMsgs;
+  return { messages: assistantMsgs, richMarkdown: null };
+}
+
+export type ProfileTextDelivery = {
+  texts: string[];
+  /** Set when the reply is one worked solution and should render as a rich message. */
+  richMarkdown: string | null;
+};
+
+function deliveryFromMessages(
+  messages: DbMessage[],
+  richMarkdown: string | null,
+): ProfileTextDelivery {
+  return {
+    texts: messages
+      .filter((message) => message.message_type === "text" && message.content.trim())
+      .map((message) => message.content),
+    richMarkdown,
+  };
 }
 
 /** Saves a student photo and returns Alakh Sir's reply after he has seen it. */
@@ -359,7 +400,7 @@ export async function replyToAlakhImage(input: {
   mimeType: string;
   caption: string;
   stage?: Stage;
-}): Promise<string[]> {
+}): Promise<ProfileTextDelivery> {
   const profileSlug = "alakh";
   const history = await runStage(input.stage, "history", () =>
     listContextMessages(input.userId, profileSlug),
@@ -374,7 +415,7 @@ export async function replyToAlakhImage(input: {
       "text",
     ),
   );
-  const segments = await runStage(input.stage, "model", () =>
+  const turn = await runStage(input.stage, "model", () =>
     chatWithAlakhImage({
       history,
       image: input.image,
@@ -382,12 +423,14 @@ export async function replyToAlakhImage(input: {
       caption,
     }),
   );
+  const contents = turn.kind === "solution" ? [turn.markdown] : turn.messages;
   const assistantMsgs = await runStage(input.stage, "save_reply", () =>
-    insertAssistantTextMessages(input.userId, profileSlug, segments),
+    insertAssistantTextMessages(input.userId, profileSlug, contents),
   );
-  return assistantMsgs
-    .filter((message) => message.content.trim())
-    .map((message) => message.content);
+  return deliveryFromMessages(
+    assistantMsgs,
+    turn.kind === "solution" ? turn.markdown : null,
+  );
 }
 
 /** Saves one user text and returns Riva/Aryan's short reply bubbles. */
@@ -400,10 +443,10 @@ export async function replyToProfileText(input: {
   stage?: Stage;
   /** Speak the reply: Hindi words are stored in Devanagari. */
   spoken?: boolean;
-}): Promise<string[]> {
+}): Promise<ProfileTextDelivery> {
   const profileSlug = parseProfileSlug(input.profileSlug);
   const trimmed = input.text.trim();
-  if (!trimmed) return [];
+  if (!trimmed) return { texts: [], richMarkdown: null };
 
   const history = await runStage(input.stage, "history", () =>
     listContextMessages(input.userId, profileSlug),
@@ -411,7 +454,7 @@ export async function replyToProfileText(input: {
   const userMsg = await runStage(input.stage, "save_user", () =>
     insertMessage(input.userId, profileSlug, "user", trimmed, "text"),
   );
-  const assistantMsgs = await buildTextReply(
+  const built = await buildTextReply(
     history,
     [userMsg],
     input.mood ?? "friendly",
@@ -420,9 +463,7 @@ export async function replyToProfileText(input: {
     input.stage,
     input.spoken ?? false,
   );
-  return assistantMsgs
-    .filter((message) => message.message_type === "text" && message.content.trim())
-    .map((message) => message.content);
+  return deliveryFromMessages(built.messages, built.richMarkdown);
 }
 
 messagesRouter.get("/", async (req, res) => {
@@ -485,13 +526,15 @@ messagesRouter.post("/text", async (req, res) => {
       "text",
     );
 
-    const assistantMsgs = await buildTextReply(
-      history,
-      [userMsg],
-      mood,
-      access.privateModeActive,
-      profileSlug,
-    );
+    const assistantMsgs = (
+      await buildTextReply(
+        history,
+        [userMsg],
+        mood,
+        access.privateModeActive,
+        profileSlug,
+      )
+    ).messages;
     const assistantMessages = await Promise.all(
       assistantMsgs.map((m) => toPublicMessage(m)),
     );
@@ -568,13 +611,15 @@ messagesRouter.post("/text/batch", async (req, res) => {
       );
     }
 
-    const assistantMsgs = await buildTextReply(
-      history,
-      userMsgs,
-      mood,
-      access.privateModeActive,
-      profileSlug,
-    );
+    const assistantMsgs = (
+      await buildTextReply(
+        history,
+        userMsgs,
+        mood,
+        access.privateModeActive,
+        profileSlug,
+      )
+    ).messages;
     const assistantMessages = await Promise.all(
       assistantMsgs.map((m) => toPublicMessage(m)),
     );

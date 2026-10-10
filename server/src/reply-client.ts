@@ -54,6 +54,8 @@ export type ReplyChatOptions = {
   timeoutMs?: number;
   retries?: number;
   label?: string;
+  /** Overrides the default completion budget. Solution write-ups need more than a chat bubble. */
+  maxTokens?: number;
 };
 
 /**
@@ -124,7 +126,7 @@ export async function replyChatCompletion(
     model: envValue("REPLY_MODEL") ?? DEFAULT_REPLY_MODEL,
     messages: collapseLeadingSystemMessages(messages),
     stream: false,
-    max_tokens: REPLY_MAX_TOKENS,
+    max_tokens: options.maxTokens ?? REPLY_MAX_TOKENS,
     temperature: 0.7,
     top_p: 0.8,
     chat_template_kwargs: { enable_thinking: true },

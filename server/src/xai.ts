@@ -20,7 +20,8 @@ import {
   MENTOR_SPOKEN_REPLY_OUTPUT_FORMAT,
   textReplyOutputFormat,
 } from "./platform-behavior.js";
-import { replyChatCompletion, visibleReply } from "./reply-client.js";
+import { ALAKH_TURN_OUTPUT_FORMAT, parseAlakhTurn, type AlakhTurn } from "./alakh-solution.js";
+import { replyChatCompletion } from "./reply-client.js";
 import { xaiChatCompletion } from "./xai-client.js";
 import { prepareConversationContext } from "./conversation-context.js";
 import type { CompanionProfile } from "./profiles/types.js";
@@ -535,17 +536,21 @@ Rules:
   return rewriteToDevanagariHindi(stripEmojis(tagged), true, profile);
 }
 
-export async function chatWithMiaText(
+type ProfileTextOptions = {
+  mood?: ZaraMood;
+  privateMode?: boolean;
+  privatePhotosAvailable?: boolean;
+  profileSlug?: string;
+  /** Voice-note reply: Hindi words are written in Devanagari. */
+  spoken?: boolean;
+  /** Alakh Sir may answer a doubt as one LaTeX solution instead of chat bubbles. */
+  solutionTurn?: boolean;
+};
+
+async function completeProfileText(
   history: DbMessage[],
-  options?: {
-    mood?: ZaraMood;
-    privateMode?: boolean;
-    privatePhotosAvailable?: boolean;
-    profileSlug?: string;
-    /** Voice-note reply: Hindi words are written in Devanagari. */
-    spoken?: boolean;
-  },
-): Promise<string[]> {
+  options?: ProfileTextOptions,
+): Promise<string> {
   if (history.length === 0 || history[history.length - 1]?.role !== "user") {
     throw new Error("Chat history must end with a user message");
   }
@@ -555,6 +560,7 @@ export async function chatWithMiaText(
   const profileName = profile.name;
   const mentor = profile.role === "mentor";
   const spoken = mentor && options?.spoken === true;
+  const solutionTurn = mentor && !spoken && options?.solutionTurn === true;
   const privateMode = mentor ? false : (options?.privateMode ?? false);
   const mood = privateMode ? "bold" : (options?.mood ?? "friendly");
   const privateLine = privateMode
@@ -577,7 +583,13 @@ ${currentIndiaTimeContext()}
 
 ${spoken ? spokenReplyLanguageInstruction(history) : latestUserLanguageInstruction(history)}
 
-${spoken ? MENTOR_SPOKEN_REPLY_OUTPUT_FORMAT : textReplyOutputFormat(profile)}`;
+${
+  spoken
+    ? MENTOR_SPOKEN_REPLY_OUTPUT_FORMAT
+    : solutionTurn
+      ? ALAKH_TURN_OUTPUT_FORMAT
+      : textReplyOutputFormat(profile)
+}`;
   const context = prepareConversationContext(history);
 
   const messages: { role: string; content: string }[] = [
@@ -587,15 +599,43 @@ ${spoken ? MENTOR_SPOKEN_REPLY_OUTPUT_FORMAT : textReplyOutputFormat(profile)}`;
 
   messages.push(...context.recentMessages);
 
-  const reply = await replyChatCompletion(messages);
+  return replyChatCompletion(
+    messages,
+    solutionTurn
+      ? { timeoutMs: 120_000, maxTokens: 8192, label: "Solution" }
+      : undefined,
+  );
+}
 
+export async function chatWithMiaText(
+  history: DbMessage[],
+  options?: ProfileTextOptions,
+): Promise<string[]> {
+  const reply = await completeProfileText(history, options);
+  const profileSlug = resolveChatProfileSlug(history, options);
+  const profile = profileForSlug(profileSlug);
+  const mentor = profile.role === "mentor";
+  const spoken = mentor && options?.spoken === true;
   const segments = parseTextReplySegments(reply, mentor ? "mentor" : "companion");
   if (!spoken) return segments;
   const spokenSegments: string[] = [];
   for (const segment of segments) {
-    spokenSegments.push(await rewriteRomanHindiForSpeech(segment, profileName));
+    spokenSegments.push(await rewriteRomanHindiForSpeech(segment, profile.name));
   }
   return spokenSegments;
+}
+
+/** Typed Alakh Sir turn: a doubt is one LaTeX solution, anything else stays chat. */
+export async function chatWithAlakhText(
+  history: DbMessage[],
+  options?: { mood?: ZaraMood },
+): Promise<AlakhTurn> {
+  const reply = await completeProfileText(history, {
+    mood: options?.mood,
+    profileSlug: "alakh",
+    solutionTurn: true,
+  });
+  return parseAlakhTurn(reply);
 }
 
 const IMAGE_MIME = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
@@ -615,7 +655,7 @@ export async function chatWithAlakhImage(input: {
   image: Buffer;
   mimeType: string;
   caption: string;
-}): Promise<string[]> {
+}): Promise<AlakhTurn> {
   const mime = IMAGE_MIME.has(input.mimeType) ? input.mimeType : "image/jpeg";
   const caption = input.caption.trim();
   const note = caption
@@ -633,17 +673,18 @@ study boundary:
 
 ${currentIndiaTimeContext()}
 
+${latestUserLanguageInstruction(input.history)}
+
 the student attached a photo:
 - Look at the image before you answer. It may be a question, handwritten work, a diagram, a score, or a screenshot.
 - Read the visible words, numbers, equations, and labels. Do not invent text, marks, or diagram details that are not visible.
-- Answer the doubt the image shows. Use the caption when they added one.
-- If the photo is a numerical, a derivation, or a diagram question, solve it in this reply. State the values you read, the relation, the calculation, and the final result. Do not stop after describing the picture, and do not ask them to resend a question you can already read.
-- Write formulas as plain text, such as F = B*I*l. This chat cannot render LaTeX.
-- If the photo is blurry or cropped, say what you can see and ask for a clearer photo.
+- The language of the printed question wins over the chat so far. An English paper gets an English solution. A Hindi paper gets Latin-script Hinglish.
+- If the photo is a question, reply with a SOLUTION document. Do not stop after describing the picture, and do not ask them to resend a question you can already read.
+- If the photo is blurry or cropped so the question cannot be read, use a chat reply and say what you can see.
 - If the image is inappropriate, refuse in one teacher-like line and do not describe it.
 - ${note}
 
-${textReplyOutputFormat(profile)}`;
+${ALAKH_TURN_OUTPUT_FORMAT}`;
 
   const reply = await xaiChatCompletion(
     {
@@ -672,7 +713,7 @@ ${textReplyOutputFormat(profile)}`;
     { timeoutMs: ALAKH_IMAGE_TIMEOUT_MS, label: "Image" },
   );
 
-  return parseTextReplySegments(visibleReply(reply), "mentor");
+  return parseAlakhTurn(reply);
 }
 
 export async function chatWithMiaTextAsVoice(
