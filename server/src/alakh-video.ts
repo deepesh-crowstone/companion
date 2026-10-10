@@ -28,6 +28,10 @@ const LEFT = 80;
 const BOARD_BOTTOM = 660;
 const BOARD_TOP = 56;
 const TEXT_WIDTH = 1120;
+/** One body size for every line, current and earlier. */
+const TEXT_SIZE = 30;
+/** MathJax ex, chosen so glyphs match the body text instead of filling the frame. */
+const PX_PER_EX = 20;
 const BOARD = "#0B1020";
 const INK = "#F4F7FB";
 const MUTED = "#8E98AA";
@@ -114,49 +118,52 @@ function wrapLines(text: string, size: number): string[] {
   return lines.slice(0, 5);
 }
 
-function paintMath(svg: string, color: string, heightPx: number): MathSvg | null {
+function paintMath(svg: string, color: string): MathSvg | null {
   const inner = svg.match(/<svg[\s\S]*<\/svg>/)?.[0];
   if (!inner || inner.includes("data-mjx-error")) return null;
   const box = inner.match(/viewBox="([^"]+)"/)?.[1]?.trim().split(/\s+/).map(Number);
   if (!box || box.length < 4 || !box[2] || !box[3]) return null;
-  let height = heightPx;
-  let width = Math.max(8, Math.round((height * box[2]) / box[3]));
-  if (width > TEXT_WIDTH) {
-    height = Math.max(32, Math.round((height * TEXT_WIDTH) / width));
-    width = Math.max(8, Math.round((height * box[2]) / box[3]));
+  const widthEx = Number(inner.match(/\bwidth="([\d.]+)ex"/)?.[1]);
+  const heightEx = Number(inner.match(/\bheight="([\d.]+)ex"/)?.[1]);
+  let width =
+    widthEx > 0 ? Math.round(widthEx * PX_PER_EX) : Math.round((box[2] / 430) * PX_PER_EX);
+  let height =
+    heightEx > 0 ? Math.round(heightEx * PX_PER_EX) : Math.round((box[3] / 430) * PX_PER_EX);
+  if (width > TEXT_WIDTH && width > 0) {
+    const scale = TEXT_WIDTH / width;
+    width = TEXT_WIDTH;
+    height = Math.max(1, Math.round(height * scale));
   }
   const open = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="${box.join(" ")}">`;
   const markup = inner.replace(/<svg[^>]*>/, open).replaceAll("currentColor", color);
   return { markup, width, height };
 }
 
-async function mathRow(tex: string, display: boolean, color: string, height: number): Promise<Row> {
+async function mathRow(tex: string, color: string): Promise<Row> {
   try {
     const engine = await loadJax();
-    const node = engine.convert(tex, { display });
-    const painted = paintMath(engine.outerHTML(node), color, height);
+    const node = engine.convert(tex, { display: false });
+    const painted = paintMath(engine.outerHTML(node), color);
     if (painted) return { type: "math", math: painted };
   } catch {
     // A broken formula stays on the board as text.
   }
-  return { type: "text", text: tex, size: display ? 32 : 26, color };
+  return { type: "text", text: tex, size: TEXT_SIZE, color };
 }
 
 async function rowsForBeat(beat: SolutionBeat, index: number, current: boolean): Promise<Row[]> {
   const color = current ? INK : MUTED;
-  const textSize = current ? 32 : 24;
-  const mathHeight = current ? 108 : 58;
   const rows: Row[] = [];
   if (current) {
-    rows.push({ type: "label", text: `Step ${index + 1}`, size: 22, color: ACCENT });
+    rows.push({ type: "label", text: `Step ${index + 1}`, size: TEXT_SIZE, color: ACCENT });
   }
   for (const piece of piecesOf(beat.display)) {
     if (piece.kind === "text") {
-      for (const line of wrapLines(piece.text, textSize)) {
-        rows.push({ type: "text", text: line, size: textSize, color });
+      for (const line of wrapLines(piece.text, TEXT_SIZE)) {
+        rows.push({ type: "text", text: line, size: TEXT_SIZE, color });
       }
     } else {
-      rows.push(await mathRow(piece.tex, piece.display, color, piece.display ? mathHeight : mathHeight - 16));
+      rows.push(await mathRow(piece.tex, color));
     }
   }
   return rows;
@@ -225,14 +232,18 @@ export async function renderSolutionFrames(beats: SolutionBeat[]): Promise<Buffe
   return frames;
 }
 
-function run(command: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
+function run(
+  command: string,
+  args: string[],
+  timeoutMs = 90_000,
+): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
     const timer = setTimeout(() => {
       child.kill("SIGKILL");
-    }, 90_000);
+    }, timeoutMs);
     child.stdout.on("data", (chunk: Buffer) => {
       stdout += chunk.toString();
     });
@@ -306,13 +317,15 @@ export async function assembleSolutionVideo(
     framePaths.push(path);
   }
 
-  const videoArgs = ["-y"];
+  const totalSeconds = holds.reduce((sum, hold) => sum + hold, 0);
+  const encodeMs = Math.min(60 * 60_000, Math.max(3 * 60_000, Math.ceil(totalSeconds * 8_000)));
+  const videoArgs = ["-y", "-loglevel", "error"];
   for (let index = 0; index < framePaths.length; index += 1) {
     videoArgs.push(
       "-loop",
       "1",
       "-framerate",
-      "30",
+      "2",
       "-t",
       holds[index].toFixed(3),
       "-i",
@@ -327,7 +340,7 @@ export async function assembleSolutionVideo(
     "-map",
     "[v]",
     "-r",
-    "30",
+    "2",
     "-c:v",
     "libx264",
     "-preset",
@@ -338,9 +351,9 @@ export async function assembleSolutionVideo(
     "yuv420p",
     silentVideo,
   );
-  await run(ffmpegBin(), videoArgs);
+  await run(ffmpegBin(), videoArgs, encodeMs);
 
-  const audioArgs = ["-y"];
+  const audioArgs = ["-y", "-loglevel", "error"];
   const audioLabels: string[] = [];
   let inputIndex = 0;
   for (let index = 0; index < audioFiles.length; index += 1) {
@@ -373,11 +386,13 @@ export async function assembleSolutionVideo(
     "1",
     narration,
   );
-  await run(ffmpegBin(), audioArgs);
+  await run(ffmpegBin(), audioArgs, encodeMs);
 
   const output = join(workDir, "solution.mp4");
   await run(ffmpegBin(), [
     "-y",
+    "-loglevel",
+    "error",
     "-i",
     silentVideo,
     "-i",
@@ -391,7 +406,7 @@ export async function assembleSolutionVideo(
     "-movflags",
     "+faststart",
     output,
-  ]);
+  ], encodeMs);
   return readFile(output);
 }
 
@@ -401,7 +416,7 @@ async function scriptBeats(markdown: string): Promise<SolutionBeat[]> {
       { role: "system", content: SOLUTION_VIDEO_SCRIPT_PROMPT },
       { role: "user", content: markdown },
     ],
-    { timeoutMs: 120_000, maxTokens: 8192, temperature: 0.3, label: "Video script" },
+    { timeoutMs: 180_000, maxTokens: 12288, temperature: 0.3, label: "Video script" },
   );
   const parsed = parseSolutionBeats(raw);
   const beats: SolutionBeat[] = [];
