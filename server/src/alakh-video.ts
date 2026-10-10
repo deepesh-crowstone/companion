@@ -40,9 +40,9 @@ const ACCENT = "#E8B86D";
 type MathSvg = { markup: string; width: number; height: number };
 
 type Row =
-  | { type: "label"; text: string; size: number; color: string }
-  | { type: "text"; text: string; size: number; color: string }
-  | { type: "math"; math: MathSvg };
+  | { type: "label"; text: string; size: number; color: string; pointed: boolean }
+  | { type: "text"; text: string; size: number; color: string; pointed: boolean }
+  | { type: "math"; math: MathSvg; pointed: boolean };
 
 type Jax = {
   outerHTML: (node: unknown) => string;
@@ -139,31 +139,31 @@ function paintMath(svg: string, color: string): MathSvg | null {
   return { markup, width, height };
 }
 
-async function mathRow(tex: string, color: string): Promise<Row> {
+async function mathRow(tex: string, color: string, pointed: boolean): Promise<Row> {
   try {
     const engine = await loadJax();
     const node = engine.convert(tex, { display: false });
     const painted = paintMath(engine.outerHTML(node), color);
-    if (painted) return { type: "math", math: painted };
+    if (painted) return { type: "math", math: painted, pointed };
   } catch {
     // A broken formula stays on the board as text.
   }
-  return { type: "text", text: tex, size: TEXT_SIZE, color };
+  return { type: "text", text: tex, size: TEXT_SIZE, color, pointed };
 }
 
 async function rowsForBeat(beat: SolutionBeat, index: number, current: boolean): Promise<Row[]> {
   const color = current ? INK : MUTED;
   const rows: Row[] = [];
   if (current) {
-    rows.push({ type: "label", text: `Step ${index + 1}`, size: TEXT_SIZE, color: ACCENT });
+    rows.push({ type: "label", text: `Step ${index + 1}`, size: TEXT_SIZE, color: ACCENT, pointed: false });
   }
   for (const piece of piecesOf(beat.display)) {
     if (piece.kind === "text") {
       for (const line of wrapLines(piece.text, TEXT_SIZE)) {
-        rows.push({ type: "text", text: line, size: TEXT_SIZE, color });
+        rows.push({ type: "text", text: line, size: TEXT_SIZE, color, pointed: current });
       }
     } else {
-      rows.push(await mathRow(piece.tex, color));
+      rows.push(await mathRow(piece.tex, color, current));
     }
   }
   return rows;
@@ -174,22 +174,44 @@ function rowHeight(row: Row): number {
   return row.size + 14;
 }
 
+/** Arrow and bar beside the line Alakh Sir is explaining. */
+function pointerMarkup(top: number, bottom: number): string {
+  const pad = 6;
+  const barTop = Math.round(top - pad);
+  const barHeight = Math.max(22, Math.round(bottom - top + pad * 2));
+  const cy = Math.round(barTop + barHeight / 2);
+  return `<polygon points="22,${cy - 12} 58,${cy} 22,${cy + 12}" fill="${ACCENT}"/>
+  <rect x="62" y="${barTop}" width="6" height="${barHeight}" rx="3" fill="${ACCENT}"/>`;
+}
+
 function slideSvg(rows: Row[], index: number, total: number): string {
   let y = BOARD_TOP;
   const body: string[] = [];
+  let pointTop: number | null = null;
+  let pointBottom: number | null = null;
+  const mark = (top: number, bottom: number, pointed: boolean) => {
+    if (!pointed) return;
+    pointTop = pointTop == null ? top : Math.min(pointTop, top);
+    pointBottom = pointBottom == null ? bottom : Math.max(pointBottom, bottom);
+  };
   for (const row of rows) {
     if (row.type === "math") {
+      const top = y + 8;
+      mark(top, top + row.math.height, row.pointed);
       y += 8;
       body.push(`<g transform="translate(${LEFT} ${y})">${row.math.markup}</g>`);
       y += row.math.height + 8;
       continue;
     }
+    const top = y + 4;
     y += row.size;
+    mark(top, y + 4, row.pointed);
     body.push(
       `<text x="${LEFT}" y="${y}" fill="${row.color}" font-family="sans-serif" font-size="${row.size}">${xml(row.text)}</text>`,
     );
     y += 14;
   }
+  if (pointTop != null && pointBottom != null) body.push(pointerMarkup(pointTop, pointBottom));
   const progress = Math.max(24, Math.round((TEXT_WIDTH * (index + 1)) / total));
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}">
