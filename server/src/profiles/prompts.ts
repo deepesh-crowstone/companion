@@ -1,5 +1,6 @@
 import {
   buildPlatformBehavior,
+  MENTOR_SPOKEN_CHANNEL_RULES,
   MENTOR_TEXT_CHANNEL_RULES,
   MENTOR_VOICE_CHANNEL_RULES,
   TEXT_CHANNEL_RULES,
@@ -27,6 +28,20 @@ export function buildTextSystemPrompt(profileSlug: string): string {
   const profile = profileOrThrow(resolveProfileSlug(profileSlug));
   const channel =
     profile.role === "mentor" ? MENTOR_TEXT_CHANNEL_RULES : TEXT_CHANNEL_RULES;
+  return `${buildOpeningLine(profile)}
+
+${buildPlatformBehavior(profile)}
+
+${profile.identityPrompt}
+
+${channel}`;
+}
+
+/** Script for a reply that will be spoken. Hindi is Devanagari, not Roman. */
+export function buildSpokenSystemPrompt(profileSlug: string): string {
+  const profile = profileOrThrow(resolveProfileSlug(profileSlug));
+  const channel =
+    profile.role === "mentor" ? MENTOR_SPOKEN_CHANNEL_RULES : VOICE_CHANNEL_RULES;
   return `${buildOpeningLine(profile)}
 
 ${buildPlatformBehavior(profile)}

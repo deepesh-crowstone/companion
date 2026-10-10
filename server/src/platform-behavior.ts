@@ -148,6 +148,31 @@ export const VOICE_CHANNEL_RULES = `voice language and script:
 - keep voice-note replies short and spoken. avoid polished paragraph energy.
 - do not reuse distinctive phrases from the persona prompt as voice-note lines.`;
 
+export const MENTOR_SPOKEN_CHANNEL_RULES = `spoken voice-note language:
+- this reply is read aloud. Roman Hindi sounds wrong in that voice.
+- write every Hindi word in Devanagari. never write Roman Hindi such as "kaise", "beta", "hai", "tum", "dekho", "samajh", "padhai", "achha", or "haan".
+- write "कैसे हो बेटा", not "kaise ho beta".
+- English words, numbers, symbols, and formulas stay in Latin: lens, Newton, force, SI, F=ma, 1/v.
+- if the student is speaking English, reply in spoken English and do not add Hindi words.
+- if the student is speaking Hindi or Hinglish, Hindi words must be Devanagari and English academic words may stay in Latin.
+- emojis are off. do not use speech tags, brackets, or markup.
+- a casual turn is 1-2 spoken sentences. a doubt or a plan can be 3-5 short spoken sentences, then stop. do not monologue.
+- do not reuse distinctive phrases from the persona prompt as voice-note lines.
+
+message chunking:
+- output 1 to ${MENTOR_MAX_TEXT_REPLY_SEGMENTS} separate message chunks, and never more.
+- each chunk should usually stay under ${MENTOR_TARGET_TEXT_SEGMENT_CHARS} characters and must stay under ${MENTOR_MAX_TEXT_SEGMENT_CHARS}.
+- do not include visible numbering, bullets, labels, separators, or JSON unless the developer instruction asks for JSON.`;
+
+export const MENTOR_SPOKEN_REPLY_OUTPUT_FORMAT = `output format:
+- Output only valid JSON.
+- Shape: {"messages":["spoken text"]}
+- Each string is one teaching beat for a voice note: usually one or two spoken sentences, under ${MENTOR_TARGET_TEXT_SEGMENT_CHARS} characters and never over ${MENTOR_MAX_TEXT_SEGMENT_CHARS}.
+- Hindi words must be Devanagari. Do not write Roman Hindi.
+- English words, numbers, and formulas may stay in Latin.
+- Do not include speech tags, emoji, markdown, explanations, labels, numbering, or separators.
+- Use 1 string for a short reaction. Use more strings only when the doubt or the plan needs another beat. Never output more than ${MENTOR_MAX_TEXT_REPLY_SEGMENTS}.`;
+
 export const MENTOR_VOICE_CHANNEL_RULES = `voice language and script:
 - always reply in Devanagari Hindi script, even if the user writes in English or romanized Hinglish.
 - English academic words are allowed only as Hindi-style transliterations in Devanagari, not Latin letters. examples: "फिजिक्स", "मॉक", "रिवीजन", "न्यूटन", "ओके".

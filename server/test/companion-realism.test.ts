@@ -6,7 +6,9 @@ import { prepareConversationContext } from "../src/conversation-context.js";
 import type { DbMessage } from "../src/db.js";
 import { moodPromptForMood } from "../src/mood.js";
 import {
+  ALAKH_LANGUAGE_ASK,
   ALAKH_OPENING_GREETINGS,
+  alakhSpokenLine,
   isSimpleOpeningGreeting,
   openingRotationSeed,
   selectOpeningGreeting,
@@ -23,6 +25,7 @@ import {
 } from "../src/private-mode-prompts.js";
 import {
   buildRealtimeInstructions,
+  buildSpokenSystemPrompt,
   buildTextSystemPrompt,
 } from "../src/profiles/prompts.js";
 import {
@@ -185,6 +188,20 @@ test("alakh speaks as a study mentor in Alakh Sir's public teaching voice", () =
     assert.match(line, /Alakh Sir/);
     assert.doesNotMatch(line, /Flirty & Bold|romantically open|deadpan|mock-dramatic|spicy/i);
   }
+  const spoken = buildSpokenSystemPrompt("alakh");
+  assert.match(spoken, /Devanagari/);
+  assert.match(spoken, /never write Roman Hindi/);
+  assert.match(spoken, /कैसे हो बेटा/);
+  assert.doesNotMatch(spoken, /must be Latin-script/);
+  assert.equal(alakhSpokenLine("Hello, beta kaise ho?"), "Hello, बेटा कैसे हो?");
+  assert.equal(
+    alakhSpokenLine("Hello beta, kaise chal rahi hai padhai?"),
+    "Hello बेटा, कैसे चल रही है पढ़ाई?",
+  );
+  assert.match(alakhSpokenLine(ALAKH_LANGUAGE_ASK), /बेटा/);
+  assert.doesNotMatch(alakhSpokenLine(ALAKH_LANGUAGE_ASK), /\bbeta\b/);
+  assert.equal(alakhSpokenLine("The SI unit of force is newton."), "The SI unit of force is newton.");
+
   assert.match(moodPromptForMood("bold", "alakh"), /energetic/);
   assert.match(moodPromptForMood("bold", alakh), /Stay a teacher/);
   assert.match(moodPromptForMood("funny", alakh), /Classroom humour/);

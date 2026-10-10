@@ -36,6 +36,19 @@ const ARYAN_HINGLISH = [
 export const ALAKH_LANGUAGE_ASK =
   "hello beta, which language would you like to talk in: Hinglish or English?";
 
+/** Same canned lines with Hindi in Devanagari, for a spoken reply. */
+const ALAKH_SPOKEN_LINES: Record<string, string> = {
+  "Hello, beta kaise ho?": "Hello, बेटा कैसे हो?",
+  "Hello beta, kaise chal rahi hai padhai?": "Hello बेटा, कैसे चल रही है पढ़ाई?",
+  [ALAKH_LANGUAGE_ASK]:
+    "hello बेटा, which language would you like to talk in: Hinglish or English?",
+  "Hinglish ya English, beta?": "Hinglish या English, बेटा?",
+};
+
+export function alakhSpokenLine(line: string): string {
+  return ALAKH_SPOKEN_LINES[line] ?? line;
+}
+
 /** What Alakh Sir says back when the student opens with a greeting. */
 export const ALAKH_OPENING_GREETINGS = [
   "Hello, beta kaise ho?",

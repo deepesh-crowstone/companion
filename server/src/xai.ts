@@ -2,6 +2,7 @@ import {
   MIA_STT_LANGUAGE,
   MIA_TTS_LANGUAGE,
   MIA_VOICE_ID,
+  buildSpokenSystemPrompt,
   buildTextSystemPrompt,
   buildVoiceSystemPrompt,
 } from "./mia.js";
@@ -15,7 +16,10 @@ import { buildClientSecretRequest } from "./realtime-session.js";
 import type { DbMessage } from "./db.js";
 import { moodPromptForMood, type ZaraMood } from "./mood.js";
 import { privateModeRomanticPrompt } from "./private-mode-prompts.js";
-import { textReplyOutputFormat } from "./platform-behavior.js";
+import {
+  MENTOR_SPOKEN_REPLY_OUTPUT_FORMAT,
+  textReplyOutputFormat,
+} from "./platform-behavior.js";
 import { replyChatCompletion } from "./reply-client.js";
 import { prepareConversationContext } from "./conversation-context.js";
 import type { CompanionProfile } from "./profiles/types.js";
@@ -29,6 +33,8 @@ import {
 const XAI_BASE = "https://api.x.ai/v1";
 const ELEVENLABS_BASE = "https://api.elevenlabs.io/v1";
 const LATIN_LETTER_RE = /[A-Za-z]/;
+const ROMAN_HINDI_RE =
+  /\b(?:aaj|abhi|achha|accha|bahut|beta|baccha|bilkul|dekho|haan|hai|hain|hoon|jaise|kaise|kya|kyun|kyunki|lekin|nahi|nahin|padhai|padho|samajh|samajhte|suno|theek|thoda|tumhe|tumhara|wapas|yaad|yeh)\b/i;
 const EMOJI_RE = /[\p{Extended_Pictographic}\uFE0F\u200D]/gu;
 const INDIA_TIME_ZONE = "Asia/Kolkata";
 
@@ -83,6 +89,52 @@ function containsLatinOutsideSpeechTags(text: string): boolean {
 
 function stripEmojis(text: string): string {
   return text.replace(EMOJI_RE, "").replace(/\s{2,}/g, " ").trim();
+}
+
+function spokenReplyLanguageInstruction(history: DbMessage[]): string {
+  const userTexts = history
+    .filter((message) => message.role === "user")
+    .map((message) => message.content);
+  const latestUserText = userTexts[userTexts.length - 1] ?? "";
+  const mode = resolveReplyLanguageMode(
+    latestUserText,
+    userTexts.slice(0, -1),
+  );
+  if (mode === "english") {
+    return `latest user language mode: English.
+- Reply in spoken English.
+- Do not add Hindi words. If one is unavoidable, write it in Devanagari, never Roman Hindi.`;
+  }
+  return `latest user language mode: Hindi or Hinglish.
+- Write every Hindi word in Devanagari.
+- Do not write Roman Hindi.
+- Keep English academic words, numbers, symbols, and formulas in Latin.`;
+}
+
+async function rewriteRomanHindiForSpeech(
+  text: string,
+  profileName: string,
+): Promise<string> {
+  const trimmed = text.trim();
+  if (!trimmed || !ROMAN_HINDI_RE.test(trimmed)) return trimmed;
+  const rewritten = await replyChatCompletion(
+    [
+      {
+        role: "system",
+        content: `Rewrite ${profileName}'s spoken reply so Hindi is in Devanagari.
+
+Rules:
+- Output only the rewritten reply, no explanation.
+- Change Roman Hindi into Devanagari: "kaise ho beta" becomes "कैसे हो बेटा".
+- Keep English words, numbers, symbols, and formulas in Latin.
+- Keep the meaning, the teaching content, and who is being addressed.
+- Do not add speech tags, emoji, or a new sentence.`,
+      },
+      { role: "user", content: trimmed },
+    ],
+    { label: "Devanagari speech rewrite" },
+  );
+  return rewritten.trim() || trimmed;
 }
 
 function latestUserLanguageInstruction(history: DbMessage[]): string {
@@ -489,6 +541,8 @@ export async function chatWithMiaText(
     privateMode?: boolean;
     privatePhotosAvailable?: boolean;
     profileSlug?: string;
+    /** Voice-note reply: Hindi words are written in Devanagari. */
+    spoken?: boolean;
   },
 ): Promise<string[]> {
   if (history.length === 0 || history[history.length - 1]?.role !== "user") {
@@ -499,6 +553,7 @@ export async function chatWithMiaText(
   const profile = profileForSlug(profileSlug);
   const profileName = profile.name;
   const mentor = profile.role === "mentor";
+  const spoken = mentor && options?.spoken === true;
   const privateMode = mentor ? false : (options?.privateMode ?? false);
   const mood = privateMode ? "bold" : (options?.mood ?? "friendly");
   const privateLine = privateMode
@@ -513,15 +568,15 @@ export async function chatWithMiaText(
 - No private photo is available for ${profileName} in this chat. If the user asks for one, say so briefly and naturally.
 - Do not promise to send or take a photo, and never substitute another companion's image.`
       : "";
-  const systemPrompt = `${buildTextSystemPrompt(profileSlug)}
+  const systemPrompt = `${spoken ? buildSpokenSystemPrompt(profileSlug) : buildTextSystemPrompt(profileSlug)}
 
 ${moodPromptForMood(mood, profile)}${privateLine}${mediaLine}
 
 ${currentIndiaTimeContext()}
 
-${latestUserLanguageInstruction(history)}
+${spoken ? spokenReplyLanguageInstruction(history) : latestUserLanguageInstruction(history)}
 
-${textReplyOutputFormat(profile)}`;
+${spoken ? MENTOR_SPOKEN_REPLY_OUTPUT_FORMAT : textReplyOutputFormat(profile)}`;
   const context = prepareConversationContext(history);
 
   const messages: { role: string; content: string }[] = [
@@ -533,7 +588,13 @@ ${textReplyOutputFormat(profile)}`;
 
   const reply = await replyChatCompletion(messages);
 
-  return parseTextReplySegments(reply, mentor ? "mentor" : "companion");
+  const segments = parseTextReplySegments(reply, mentor ? "mentor" : "companion");
+  if (!spoken) return segments;
+  const spokenSegments: string[] = [];
+  for (const segment of segments) {
+    spokenSegments.push(await rewriteRomanHindiForSpeech(segment, profileName));
+  }
+  return spokenSegments;
 }
 
 export async function chatWithMiaTextAsVoice(

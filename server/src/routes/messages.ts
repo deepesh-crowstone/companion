@@ -38,6 +38,7 @@ import { displayNameForSlug } from "../profiles/display-name.js";
 import { MAX_CONTEXT_SOURCE_MESSAGES } from "../conversation-context.js";
 import {
   ALAKH_LANGUAGE_ASK,
+  alakhSpokenLine,
   isSimpleOpeningGreeting,
   openingRotationSeed,
   selectOpeningGreeting,
@@ -234,6 +235,10 @@ async function runStage<T>(
   return stage ? stage(name, work) : work();
 }
 
+function linesForDelivery(lines: string[], spoken: boolean): string[] {
+  return spoken ? lines.map(alakhSpokenLine) : lines;
+}
+
 async function buildTextReply(
   history: DbMessage[],
   userMsgs: DbMessage[],
@@ -241,6 +246,7 @@ async function buildTextReply(
   privateMode: boolean,
   profileSlug: string,
   stage?: Stage,
+  spoken = false,
 ): Promise<DbMessage[]> {
   const userId = userMsgs[0].user_id;
   const profileName =
@@ -263,7 +269,11 @@ async function buildTextReply(
           userMsgs[0].created_at,
         ),
       });
-      return insertAssistantTextMessages(userId, profileSlug, [greeting]);
+      return insertAssistantTextMessages(
+        userId,
+        profileSlug,
+        linesForDelivery([greeting], spoken),
+      );
     });
   }
 
@@ -280,9 +290,14 @@ async function buildTextReply(
         message.content.includes("which language would you like to talk in"),
     );
     return runStage(stage, "language", () =>
-      insertAssistantTextMessages(userId, profileSlug, [
-        alreadyAsked ? "Hinglish ya English, beta?" : ALAKH_LANGUAGE_ASK,
-      ]),
+      insertAssistantTextMessages(
+        userId,
+        profileSlug,
+        linesForDelivery(
+          [alreadyAsked ? "Hinglish ya English, beta?" : ALAKH_LANGUAGE_ASK],
+          spoken,
+        ),
+      ),
     );
   }
 
@@ -298,6 +313,7 @@ async function buildTextReply(
       privateMode: allowPrivate,
       privatePhotosAvailable: canAttachPrivatePhoto,
       profileSlug,
+      spoken,
     }),
   );
   const assistantMsgs = await runStage(stage, "save_reply", () =>
@@ -343,6 +359,8 @@ export async function replyToProfileText(input: {
   mood?: ZaraMood;
   privateMode?: boolean;
   stage?: Stage;
+  /** Speak the reply: Hindi words are stored in Devanagari. */
+  spoken?: boolean;
 }): Promise<string[]> {
   const profileSlug = parseProfileSlug(input.profileSlug);
   const trimmed = input.text.trim();
@@ -361,6 +379,7 @@ export async function replyToProfileText(input: {
     input.privateMode ?? false,
     profileSlug,
     input.stage,
+    input.spoken ?? false,
   );
   return assistantMsgs
     .filter((message) => message.message_type === "text" && message.content.trim())

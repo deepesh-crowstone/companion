@@ -1,5 +1,6 @@
 import {
   buildRealtimeInstructions,
+  buildSpokenSystemPrompt,
   buildTextSystemPrompt,
   buildVoiceSystemPrompt,
   profileVoiceId,
@@ -26,6 +27,7 @@ export const XAI_REALTIME_MODEL = "grok-voice-latest";
 
 export {
   buildRealtimeInstructions,
+  buildSpokenSystemPrompt,
   buildTextSystemPrompt,
   buildVoiceSystemPrompt,
   profileVoiceId,

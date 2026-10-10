@@ -129,7 +129,8 @@ export function readUpdateId(body: unknown): number | null {
 /**
  * Private text becomes a reply. /start is stored as a normal hello so the
  * opening greeting runs. A voice note is transcribed, then answered.
- * Alakh Sir speaks that reply when ALAKH_TTS_URL is set. Typed messages stay text.
+ * Alakh Sir speaks that reply in Devanagari Hindi when ALAKH_TTS_URL is set.
+ * Typed messages stay Latin-script text.
  * Groups, bots, and other attachments are split out.
  */
 export function parseTelegramUpdate(body: unknown): TelegramInbound {

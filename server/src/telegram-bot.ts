@@ -326,6 +326,7 @@ async function replyInChat(
       text,
       mood: "friendly",
       privateMode: false,
+      spoken: speak,
       stage: (name, work) => account.time(name, work),
     });
     account.note("bubbles", bubbles.length);
