@@ -224,12 +224,23 @@ async function insertAssistantImageMessage(
   });
 }
 
+type Stage = <T>(name: string, work: () => Promise<T>) => Promise<T>;
+
+async function runStage<T>(
+  stage: Stage | undefined,
+  name: string,
+  work: () => Promise<T>,
+): Promise<T> {
+  return stage ? stage(name, work) : work();
+}
+
 async function buildTextReply(
   history: DbMessage[],
   userMsgs: DbMessage[],
   mood: ZaraMood,
   privateMode: boolean,
   profileSlug: string,
+  stage?: Stage,
 ): Promise<DbMessage[]> {
   const userId = userMsgs[0].user_id;
   const profileName =
@@ -242,21 +253,18 @@ async function buildTextReply(
     userMsgs.length === 1 &&
     isSimpleOpeningGreeting(lastUserText, profileName)
   ) {
-    const greeting = selectOpeningGreeting({
-      profileSlug,
-      userText: lastUserText,
-      seed: openingRotationSeed(
-        userId,
+    return runStage(stage, "greeting", async () => {
+      const greeting = selectOpeningGreeting({
         profileSlug,
-        userMsgs[0].created_at,
-      ),
+        userText: lastUserText,
+        seed: openingRotationSeed(
+          userId,
+          profileSlug,
+          userMsgs[0].created_at,
+        ),
+      });
+      return insertAssistantTextMessages(userId, profileSlug, [greeting]);
     });
-    const assistantMsgs = await insertAssistantTextMessages(
-      userId,
-      profileSlug,
-      [greeting],
-    );
-    return assistantMsgs;
   }
 
   const userTexts = [
@@ -271,9 +279,11 @@ async function buildTextReply(
         message.role === "assistant" &&
         message.content.includes("which language would you like to talk in"),
     );
-    return insertAssistantTextMessages(userId, profileSlug, [
-      alreadyAsked ? "Hinglish ya English, beta?" : ALAKH_LANGUAGE_ASK,
-    ]);
+    return runStage(stage, "language", () =>
+      insertAssistantTextMessages(userId, profileSlug, [
+        alreadyAsked ? "Hinglish ya English, beta?" : ALAKH_LANGUAGE_ASK,
+      ]),
+    );
   }
 
   const canAttachPrivatePhoto =
@@ -282,16 +292,16 @@ async function buildTextReply(
     profileSupportsPrivatePhotos(profileSlug);
   const conversation = [...history, ...userMsgs];
 
-  const replySegments = await chatWithMiaText(conversation, {
-    mood,
-    privateMode: allowPrivate,
-    privatePhotosAvailable: canAttachPrivatePhoto,
-    profileSlug,
-  });
-  const assistantMsgs = await insertAssistantTextMessages(
-    userId,
-    profileSlug,
-    replySegments,
+  const replySegments = await runStage(stage, "model", () =>
+    chatWithMiaText(conversation, {
+      mood,
+      privateMode: allowPrivate,
+      privatePhotosAvailable: canAttachPrivatePhoto,
+      profileSlug,
+    }),
+  );
+  const assistantMsgs = await runStage(stage, "save_reply", () =>
+    insertAssistantTextMessages(userId, profileSlug, replySegments),
   );
 
   if (canAttachPrivatePhoto) {
@@ -332,18 +342,17 @@ export async function replyToProfileText(input: {
   text: string;
   mood?: ZaraMood;
   privateMode?: boolean;
+  stage?: Stage;
 }): Promise<string[]> {
   const profileSlug = parseProfileSlug(input.profileSlug);
   const trimmed = input.text.trim();
   if (!trimmed) return [];
 
-  const history = await listContextMessages(input.userId, profileSlug);
-  const userMsg = await insertMessage(
-    input.userId,
-    profileSlug,
-    "user",
-    trimmed,
-    "text",
+  const history = await runStage(input.stage, "history", () =>
+    listContextMessages(input.userId, profileSlug),
+  );
+  const userMsg = await runStage(input.stage, "save_user", () =>
+    insertMessage(input.userId, profileSlug, "user", trimmed, "text"),
   );
   const assistantMsgs = await buildTextReply(
     history,
@@ -351,6 +360,7 @@ export async function replyToProfileText(input: {
     input.mood ?? "friendly",
     input.privateMode ?? false,
     profileSlug,
+    input.stage,
   );
   return assistantMsgs
     .filter((message) => message.message_type === "text" && message.content.trim())

@@ -14,6 +14,10 @@ import {
   type TelegramBotId,
 } from "./telegram-inbound.js";
 import { readTelegramSttConfig, transcribeVoiceNote } from "./telegram-stt.js";
+import {
+  LatencyAccount,
+  telegramMessageAgeSeconds,
+} from "./telegram-latency.js";
 
 const lanes = new Map<string, Promise<void>>();
 
@@ -92,32 +96,49 @@ async function replyToVoiceNote(
   chatId: number,
   telegramUserId: number,
   fileId: string,
+  account: LatencyAccount,
 ): Promise<void> {
   const stt = readTelegramSttConfig();
   if (!stt) {
-    await sendText(token, chatId, bot.unsupportedReply);
+    await account.time("send", () =>
+      sendText(token, chatId, bot.unsupportedReply, account),
+    );
     return;
   }
-  await sendChatAction(token, chatId);
-  const audio = await downloadTelegramVoice(token, fileId);
-  const transcript = await transcribeVoiceNote(stt, audio);
+  await account.time("typing", () => sendChatAction(token, chatId));
+  const audio = await account.time("download", () =>
+    downloadTelegramVoice(token, fileId),
+  );
+  account.note("bytes", audio.bytes.length);
+  const transcript = await account.time("stt", () =>
+    transcribeVoiceNote(stt, audio),
+  );
+  account.note("chars", transcript.length);
   if (!transcript) {
-    await sendText(token, chatId, bot.voiceMissReply);
+    await account.time("send", () =>
+      sendText(token, chatId, bot.voiceMissReply, account),
+    );
     return;
   }
-  await replyInChat(bot, token, chatId, telegramUserId, transcript);
+  await replyInChat(bot, token, chatId, telegramUserId, transcript, account);
 }
 
 async function sendChatAction(token: string, chatId: number): Promise<void> {
   await telegramCall(token, "sendChatAction", { chat_id: chatId, action: "typing" });
 }
 
-async function sendText(token: string, chatId: number, text: string): Promise<void> {
+async function sendText(
+  token: string,
+  chatId: number,
+  text: string,
+  account?: LatencyAccount,
+): Promise<void> {
   await telegramCall(token, "sendMessage", {
     chat_id: chatId,
     text,
     disable_web_page_preview: true,
   });
+  account?.markFirstSend();
 }
 
 function sleep(ms: number): Promise<void> {
@@ -197,6 +218,7 @@ async function deliverBubbles(
   chatId: number,
   bubbles: string[],
   emptyReply: string,
+  account: LatencyAccount,
 ): Promise<void> {
   const texts = bubbles.map((bubble) => bubble.trim()).filter(Boolean);
   const outgoing = texts.length > 0 ? texts : [emptyReply];
@@ -205,7 +227,7 @@ async function deliverBubbles(
       await sendChatAction(token, chatId);
       await sleep(700);
     }
-    await sendText(token, chatId, outgoing[index]);
+    await sendText(token, chatId, outgoing[index], account);
   }
 }
 
@@ -215,21 +237,28 @@ async function replyInChat(
   chatId: number,
   telegramUserId: number,
   text: string,
+  account: LatencyAccount,
 ): Promise<void> {
   const typing = setInterval(() => {
     void sendChatAction(token, chatId).catch(() => undefined);
   }, 4000);
   try {
-    await sendChatAction(token, chatId);
-    const userId = await userIdForTelegram(telegramUserId);
+    await account.time("typing", () => sendChatAction(token, chatId));
+    const userId = await account.time("identity", () =>
+      userIdForTelegram(telegramUserId),
+    );
     const bubbles = await replyToProfileText({
       userId,
       profileSlug: bot.profileSlug,
       text,
       mood: "friendly",
       privateMode: false,
+      stage: (name, work) => account.time(name, work),
     });
-    await deliverBubbles(token, chatId, bubbles, bot.emptyReply);
+    account.note("bubbles", bubbles.length);
+    await account.time("send", () =>
+      deliverBubbles(token, chatId, bubbles, bot.emptyReply, account),
+    );
   } finally {
     clearInterval(typing);
   }
@@ -277,42 +306,70 @@ export async function acceptTelegramUpdate(
 
   const updateId = readUpdateId(body);
   if (updateId == null) return;
-  const claimed = await claimUpdate(botId, updateId);
+  const account = new LatencyAccount();
+  const ageSeconds = telegramMessageAgeSeconds(body);
+  const claimed = await account.time("claim", () => claimUpdate(botId, updateId));
   if (!claimed) return;
 
   const inbound = parseTelegramUpdate(body);
   if (inbound.kind === "ignore") return;
 
   enqueue(`${botId}:${inbound.chatId}`, async () => {
+    account.wait("queue");
+    const kind = inbound.kind;
     try {
       if (inbound.kind === "unsupported") {
-        await sendText(token, inbound.chatId, bot.unsupportedReply);
-        return;
-      }
-      if (inbound.kind === "voice") {
+        await account.time("send", () =>
+          sendText(token, inbound.chatId, bot.unsupportedReply, account),
+        );
+      } else if (inbound.kind === "voice") {
         await replyToVoiceNote(
           bot,
           token,
           inbound.chatId,
           inbound.telegramUserId,
           inbound.fileId,
+          account,
         );
-        return;
+      } else {
+        await replyInChat(
+          bot,
+          token,
+          inbound.chatId,
+          inbound.telegramUserId,
+          inbound.text,
+          account,
+        );
       }
-      await replyInChat(bot, token, inbound.chatId, inbound.telegramUserId, inbound.text);
+      account.log({
+        username: bot.username,
+        kind,
+        updateId,
+        ageSeconds,
+        outcome: "ok",
+      });
     } catch (error) {
       console.error(
         `${bot.username} reply failed:`,
         error instanceof Error ? error.message : error,
       );
       try {
-        await sendText(token, inbound.chatId, bot.errorReply);
+        await account.time("error_send", () =>
+          sendText(token, inbound.chatId, bot.errorReply, account),
+        );
       } catch (sendError) {
         console.error(
           `${bot.username} error reply failed:`,
           sendError instanceof Error ? sendError.message : sendError,
         );
       }
+      account.log({
+        username: bot.username,
+        kind,
+        updateId,
+        ageSeconds,
+        outcome: "error",
+      });
     }
   });
 }
