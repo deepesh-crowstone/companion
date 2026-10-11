@@ -6,25 +6,27 @@ export const VISION_MAX_EDGE = 1024;
 type Raster = { width: number; height: number; orientation: number };
 
 /**
- * Shrink a photo so its longest side is at most 1024 pixels, and turn a
+ * Shrink a photo so its longest side is at most maxEdge pixels, and turn a
  * sideways JPEG upright. A file that is already small and upright is unchanged.
  * A file that cannot be read is returned as it arrived.
  */
 export function shrinkImageForVision(
   image: Buffer,
   mimeType: string,
+  maxEdge = VISION_MAX_EDGE,
 ): { bytes: Buffer; mimeType: string } {
   const mime = mimeType || "image/jpeg";
+  const limit = maxEdge > 0 ? maxEdge : VISION_MAX_EDGE;
   try {
     const raster = readRaster(image);
     if (!raster) return { bytes: image, mimeType: mime };
     const upright = uprightBox(raster);
     const longest = Math.max(upright.width, upright.height);
     const needsTurn = raster.orientation >= 2 && raster.orientation <= 8;
-    if (longest <= VISION_MAX_EDGE && !needsTurn) {
+    if (longest <= limit && !needsTurn) {
       return { bytes: image, mimeType: mime };
     }
-    const scale = Math.min(1, VISION_MAX_EDGE / longest);
+    const scale = Math.min(1, limit / longest);
     const targetWidth = Math.max(1, Math.round(upright.width * scale));
     const href = `data:${mime};base64,${image.toString("base64")}`;
     const svg = `<?xml version="1.0" encoding="UTF-8"?>
@@ -43,8 +45,8 @@ export function shrinkImageForVision(
   }
 }
 
-export function visionImageUrl(image: Buffer, mimeType: string): string {
-  const fitted = shrinkImageForVision(image, mimeType);
+export function visionImageUrl(image: Buffer, mimeType: string, maxEdge = VISION_MAX_EDGE): string {
+  const fitted = shrinkImageForVision(image, mimeType, maxEdge);
   return `data:${fitted.mimeType};base64,${fitted.bytes.toString("base64")}`;
 }
 

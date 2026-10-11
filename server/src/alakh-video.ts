@@ -478,7 +478,7 @@ async function spokenNarration(text: string): Promise<string> {
 }
 
 async function scriptBoards(markdown: string): Promise<LessonBoard[]> {
-  const raw = await requestLessonScript(BOARD_SCRIPT_PROMPT, markdown, "Board script", false);
+  const raw = await requestLessonScript(BOARD_SCRIPT_PROMPT, markdown, "Board script", true);
   const parsed = parseBoardScript(raw);
   const [checked, diagrams] = await Promise.all([
     Promise.all(parsed.boards.map((board) => repairBoardLines(board, markdown))),

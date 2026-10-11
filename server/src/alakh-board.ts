@@ -103,22 +103,48 @@ function boardScript(board: LessonBoard, solution: string): string {
   return `Solution:\n${solution.slice(0, 6000)}\n\nBoard script:\nDiagram: ${board.diagram || "none"}\nLines:\n${lines || "none"}`;
 }
 
-/** Qwen reads the board back with thinking off. A failed check call keeps the drawing. */
+const BOARD_CHECK_EDGE = 1536;
+
+/** Qwen reads the board back. A failed check call keeps the drawing. */
 export async function checkBoard(board: LessonBoard, image: Buffer, solution: string): Promise<BoardCheck> {
-  try {
-    const reply = await replyChatCompletion(
-      [
-        { role: "system", content: CHECK_PROMPT },
+  const messages = [
+    { role: "system" as const, content: CHECK_PROMPT },
+    {
+      role: "user" as const,
+      content: [
+        { type: "text" as const, text: boardScript(board, solution) },
         {
-          role: "user",
-          content: [
-            { type: "text", text: boardScript(board, solution) },
-            { type: "image_url", image_url: { url: visionImageUrl(image, "image/png") } },
-          ],
+          type: "image_url" as const,
+          image_url: { url: visionImageUrl(image, "image/png", BOARD_CHECK_EDGE) },
         },
       ],
-      { timeoutMs: 90_000, maxTokens: 1024, temperature: 0, thinking: false, label: "Board check" },
+    },
+  ];
+  try {
+    const reply = await replyChatCompletion(messages, {
+      timeoutMs: 120_000,
+      maxTokens: 4096,
+      temperature: 0,
+      retries: 0,
+      thinking: true,
+      label: "Board check",
+    });
+    return parseBoardCheck(reply);
+  } catch (error) {
+    console.error(
+      "Board check retrying without a thinking trace:",
+      error instanceof Error ? error.message : error,
     );
+  }
+  try {
+    const reply = await replyChatCompletion(messages, {
+      timeoutMs: 90_000,
+      maxTokens: 1024,
+      temperature: 0,
+      retries: 0,
+      thinking: false,
+      label: "Board check",
+    });
     return parseBoardCheck(reply);
   } catch (error) {
     console.error("Board check skipped:", error instanceof Error ? error.message : error);

@@ -322,7 +322,7 @@ test("a board that cannot be trusted is written without a diagram, one band per 
   assert.ok((prepared.bands[0]?.left ?? 0) < 120);
 });
 
-test("a board check asks Qwen with thinking off", async () => {
+test("a board check asks Qwen to think before it accepts the drawing", async () => {
   const previousKey = process.env.REPLY_API_KEY;
   process.env.REPLY_API_KEY = "test-key";
   const originalFetch = globalThis.fetch;
@@ -344,10 +344,38 @@ test("a board check asks Qwen with thinking off", async () => {
     assert.equal(check.ok, false);
     assert.equal(check.linesOk, true);
     assert.deepEqual(check.problems, ["ray misses"]);
-    assert.equal(body.chat_template_kwargs?.enable_thinking, false);
-    assert.equal(body.max_tokens, 1024);
+    assert.equal(body.chat_template_kwargs?.enable_thinking, true);
+    assert.equal(body.max_tokens, 4096);
     const user = body.messages?.find((message) => message.role === "user");
     assert.equal(Array.isArray(user?.content), true);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (previousKey == null) delete process.env.REPLY_API_KEY;
+    else process.env.REPLY_API_KEY = previousKey;
+  }
+});
+
+test("a board check retries without thinking when the first read fails", async () => {
+  const previousKey = process.env.REPLY_API_KEY;
+  process.env.REPLY_API_KEY = "test-key";
+  const originalFetch = globalThis.fetch;
+  const thinking: boolean[] = [];
+  globalThis.fetch = (async (_url, init) => {
+    const body = JSON.parse(String(init?.body)) as {
+      chat_template_kwargs?: { enable_thinking?: boolean };
+    };
+    thinking.push(body.chat_template_kwargs?.enable_thinking === true);
+    if (thinking.length === 1) return new Response("busy", { status: 500 });
+    return new Response(
+      JSON.stringify({ choices: [{ message: { content: '{"ok": true}' } }] }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  }) as typeof fetch;
+  try {
+    const board = { diagram: "a lens", lines: ["$v = 60$"], steps: [] };
+    const check = await checkBoard(board, Buffer.from("not-a-png"), "v = 60 cm");
+    assert.equal(check.ok, true);
+    assert.deepEqual(thinking, [true, false]);
   } finally {
     globalThis.fetch = originalFetch;
     if (previousKey == null) delete process.env.REPLY_API_KEY;
