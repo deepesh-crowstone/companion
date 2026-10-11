@@ -2,16 +2,25 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Resvg } from "@resvg/resvg-js";
 import {
-  boardImagePrompt,
-  checkBoard,
-  findBoardLines,
-  fitBoard,
-  paperColour,
-  parseBoardCheck,
-  renderBoardFrame,
+  BOARD_FRAMES,
+  checkPicture,
+  composeBoard,
+  composeFrame,
+  fitPicture,
+  handSpacing,
+  handwrittenMath,
+  layoutBoard,
+  layRows,
+  lineChunks,
+  lineTokens,
+  markPath,
+  parsePictureCheck,
+  PICTURE_BOX,
+  picturePrompt,
+  prepareBoards,
   renderBoardMotion,
-  withoutDiagram,
-  writtenBoard,
+  splitEquation,
+  withoutBlankIntros,
 } from "../src/alakh-board.ts";
 import {
   applyScriptReview,
@@ -21,13 +30,15 @@ import {
   equationsNotInSolution,
   parseBoardScript,
   parseDiagramFix,
+  parseMark,
   parseScriptReview,
   plainDiagram,
   SCRIPT_REVIEW_PROMPT,
   scriptReviewRequest,
   vagueDiagram,
+  type LessonBoard,
 } from "../src/alakh-board-script.ts";
-import { solutionVideoUsesBoards } from "../src/alakh-video.ts";
+import { cameraFilter, cameraTimes, CAMERA_PUSH, solutionVideoUsesBoards } from "../src/alakh-video.ts";
 
 const SCRIPT = `EXPLAIN
 The strip hangs from a spring inside a field. Damping comes from the field.
@@ -137,9 +148,9 @@ Say: Image sixty centimetres away.`;
 test("the script review lists every board and flags lines only as hints", () => {
   const { boards } = parseBoardScript(REVIEW_SCRIPT);
   const request = scriptReviewRequest(boards, SOLUTION, ["1/v = 1/f + 1/u", "1/v = 1/f + 1/u"]);
-  assert.match(request, /BOARD 1\nDiagram: a lens\nSay: Look at the lens\.\n1\. Line: \$f = \+20/);
+  assert.match(request, /BOARD 1\nTitle: -\nPicture: a lens\nSay: Look at the lens\.\n1\. Line: \$f = \+20/);
   assert.match(request, /2\. Line: \$1\/v = 1\/f \+ 1\/u\$\n {3}Say: Rearranged\./);
-  assert.match(request, /BOARD 2\nDiagram: -\n1\. Line: \$v = \+60/);
+  assert.match(request, /BOARD 2\nTitle: -\nPicture: -\n1\. Line: \$v = \+60/);
   assert.match(request, /may be a different notation of a right step, or wrong:\n1\/v = 1\/f \+ 1\/u$/);
   assert.match(SCRIPT_REVIEW_PROMPT, /63 and 63%/);
 });
@@ -247,7 +258,7 @@ test("diagram labels lose their dollar signs and LaTeX", () => {
   );
 });
 
-test("a board keeps at most five lines and a lesson keeps at most eight boards with the last one", () => {
+test("a board keeps at most five lines and a lesson keeps at most ten boards with the last one", () => {
   const lines = Array.from({ length: 7 }, (_, index) => `Line: step ${index}\nSay: say ${index}`).join("\n");
   const board = parseBoardScript(`BOARD\nDiagram: a ball\n${lines}`).boards[0];
   assert.equal(board?.lines.length, BOARD_LINE_LIMIT);
@@ -260,231 +271,421 @@ test("a board keeps at most five lines and a lesson keeps at most eight boards w
   assert.equal(boards[boards.length - 1]?.lines[0], "board 10");
 });
 
-test("the image prompt asks for exactly the scripted lines and keeps the diagram on the left", () => {
-  const board = parseBoardScript(SCRIPT).boards[0];
-  assert.ok(board);
-  const prompt = boardImagePrompt(board);
-  assert.match(prompt, /Left 40% of the board: a metal strip/);
-  assert.match(prompt, /Line 1: चुंबकीय अवमंदन/);
-  assert.match(prompt, /Line 2: \$b = \\frac/);
-  assert.match(prompt, /Never write line numbers/);
-  assert.match(prompt, /Never show dollar signs/);
-  assert.match(prompt, /Write nothing else/);
+const DIRECTED = `EXPLAIN
+A lens problem.
+
+BOARD
+Title: Question
+Picture: a convex lens on an axis, object u left of the lens, F marked on both sides
+Say: Ek convex lens hai.
+Line: Image kahan banegi?
+Say: Hume image ki position chahiye.
+BOARD
+Title: Given
+Picture: same
+Line: $f = +20\\,\\text{cm}$
+Show: circle F
+Say: Focal length 20 hai.
+Line: $u = -30\\,\\text{cm}$
+Say: Object 30 cm left hai.
+Show: underline 1
+Say: Pehle f use karenge.
+Show: underline 7
+Say: Yeh line hai hi nahi.
+BOARD
+Title: Answer
+Picture: -
+Line: $v = +60\\,\\text{cm}$
+Show: box
+Say: Image 60 cm right banegi.
+Show: circle F
+Say: No picture here.`;
+
+test("a directed script keeps titles, reuses the picture, and points at lines and labels", () => {
+  const { boards } = parseBoardScript(DIRECTED);
+  assert.deepEqual(
+    boards.map((board) => board.title),
+    ["Question", "Given", "Answer"],
+  );
+  assert.equal(boards[1]?.diagram, boards[0]?.diagram);
+  assert.equal(boards[2]?.diagram, "");
+  assert.deepEqual(
+    boards[1]?.steps.map((step) => step.mark ?? null),
+    [{ kind: "circle", label: "F" }, null, { kind: "underline", line: 0 }, null],
+  );
+  assert.deepEqual(boards[2]?.steps.map((step) => step.mark ?? null), [{ kind: "box", line: 0 }, null]);
+
+  assert.deepEqual(parseMark("box 2", null), { kind: "box", line: 1 });
+  assert.deepEqual(parseMark("underline line 3", 0), { kind: "underline", line: 2 });
+  assert.deepEqual(parseMark('circle "2F"', null), { kind: "circle", label: "2F" });
+  assert.equal(parseMark("box", null), null);
+  assert.equal(parseMark("zoom on lens", 1), null);
 });
 
-test("the board check reads the vision reply, and an unreadable reply is not a pass", () => {
-  assert.deepEqual(parseBoardCheck('{"ok": true}'), { ok: true, linesOk: true, problems: [] });
+test("a reviewed script keeps each mark on its line and drops a mark whose line is gone", () => {
+  const { boards } = parseBoardScript(DIRECTED);
+  const changes = parseScriptReview(`ADD 2.0
+Line: Sign convention
+Say: Pehle sign convention.`);
+  const applied = applyScriptReview(boards, changes);
+  assert.equal(applied[1]?.title, "Given");
+  assert.deepEqual(applied[1]?.lines[0], "Sign convention");
+  assert.deepEqual(applied[1]?.steps[3]?.mark, { kind: "underline", line: 1 });
+  assert.deepEqual(applied[1]?.steps[1]?.mark, { kind: "circle", label: "F" });
+
+  const dropped = applyScriptReview(boards, parseScriptReview("DROP 2.1"));
+  assert.deepEqual(dropped[1]?.lines, ["$u = -30\\,\\text{cm}$"]);
+  assert.equal(dropped[1]?.steps.some((step) => step.mark?.kind === "underline"), false);
+});
+
+test("plain mathematics is handwritten and the rest is typeset", () => {
+  assert.equal(handwrittenMath("x \\ge 39"), "x ≥ 39");
+  assert.equal(handwrittenMath("f = +20\\,\\text{cm}"), "f = +20 cm");
+  assert.equal(handwrittenMath("x \\ge 63+76-100"), "x ≥ 63 + 76 - 100");
+  assert.equal(handwrittenMath("3 \\times 10^2"), "3 × 10²");
+  assert.equal(handwrittenMath("\\frac{1}{v}"), null);
+  assert.equal(handwrittenMath("A \\cap B"), null);
+  assert.equal(handwrittenMath("\\theta = 30^\\circ"), null);
+  assert.equal(handSpacing("दूसरी तरफ, सभी लोग"), "दूसरी  तरफ, सभी  लोग");
+  assert.equal(handSpacing("lens के पास"), "lens के पास");
+  assert.deepEqual(lineTokens("Lower bound: $x \\ge 39$"), [{ kind: "text", text: "Lower bound: x ≥ 39" }]);
+  assert.deepEqual(lineTokens("So $\\frac{1}{v} = \\frac{1}{60}$ hai"), [
+    { kind: "text", text: "So " },
+    { kind: "math", tex: "\\frac{1}{v} = \\frac{1}{60}" },
+    { kind: "text", text: " hai" },
+  ]);
+});
+
+const board = (lines: string[], diagram = "", title = "Working"): LessonBoard => ({
+  title,
+  diagram,
+  lines,
+  steps: lines.map((_line, index) => ({ narration: `say ${index}`, line: index })),
+});
+
+test("lines are laid top to bottom in their column and never overlap", async () => {
+  const lines = ["Image kahan banegi?", "$\\frac{1}{v} - \\frac{1}{u} = \\frac{1}{f}$", "$39 \\le x \\le 63$", "चुंबकीय अवमंदन"];
+  for (const hasPicture of [false, true]) {
+    const layout = await layoutBoard(board(lines), hasPicture);
+    assert.equal(layout.lines.length, 4);
+    const rows = layout.lines.flatMap((line) => line.rows);
+    for (let index = 1; index < rows.length; index += 1) {
+      const above = rows[index - 1]!;
+      assert.ok(rows[index]!.y >= above.y + above.h, `row ${index} overlaps`);
+    }
+    const left = rows[0]!.x;
+    assert.ok(hasPicture ? left > PICTURE_BOX.x + PICTURE_BOX.w : left > 96);
+    assert.ok(rows.every((row) => row.x + row.w <= 1240));
+    assert.ok(layout.title && layout.title.box.y + layout.title.box.h <= rows[0]!.y);
+  }
+});
+
+test("a long line wraps after a comma or before a relation, and each row is written in turn", async () => {
+  assert.deepEqual(splitEquation("n(A \\cup B) = n(A) + n(B) - n(A \\cap B) = 139 - x"), [
+    "n(A \\cup B)",
+    "= n(A) + n(B) - n(A \\cap B)",
+    "= 139 - x",
+  ]);
+  assert.deepEqual(splitEquation("139 - x \\le 100 \\Rightarrow x \\ge 39"), ["139 - x \\le 100", "\\Rightarrow x \\ge 39"]);
+  assert.deepEqual(splitEquation("\\left(\\frac{a=b}{c}\\right) = 2"), ["\\left(\\frac{a=b}{c}\\right)", "= 2"]);
   assert.deepEqual(
-    parseBoardCheck('Here: {"ok": false, "lines_ok": true, "problems": ["l marks the thickness, not the length"]}'),
-    { ok: false, linesOk: true, problems: ["l marks the thickness, not the length"] },
+    lineChunks("Given: $u = -30$ cm").map((chunk) => (chunk.kind === "text" ? chunk.text : chunk.tex)),
+    ["Given:", "u", "=", "-30", "cm"],
   );
-  assert.equal(parseBoardCheck('{"ok": false, "problems": ["line 2 has the wrong sign"]}').linesOk, false);
+
+  const givens = "$n(A) = 63\\%$, $n(B) = 76\\%$, $n(A \\cap B) = x$";
+  const rows = await layRows(givens, 44, 628);
+  assert.ok(rows.length >= 2);
+  assert.ok(rows.every((row) => row.width <= 628));
+  assert.doesNotMatch(rows[1]!.markup, /^<text[^>]*>=/);
+
+  const prepared = await composeBoard(board([givens], "a lens"), { image: picturePng(), labels: new Map() }, false);
+  const [first, second] = prepared.lines[0]!;
+  assert.ok(first && second);
+  const half = composeFrame(prepared, { title: 1, picture: 1, lines: [first.w / (first.w + second.w)], marks: [] });
+  assert.equal(inkCount(half, first), inkCount(prepared.final, first));
+  assert.equal(inkCount(half, second), 0);
+});
+
+function inkCount(pixels: Buffer, box: { x: number; y: number; w: number; h: number }): number {
+  let ink = 0;
+  for (let y = Math.max(0, box.y); y < Math.min(720, box.y + box.h); y += 1) {
+    for (let x = Math.max(0, box.x); x < Math.min(1280, box.x + box.w); x += 1) {
+      const at = (y * 1280 + x) * 4;
+      if (0.299 * pixels[at]! + 0.587 * pixels[at + 1]! + 0.114 * pixels[at + 2]! < 170) ink += 1;
+    }
+  }
+  return ink;
+}
+
+const WHOLE = { x: 0, y: 0, w: 1280, h: 720 };
+
+test("nothing of a line shows before it is written, including the bar under ≤ and ≥", async () => {
+  const prepared = await composeBoard(board(["$x \\le 76$", "$x \\ge 63 + 76 - 100$", "$39 \\le x \\le 63$"]), null, false);
+  const blank = composeFrame(prepared, { title: 0, picture: 0, lines: [0, 0, 0], marks: [] });
+  assert.equal(inkCount(blank, WHOLE), 0);
+
+  assert.ok(prepared.lines.every((rows) => rows.length === 1));
+  const [line0, line1, line2] = prepared.lines.map((rows) => rows[0]!);
+  const first = composeFrame(prepared, { title: 1, picture: 0, lines: [1, 0, 0], marks: [] });
+  const titleInk = inkCount(prepared.final, prepared.title!);
+  assert.ok(titleInk > 0);
+  assert.equal(inkCount(first, WHOLE), titleInk + inkCount(prepared.final, line0!));
+  assert.equal(inkCount(first, line1!), 0);
+  assert.equal(inkCount(first, line2!), 0);
+
+  const all = composeFrame(prepared, { title: 1, picture: 0, lines: [1, 1, 1], marks: [] });
+  assert.equal(inkCount(all, WHOLE), inkCount(prepared.final, WHOLE));
+
+  const half = composeFrame(prepared, { title: 1, picture: 0, lines: [1, 0.5, 0], marks: [] });
+  const line = line1!;
+  const leftHalf = { ...line, w: Math.floor(line.w * 0.4) };
+  const rightEnd = { ...line, x: line.x + Math.ceil(line.w * 0.6), w: Math.ceil(line.w * 0.4) };
+  assert.ok(inkCount(half, leftHalf) > 0);
+  assert.equal(inkCount(half, rightEnd), 0);
+});
+
+function picturePng(): Buffer {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024">
+  <rect width="1024" height="1024" fill="#F6F5F0"/>
+  <rect x="100" y="500" width="824" height="8" fill="#111111"/>
+  <rect x="480" y="200" width="12" height="600" fill="#111111"/>
+  <rect x="700" y="520" width="40" height="40" fill="#111111"/>
+</svg>`;
+  return new Resvg(svg, { background: "#FFFFFF", font: { loadSystemFonts: false } }).render().asPng();
+}
+
+test("the picture sits in its panel on white paper and its labels map onto the canvas", async () => {
+  const fitted = fitPicture(picturePng());
+  assert.deepEqual(fitted.place, { x: 0, y: 0, w: PICTURE_BOX.w, h: PICTURE_BOX.h });
+  assert.deepEqual([...fitted.pixels.subarray(0, 3)], [255, 255, 255]);
+
+  const labels = new Map([["f", [683, 507, 723, 547] as [number, number, number, number]]]);
+  const prepared = await composeBoard(board(["$v = 60$"], "a lens"), { image: picturePng(), labels }, true);
+  assert.ok(inkCount(prepared.final, PICTURE_BOX) > 1000);
+  const label = prepared.labels.get("f");
+  assert.ok(label);
+  assert.ok(Math.abs(label.x - (PICTURE_BOX.x + 0.683 * PICTURE_BOX.w)) < 1);
+  assert.ok(Math.abs(label.y - (PICTURE_BOX.y + 0.507 * PICTURE_BOX.h)) < 1);
+
+  const start = composeFrame(prepared, { title: 1, picture: 0, lines: [0], marks: [] });
+  const sketching = composeFrame(prepared, { title: 1, picture: 0.3, lines: [0], marks: [] });
+  const drawn = composeFrame(prepared, { title: 1, picture: 1, lines: [0], marks: [] });
+  assert.equal(inkCount(start, PICTURE_BOX), 0);
+  assert.ok(inkCount(sketching, PICTURE_BOX) > 0);
+  assert.ok(inkCount(sketching, PICTURE_BOX) < inkCount(drawn, PICTURE_BOX));
+  assert.equal(inkCount(drawn, PICTURE_BOX), inkCount(prepared.final, PICTURE_BOX));
+
+  const circled = composeFrame(prepared, {
+    title: 1,
+    picture: 1,
+    lines: [0],
+    marks: [{ mark: { kind: "circle", label: "F" }, progress: 1 }],
+  });
+  const ring = markPath({ kind: "circle", label: "F" }, prepared)![0]!;
+  const [rx, ry] = ring[10]!;
+  const at = (Math.round(ry) * 1280 + Math.round(rx)) * 4;
+  assert.ok(circled[at]! > 180 && circled[at + 1]! < 120, "the circle is drawn in red");
+  assert.equal(markPath({ kind: "circle", label: "2F" }, prepared), null);
+});
+
+test("every step has something new: the picture draws in, lines write, a box stays and an underline goes", async () => {
+  const lesson: LessonBoard[] = [
+    {
+      title: "Given",
+      diagram: "a lens",
+      lines: ["$f = 20$", "$u = -30$"],
+      steps: [
+        { narration: "look", line: null },
+        { narration: "f", line: 0 },
+        { narration: "u", line: 1, mark: { kind: "box", line: 1 } },
+        { narration: "back to f", line: null, mark: { kind: "underline", line: 0 } },
+        { narration: "so", line: null },
+      ],
+    },
+    { title: "Answer", diagram: "", lines: ["$v = 60$"], steps: [{ narration: "v", line: 0 }] },
+  ];
+  const labels = new Map<string, [number, number, number, number]>();
+  const prepared = [
+    await composeBoard(lesson[0]!, { image: picturePng(), labels }, true),
+    await composeBoard(lesson[1]!, null, true),
+  ];
+  const motion = renderBoardMotion(prepared);
+  assert.deepEqual(
+    motion.sequences.map((frames) => frames.length),
+    [BOARD_FRAMES, BOARD_FRAMES, BOARD_FRAMES, BOARD_FRAMES, 1, BOARD_FRAMES],
+  );
+  assert.deepEqual(motion.boards, [0, 0, 0, 0, 0, 1]);
+  assert.deepEqual(motion.pauses, [0, 0, 0.8, 0, 0.35, 0.35]);
+  assert.equal(motion.focus.length, 2);
+  assert.ok(motion.focus.every((point) => point.x >= 0.3 && point.x <= 0.7 && point.y >= 0.3 && point.y <= 0.7));
+
+  const decode = (png: Buffer) =>
+    Buffer.from(
+      new Resvg(
+        `<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720"><image href="data:image/png;base64,${png.toString("base64")}" width="1280" height="720"/></svg>`,
+        { font: { loadSystemFonts: false } },
+      ).render().pixels,
+    );
+  const red = (pixels: Buffer) => {
+    let count = 0;
+    for (let at = 0; at < pixels.length; at += 4) if (pixels[at]! > 180 && pixels[at + 1]! < 140 && pixels[at + 2]! < 120) count += 1;
+    return count;
+  };
+  const opening = decode(motion.sequences[0]![0]!);
+  assert.equal(inkCount(opening, PICTURE_BOX), 0);
+  assert.ok(inkCount(decode(motion.sequences[0]![BOARD_FRAMES - 1]!), PICTURE_BOX) > 1000);
+  const boxed = red(decode(motion.sequences[2]![BOARD_FRAMES - 1]!));
+  assert.ok(boxed > 200);
+  const underlined = red(decode(motion.sequences[3]![BOARD_FRAMES - 1]!));
+  assert.ok(underlined > boxed);
+  assert.ok(Math.abs(red(decode(motion.sequences[4]![0]!)) - boxed) < 20);
+});
+
+test("a board without a picture speaks its introduction while the first line is written", async () => {
+  const intro: LessonBoard = {
+    title: "Lens formula",
+    diagram: "a lens",
+    lines: ["$1/v - 1/u = 1/f$", "$v = 60$"],
+    steps: [
+      { narration: "Ab formula lagate hain.", line: null },
+      { narration: "Yeh lens formula hai.", line: 0 },
+      { narration: "Isse v nikalta hai.", line: 1 },
+    ],
+  };
+  const plain = await composeBoard(intro, null, true);
+  const pictured = await composeBoard(intro, { image: picturePng(), labels: new Map() }, true);
+  const { boards, groups } = withoutBlankIntros([pictured, plain]);
+  assert.deepEqual(groups, [[0], [1], [2], [3, 4], [5]]);
+  assert.equal(boards[0]?.board.steps.length, 3);
+  assert.deepEqual(boards[1]?.board.steps, [
+    { narration: "Ab formula lagate hain. Yeh lens formula hai.", line: 0 },
+    { narration: "Isse v nikalta hai.", line: 1 },
+  ]);
+  assert.equal(plain.board.steps.length, 3);
+});
+
+test("the camera pushes in across one board and starts again on the next", () => {
+  const times = cameraTimes([2, 3, 5, 4], [0, 0, 0, 1]);
+  assert.deepEqual(times, [
+    { start: 0, length: 10 },
+    { start: 2, length: 10 },
+    { start: 5, length: 10 },
+    { start: 0, length: 4 },
+  ]);
+  const filter = cameraFilter(5, 10, { x: 0.6, y: 0.45 });
+  assert.match(filter, new RegExp(`zoompan=z='${(1 + CAMERA_PUSH / 2).toFixed(5)}\\+`));
+  assert.match(filter, /x='\(iw-iw\/zoom\)\*0\.600'/);
+  assert.match(filter, /s=1280x720:fps=24/);
+  const back = cameraFilter(0, 10, { x: 0.5, y: 0.5 }, true);
+  assert.match(back, new RegExp(`zoompan=z='${(1 + CAMERA_PUSH).toFixed(5)}-`));
+});
+
+test("the picture prompt asks for labels only, and a redraw lists what was wrong", () => {
+  const prompt = picturePrompt("a convex lens, F marked on both sides");
+  assert.match(prompt, /Draw: a convex lens, F marked on both sides/);
+  assert.match(prompt, /No equations, no sentences, no working, no answer/);
+  assert.doesNotMatch(prompt, /earlier drawing/);
+  assert.match(picturePrompt("a lens", ["F is on the wrong side"]), /Avoid them:\n- F is on the wrong side/);
+});
+
+test("the picture check reads a verdict and label boxes, and an unreadable reply is not a pass", () => {
+  const ok = parsePictureCheck('{"ok": true, "labels": {"F": [100, 200, 140, 240], "2F": [10, 10, 5, 5], "u": "left"}}');
+  assert.equal(ok.ok, true);
+  assert.deepEqual([...ok.labels], [["f", [100, 200, 140, 240]]]);
+  const wrong = parsePictureCheck('Result: {"ok": false, "problems": ["F is on the wrong side"]}');
+  assert.deepEqual(wrong.problems, ["F is on the wrong side"]);
   for (const unreadable of ["looks fine", "", '{"problems": []}', "{ok: true"]) {
-    const check = parseBoardCheck(unreadable);
+    const check = parsePictureCheck(unreadable);
     assert.equal(check.ok, false, unreadable);
     assert.equal(check.unknown, true, unreadable);
   }
 });
 
-test("a board check with no verdict on either read is not trusted", async () => {
+function withReplies(reply: (body: Record<string, unknown>, url: string) => Response) {
   const previousKey = process.env.REPLY_API_KEY;
+  const previousImageKey = process.env.OPENROUTER_API_KEY;
   process.env.REPLY_API_KEY = "test-key";
+  process.env.OPENROUTER_API_KEY = "test-image-key";
   const originalFetch = globalThis.fetch;
-  const thinking: boolean[] = [];
-  globalThis.fetch = (async (_url, init) => {
-    const body = JSON.parse(String(init?.body)) as { chat_template_kwargs?: { enable_thinking?: boolean } };
-    thinking.push(body.chat_template_kwargs?.enable_thinking === true);
-    return new Response(JSON.stringify({ choices: [{ message: { content: "The board looks fine to me." } }] }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
-  }) as typeof fetch;
-  try {
-    const check = await checkBoard({ diagram: "", lines: ["$v = 60$"], steps: [] }, Buffer.from("x"), "v = 60");
-    assert.equal(check.unknown, true);
-    assert.deepEqual(thinking, [true, false]);
-  } finally {
+  globalThis.fetch = (async (url, init) => reply(JSON.parse(String(init?.body)), String(url))) as typeof fetch;
+  return () => {
     globalThis.fetch = originalFetch;
     if (previousKey == null) delete process.env.REPLY_API_KEY;
     else process.env.REPLY_API_KEY = previousKey;
-  }
-});
-
-function boardPng(): Buffer {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720">
-  <rect width="1280" height="720" fill="#FFFFFF"/>
-  <rect x="80" y="120" width="360" height="12" fill="#000000"/>
-  <rect x="250" y="40" width="6" height="500" fill="#000000"/>
-  <rect x="640" y="60" width="420" height="40" fill="#000000"/>
-  <rect x="660" y="160" width="300" height="30" fill="#000000"/>
-  <rect x="660" y="196" width="320" height="4" fill="#000000"/>
-  <rect x="700" y="206" width="200" height="30" fill="#000000"/>
-  <rect x="640" y="300" width="380" height="40" fill="#000000"/>
-</svg>`;
-  return new Resvg(svg, { background: "#FFFFFF" }).render().asPng();
-}
-
-test("lines are found beside the diagram, and a fraction counts as one line", () => {
-  const bands = findBoardLines(fitBoard(boardPng()), 3, true);
-  assert.ok(bands);
-  assert.equal(bands.length, 3);
-  assert.ok(Math.abs((bands[0]?.top ?? 0) - 60) <= 2);
-  assert.ok(Math.abs((bands[1]?.top ?? 0) - 160) <= 2);
-  assert.ok(Math.abs((bands[1]?.bottom ?? 0) - 235) <= 2);
-  assert.ok(Math.abs((bands[2]?.left ?? 0) - 640) <= 2);
-  assert.equal(findBoardLines(fitBoard(boardPng()), 5, true), null);
-});
-
-function inkAt(png: Buffer, x: number, y: number): boolean {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720"><image href="data:image/png;base64,${png.toString("base64")}" width="1280" height="720"/></svg>`;
-  const pixels = new Resvg(svg).render().pixels;
-  const at = (y * 1280 + x) * 4;
-  return (pixels[at] ?? 255) < 128;
-}
-
-test("the diagram is on the board from the start and each line is wiped on in order", () => {
-  const fitted = fitBoard(boardPng());
-  const bands = findBoardLines(fitted, 3, true);
-  assert.ok(bands);
-  const prepared = {
-    board: {
-      diagram: "a stand",
-      lines: ["a", "b", "c"],
-      steps: [
-        { narration: "look", line: null },
-        { narration: "one", line: 0 },
-        { narration: "two", line: 1 },
-        { narration: "three", line: 2 },
-      ],
-    },
-    pixels: fitted.pixels,
-    paper: [255, 255, 255] as [number, number, number],
-    bands,
+    if (previousImageKey == null) delete process.env.OPENROUTER_API_KEY;
+    else process.env.OPENROUTER_API_KEY = previousImageKey;
   };
-  const render = (written: number, progress: number) => renderBoardFrame(prepared, written, progress);
+}
 
-  const start = render(0, 0);
-  assert.ok(inkAt(start, 252, 300));
-  assert.ok(!inkAt(start, 700, 80));
-  assert.ok(!inkAt(start, 700, 320));
+const json = (value: unknown) =>
+  new Response(JSON.stringify(value), { status: 200, headers: { "Content-Type": "application/json" } });
 
-  const half = render(0, 0.5);
-  assert.ok(inkAt(half, 700, 80));
-  assert.ok(!inkAt(half, 1040, 80));
-
-  const later = render(2, 0);
-  assert.ok(inkAt(later, 1040, 80));
-  assert.ok(inkAt(later, 700, 220));
-  assert.ok(!inkAt(later, 700, 320));
-
-  const sequences = renderBoardMotion([prepared]);
-  assert.deepEqual(
-    sequences.map((frames) => frames.length),
-    [1, 12, 12, 12],
-  );
-  assert.ok(inkAt(sequences[3]?.[11] ?? Buffer.alloc(0), 700, 320));
-});
-
-test("a wrong diagram is painted out while the writing stays", () => {
-  const fitted = fitBoard(boardPng());
-  const pixels = withoutDiagram(fitted);
-  const at = (x: number, y: number) => pixels[(y * 1280 + x) * 4] ?? 255;
-  assert.equal(at(252, 300), 255);
-  assert.equal(at(200, 125), 255);
-  assert.ok(at(700, 80) < 128);
-  assert.ok(at(700, 320) < 128);
-});
-
-test("an off-white board is covered in its own paper colour", () => {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720">
-  <rect width="1280" height="720" fill="#FAFAF7"/>
-  <rect x="640" y="60" width="420" height="40" fill="#000000"/>
-</svg>`;
-  const fitted = fitBoard(new Resvg(svg).render().asPng());
-  assert.deepEqual(paperColour(fitted), [250, 250, 247]);
-  const bands = findBoardLines(fitted, 1, false);
-  assert.ok(bands);
-  const frame = renderBoardFrame(
-    { board: { diagram: "", lines: ["a"], steps: [] }, pixels: fitted.pixels, paper: paperColour(fitted), bands },
-    0,
-    0,
-  );
-  const decoded = new Resvg(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720"><image href="data:image/png;base64,${frame.toString("base64")}" width="1280" height="720"/></svg>`,
-  ).render().pixels;
-  const at = (80 * 1280 + 700) * 4;
-  assert.deepEqual([decoded[at], decoded[at + 1], decoded[at + 2]], [250, 250, 247]);
-});
-
-test("a board that cannot be trusted is written without a diagram, one band per line", async () => {
-  const board = parseBoardScript(SCRIPT).boards[0];
-  assert.ok(board);
-  const prepared = await writtenBoard(board);
-  assert.equal(prepared.bands.length, 2);
-  assert.ok((prepared.bands[0]?.bottom ?? 0) < (prepared.bands[1]?.top ?? 0));
-  assert.ok((prepared.bands[0]?.left ?? 0) < 120);
-});
-
-test("a board check asks Qwen to think before it accepts the drawing", async () => {
-  const previousKey = process.env.REPLY_API_KEY;
-  process.env.REPLY_API_KEY = "test-key";
-  const originalFetch = globalThis.fetch;
-  let body: {
-    max_tokens?: number;
-    chat_template_kwargs?: { enable_thinking?: boolean };
-    messages?: Array<{ role?: string; content?: string | Array<{ type?: string }> }>;
-  } = {};
-  globalThis.fetch = (async (_url, init) => {
-    body = JSON.parse(String(init?.body));
-    return new Response(
-      JSON.stringify({ choices: [{ message: { content: '{"ok": false, "lines_ok": true, "problems": ["ray misses"]}' } }] }),
-      { status: 200, headers: { "Content-Type": "application/json" } },
-    );
-  }) as typeof fetch;
+test("a picture check thinks first, asks for the circled labels, and two reads without a verdict are not trusted", async () => {
+  const bodies: Record<string, unknown>[] = [];
+  const restore = withReplies((body) => {
+    bodies.push(body);
+    return json({ choices: [{ message: { content: "Looks fine to me." } }] });
+  });
   try {
-    const board = { diagram: "a lens", lines: ["$v = 60$"], steps: [] };
-    const check = await checkBoard(board, Buffer.from("not-a-png"), "v = 60 cm");
-    assert.equal(check.ok, false);
-    assert.equal(check.linesOk, true);
-    assert.deepEqual(check.problems, ["ray misses"]);
-    assert.equal(body.chat_template_kwargs?.enable_thinking, true);
-    assert.equal(body.max_tokens, 8192);
-    const system = body.messages?.find((message) => message.role === "system");
-    assert.match(String(system?.content), /Never report a solution step that this script does not list/);
-    const user = body.messages?.find((message) => message.role === "user");
-    assert.equal(Array.isArray(user?.content), true);
+    const check = await checkPicture("a lens", picturePng(), "v = 60 cm", ["F", "2F"]);
+    assert.equal(check.unknown, true);
+    const thinking = bodies.map(
+      (body) => (body.chat_template_kwargs as { enable_thinking?: boolean } | undefined)?.enable_thinking === true,
+    );
+    assert.deepEqual(thinking, [true, false]);
+    assert.equal(bodies[0]?.max_tokens, 8192);
+    const messages = bodies[0]?.messages as Array<{ role: string; content: unknown }>;
+    const user = messages.find((message) => message.role === "user")?.content as Array<{ type: string; text?: string }>;
+    assert.match(user[0]?.text ?? "", /Labels to find: F, 2F/);
+    assert.equal(user[1]?.type, "image_url");
   } finally {
-    globalThis.fetch = originalFetch;
-    if (previousKey == null) delete process.env.REPLY_API_KEY;
-    else process.env.REPLY_API_KEY = previousKey;
+    restore();
   }
 });
 
-test("a board check retries without thinking when the first read fails", async () => {
-  const previousKey = process.env.REPLY_API_KEY;
-  process.env.REPLY_API_KEY = "test-key";
-  const originalFetch = globalThis.fetch;
-  const thinking: boolean[] = [];
-  globalThis.fetch = (async (_url, init) => {
-    const body = JSON.parse(String(init?.body)) as {
-      chat_template_kwargs?: { enable_thinking?: boolean };
-    };
-    thinking.push(body.chat_template_kwargs?.enable_thinking === true);
-    if (thinking.length === 1) return new Response("busy", { status: 500 });
-    return new Response(
-      JSON.stringify({ choices: [{ message: { content: '{"ok": true}' } }] }),
-      { status: 200, headers: { "Content-Type": "application/json" } },
-    );
-  }) as typeof fetch;
+test("boards that say same share one drawing, and a picture still wrong after a redraw is left out", async () => {
+  const image = picturePng().toString("base64");
+  const prompts: string[] = [];
+  let checks = 0;
+  const restore = withReplies((body, url) => {
+    if (url.includes("/images")) {
+      prompts.push(String(body.prompt));
+      assert.equal(body.aspect_ratio, "1:1");
+      return json({ data: [{ b64_json: image }] });
+    }
+    checks += 1;
+    const text = JSON.stringify(body.messages);
+    if (text.includes("a ball")) return json({ choices: [{ message: { content: '{"ok": false, "problems": ["no ball"]}' } }] });
+    return json({ choices: [{ message: { content: '{"ok": true, "labels": {"F": [683, 507, 723, 547]}}' } }] });
+  });
   try {
-    const board = { diagram: "a lens", lines: ["$v = 60$"], steps: [] };
-    const check = await checkBoard(board, Buffer.from("not-a-png"), "v = 60 cm");
-    assert.equal(check.ok, true);
-    assert.deepEqual(thinking, [true, false]);
+    const lesson: LessonBoard[] = [
+      { title: "Question", diagram: "a lens", lines: ["Where?"], steps: [{ narration: "look", line: null }, { narration: "where", line: 0 }] },
+      {
+        title: "Given",
+        diagram: "a lens",
+        lines: ["$f = 20$"],
+        steps: [{ narration: "f", line: 0, mark: { kind: "circle", label: "F" } }],
+      },
+      { title: "Ball", diagram: "a ball", lines: ["$h = 5$"], steps: [{ narration: "h", line: 0 }] },
+    ];
+    const prepared = await prepareBoards(lesson, "v = 60 cm");
+    assert.equal(prompts.filter((prompt) => prompt.includes("Draw: a lens")).length, 1);
+    const ball = prompts.filter((prompt) => prompt.includes("Draw: a ball"));
+    assert.equal(ball.length, 3);
+    assert.match(ball[1] ?? "", /Avoid them:\n- no ball/);
+    assert.doesNotMatch(ball[1] ?? "", /Write no labels/);
+    assert.match(ball[2] ?? "", /Write no labels, letters, numbers or text of any kind/);
+    assert.equal(checks, 4);
+    assert.equal(prepared[0]?.pictureIsNew, true);
+    assert.equal(prepared[1]?.pictureIsNew, false);
+    assert.ok(prepared[1]?.labels.get("f"));
+    assert.equal(prepared[2]?.picture, null);
+    const row = prepared[2]?.lines[0]?.[0];
+    assert.ok(row && Math.abs(row.x + row.w / 2 - 640) < 30, "a board without a picture writes in the middle");
   } finally {
-    globalThis.fetch = originalFetch;
-    if (previousKey == null) delete process.env.REPLY_API_KEY;
-    else process.env.REPLY_API_KEY = previousKey;
+    restore();
   }
 });
 

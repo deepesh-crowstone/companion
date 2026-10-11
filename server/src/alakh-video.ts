@@ -8,7 +8,7 @@ import {
   synthesizeAlakhSpeech,
   type AlakhTtsConfig,
 } from "./alakh-tts.js";
-import { prepareBoards, renderBoardMotion } from "./alakh-board.js";
+import { prepareBoards, renderBoardMotion, withoutBlankIntros } from "./alakh-board.js";
 import {
   applyScriptReview,
   BOARD_SCRIPT_PROMPT,
@@ -111,10 +111,62 @@ async function probeDuration(path: string): Promise<number> {
   return seconds;
 }
 
+/**
+ * How a board video is shot. Steps of one board share a slow push-in toward
+ * its focus; a new board is a cut. A pause holds a step a little longer.
+ */
+export type VideoDirection = {
+  boards: number[];
+  focus: { x: number; y: number }[];
+  pauses: number[];
+};
+
+/** How far the camera pushes in over one board. */
+export const CAMERA_PUSH = 0.06;
+
+/** Where each step starts within its board, and how long its board lasts. */
+export function cameraTimes(holds: number[], boards: number[]): { start: number; length: number }[] {
+  const totals = new Map<number, number>();
+  holds.forEach((hold, index) => {
+    const board = boards[index] ?? index;
+    totals.set(board, (totals.get(board) ?? 0) + hold);
+  });
+  const elapsed = new Map<number, number>();
+  return holds.map((hold, index) => {
+    const board = boards[index] ?? index;
+    const start = elapsed.get(board) ?? 0;
+    elapsed.set(board, start + hold);
+    return { start, length: totals.get(board) ?? hold };
+  });
+}
+
+/**
+ * Frames are blended up to 24 fps so a written line flows instead of stepping,
+ * then the camera moves. It pushes in on one board and eases back out on the
+ * next, so a picture kept across the cut does not jump. The canvas is doubled
+ * first so the move is smooth.
+ */
+export function cameraFilter(
+  start: number,
+  length: number,
+  focus: { x: number; y: number },
+  outward = false,
+): string {
+  const at = outward ? 1 - start / length : start / length;
+  const zoom = (1 + CAMERA_PUSH * at).toFixed(5);
+  const step = `${outward ? "-" : "+"}${(CAMERA_PUSH / (length * 24)).toFixed(7)}`;
+  return [
+    "fps=24",
+    "scale=2560:1440:flags=bicubic",
+    `zoompan=z='${zoom}${step}*on':x='(iw-iw/zoom)*${focus.x.toFixed(3)}':y='(ih-ih/zoom)*${focus.y.toFixed(3)}':d=1:s=1280x720:fps=24`,
+  ].join(",");
+}
+
 export async function assembleSolutionVideo(
   sequences: Buffer[][],
   audioFiles: string[],
   workDir: string,
+  direction?: VideoDirection,
 ): Promise<Buffer> {
   if (sequences.length === 0 || sequences.length !== audioFiles.length) {
     throw new Error("Video frames and audio do not match");
@@ -124,7 +176,8 @@ export async function assembleSolutionVideo(
   }
   const durations: number[] = [];
   for (const file of audioFiles) durations.push(await probeDuration(file));
-  const holds = slideDurations(durations);
+  const holds = slideDurations(durations).map((hold, index) => hold + (direction?.pauses[index] ?? 0));
+  const times = direction ? cameraTimes(holds, direction.boards) : [];
   const clipPaths: string[] = [];
   for (let index = 0; index < sequences.length; index += 1) {
     const frames = sequences[index] ?? [];
@@ -144,6 +197,14 @@ export async function assembleSolutionVideo(
     const encodeMs = Math.min(10 * 60_000, Math.max(60_000, Math.ceil(hold * 8_000)));
     const audio = audioFiles[index];
     if (!audio) throw new Error("Video frames and audio do not match");
+    const time = times[index];
+    const board = direction?.boards[index] ?? 0;
+    const focus = direction?.focus[board];
+    const blend = frames.length > 1 ? "framerate=fps=24:interp_start=0:interp_end=255:scene=100," : "";
+    const camera = time && focus ? `,${cameraFilter(time.start, time.length, focus, board % 2 === 1)}` : "";
+    const video = direction
+      ? `[0:v]${blend}tpad=stop_mode=clone:stop_duration=${hold.toFixed(3)}${camera},format=yuv420p[v]`
+      : `[0:v]tpad=stop_mode=clone:stop=${stop},format=yuv420p[v]`;
     await run(
       ffmpegBin(),
       [
@@ -165,7 +226,7 @@ export async function assembleSolutionVideo(
         "-i",
         "anullsrc=r=48000:cl=mono",
         "-filter_complex",
-        `[0:v]tpad=stop_mode=clone:stop=${stop},format=yuv420p[v];[1:a]aformat=sample_rates=48000:channel_layouts=mono[speech];[2:a]aformat=sample_rates=48000:channel_layouts=mono[gap];[speech][gap]concat=n=2:v=0:a=1[a]`,
+        `${video};[1:a]aformat=sample_rates=48000:channel_layouts=mono[speech];[2:a]aformat=sample_rates=48000:channel_layouts=mono[gap];[speech][gap]concat=n=2:v=0:a=1[a]`,
         "-map",
         "[v]",
         "-map",
@@ -320,6 +381,11 @@ async function recordNarration(
     partPaths.push(path);
   }
   const merged = join(workDir, `beat-${index}.ogg`);
+  await joinAudio(partPaths, merged);
+  return merged;
+}
+
+async function joinAudio(partPaths: string[], merged: string): Promise<void> {
   const labels = partPaths.map(
     (_path, part) => `[${part}:a]aformat=sample_rates=48000:channel_layouts=mono[a${part}]`,
   );
@@ -341,7 +407,6 @@ async function recordNarration(
     ],
     120_000,
   );
-  return merged;
 }
 
 /** Slides are opt-in. The two-column page stays the video Telegram sends. */
@@ -349,7 +414,7 @@ export function solutionVideoUsesSlides(): boolean {
   return process.env.ALAKH_VIDEO_SLIDES?.trim() === "1";
 }
 
-/** Boards are opt-in and win over slides. Each board is drawn whole by the image model. */
+/** Boards are opt-in and win over slides. */
 export function solutionVideoUsesBoards(): boolean {
   return process.env.ALAKH_VIDEO_BOARD?.trim() === "1";
 }
@@ -578,8 +643,9 @@ export async function createSlideVideo(markdown: string): Promise<Buffer | null>
 }
 
 /**
- * The talk is cut into boards. The image model draws each finished board; a
- * vision check reads it back. Lines are wiped on while Alakh Sir explains them.
+ * The talk is cut into boards. The image model draws only the pictures, and a
+ * vision check reads each back. The title and every line are written in our
+ * own hand while Alakh Sir explains them; marks point at what he names.
  * Returns null when the voice, ffmpeg, the image key, or the board script is absent.
  */
 export async function createBoardVideo(markdown: string): Promise<Buffer | null> {
@@ -601,7 +667,24 @@ export async function createBoardVideo(markdown: string): Promise<Buffer | null>
         return files;
       })(),
     ]);
-    return await assembleSolutionVideo(renderBoardMotion(prepared), audioFiles, workDir);
+    const { boards: directed, groups } = withoutBlankIntros(prepared);
+    const speech: string[] = [];
+    for (let index = 0; index < groups.length; index += 1) {
+      const parts = (groups[index] ?? []).map((step) => audioFiles[step]).filter((path): path is string => Boolean(path));
+      if (parts.length === 1 && parts[0]) {
+        speech.push(parts[0]);
+        continue;
+      }
+      const joined = join(workDir, `step-${index}.ogg`);
+      await joinAudio(parts, joined);
+      speech.push(joined);
+    }
+    const motion = renderBoardMotion(directed);
+    return await assembleSolutionVideo(motion.sequences, speech, workDir, {
+      boards: motion.boards,
+      focus: motion.focus,
+      pauses: motion.pauses,
+    });
   } finally {
     await rm(workDir, { recursive: true, force: true });
   }

@@ -1,131 +1,499 @@
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { deflateSync } from "node:zlib";
 import { Resvg } from "@resvg/resvg-js";
-import type { LessonBoard } from "./alakh-board-script.js";
-import { requestLessonImage, WIPE_FRAMES } from "./alakh-motion.js";
-import { fontFamily, loadJax, paintMath, renderPng, xml } from "./alakh-slide.js";
+import type { BoardMark, LessonBoard } from "./alakh-board-script.js";
+import { requestLessonImage } from "./alakh-motion.js";
+import { loadJax, paintMath, xml } from "./alakh-slide.js";
 import { replyChatCompletion } from "./reply-client.js";
-import { visionImageUrl } from "./vision-image.js";
+import { readRaster, visionImageUrl } from "./vision-image.js";
 
 const WIDTH = 1280;
 const HEIGHT = 720;
-const PAPER = "#FFFFFF";
 const INK = "#1C1C1C";
-const BOARD_TIMEOUT_MS = 150_000;
-const INK_LUMA = 170;
-const WRITTEN = { x: 64, y: 64, text: 34, mathEx: 34, gap: 30 };
+const TITLE_INK = "#1F4FA3";
+const MARK_INK = "#D9412F";
+const UNDERLINE_INK = "#E0702A";
+const PICTURE_TIMEOUT_MS = 150_000;
+const CHECK_EDGE = 1024;
+
+const FONT_DIR = join(dirname(fileURLToPath(import.meta.url)), "../assets/fonts");
+const BOARD_FONTS = [
+  "Kalam-Regular.ttf",
+  "Kalam-Bold.ttf",
+  "NotoSans-Regular.ttf",
+  "NotoSansDevanagari-Regular.ttf",
+].map((name) => join(FONT_DIR, name));
+
+const TITLE = { x: 56, baseline: 78, size: 46 };
+export const PICTURE_BOX: Box = { x: 36, y: 124, w: 536, h: 536 };
+const COLUMN = { picture: { left: 612, right: 1240 }, plain: { left: 96, right: 1184 }, top: 140, bottom: 692 };
+const TEXT_SIZE = { picture: 48, plain: 58 };
+/** Typeset mathematics at this many pixels per ex of the handwriting size, so capitals match. */
+const MATH_EX = 0.39;
+/** Kalam's own space nearly vanishes after a Devanagari vowel sign. */
+const WORD_SPACE = 0.16;
+const LINE_GAP = 32;
+const ROW_GAP = 10;
+const FEATHER = 14;
+
+/** Frames drawn per step. The last frame is held for the rest of the step. */
+export const BOARD_FRAMES = 18;
 
 export const BOARD_IMAGE_MODEL = "openai/gpt-image-2";
 
-/** A written row on the board, in canvas pixels. */
-export type BoardBand = { top: number; bottom: number; left: number; right: number };
+export type Box = { x: number; y: number; w: number; h: number };
 
 export type PreparedBoard = {
   board: LessonBoard;
-  /** The finished board on a 1280x720 canvas, as RGBA pixels. */
-  pixels: Buffer;
-  /** The board's own paper colour. Covers are painted with it so they do not show. */
-  paper: [number, number, number];
-  /** One band per line, in the order the lines are written. */
-  bands: BoardBand[];
+  /** The finished board without marks, as RGBA pixels on the 1280x720 canvas. */
+  final: Buffer;
+  title: Box | null;
+  /** The rows of each line, in the order the lines are written. */
+  lines: Box[][];
+  picture: Box | null;
+  /** The picture draws in during this board's first step. False when the board before showed it. */
+  pictureIsNew: boolean;
+  /** Canvas boxes of picture labels, by lower-case label. */
+  labels: Map<string, Box>;
 };
-
-export type BoardCheck = {
-  ok: boolean;
-  /** Every written line is right; only the diagram may be wrong. */
-  linesOk: boolean;
-  problems: string[];
-  /** The checker gave no readable verdict. */
-  unknown?: boolean;
-};
-
-type Pixels = { pixels: Buffer; width: number; height: number };
 
 export function boardImageModel(): string {
   return process.env.ALAKH_BOARD_IMAGE_MODEL?.trim() || BOARD_IMAGE_MODEL;
 }
 
-export function boardImagePrompt(board: LessonBoard): string {
-  const lines = board.lines.map((line, index) => `Line ${index + 1}: ${line}`).join("\n");
-  const layout = board.diagram
-    ? [
-        `Left 40% of the board: ${board.diagram}`,
-        "The diagram stays inside the left 40%, with a clear empty gap between it and the writing.",
-        lines
-          ? "Right 60% of the board: write exactly these lines, top to bottom, left aligned:"
-          : "The right 60% stays empty.",
-      ]
-    : ["No diagram. Write exactly these lines from the top left, top to bottom, left aligned:"];
+/** For drawings with no text. Loading system fonts costs seconds per render. */
+const NO_TEXT = { font: { loadSystemFonts: false } };
+
+function resvgOptions(background?: string) {
+  return {
+    ...(background ? { background } : {}),
+    font: {
+      loadSystemFonts: false,
+      fontFiles: BOARD_FONTS,
+      defaultFontFamily: "Kalam",
+      sansSerifFamily: "Kalam",
+    },
+    languages: ["hi", "en"],
+  };
+}
+
+// ---------------------------------------------------------------- writing
+
+const HAND_TEX: [RegExp, string][] = [
+  [/\\(?:text|mathrm|textrm|mbox)\{([^{}]*)\}/g, "$1"],
+  [/\\left|\\right/g, ""],
+  [/\\times/g, "×"],
+  [/\\cdot/g, "·"],
+  [/\\(?:leqslant|leq|le)(?![A-Za-z])/g, "≤"],
+  [/\\(?:geqslant|geq|ge)(?![A-Za-z])/g, "≥"],
+  [/\\approx/g, "≈"],
+  [/\\pi(?![A-Za-z])/g, "π"],
+  [/\^\{?\\circ\}?/g, "°"],
+  [/\^\{?2\}?/g, "²"],
+  [/\^\{?3\}?/g, "³"],
+  [/\\%/g, "%"],
+  [/\\(?:quad|qquad)/g, " "],
+  [/\\[,;:! ]/g, " "],
+];
+
+/**
+ * Plain mathematics the handwriting font can write itself, so a line keeps one
+ * hand. Anything with a fraction, root, Greek letter or set symbol is typeset.
+ */
+export function handwrittenMath(tex: string): string | null {
+  let text = tex;
+  for (const [pattern, value] of HAND_TEX) text = text.replace(pattern, value);
+  if (/[\\^_{}]/.test(text)) return null;
+  if (!/^[A-Za-z0-9\s+\-=<>().,/:;%×·≤≥≈π°²³'!|[\]]*$/.test(text)) return null;
+  return text
+    .replace(/\s*([=<>≤≥≈])\s*/g, " $1 ")
+    .replace(/([A-Za-z0-9)²³%])\s*([+×-])\s*(?=[A-Za-z0-9(π])/g, "$1 $2 ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+type Token = { kind: "text"; text: string } | { kind: "math"; tex: string };
+
+/** Text and $...$ pieces of a line. Plain mathematics joins the text around it. */
+export function lineTokens(line: string): Token[] {
+  const tokens: Token[] = [];
+  const pushText = (text: string) => {
+    const last = tokens[tokens.length - 1];
+    if (last?.kind === "text") last.text += text;
+    else if (text) tokens.push({ kind: "text", text });
+  };
+  let at = 0;
+  for (const match of line.matchAll(/\$\$?([^$]+?)\$\$?/g)) {
+    pushText(line.slice(at, match.index));
+    const tex = (match[1] ?? "").trim();
+    const hand = handwrittenMath(tex);
+    if (hand !== null) pushText(hand);
+    else if (tex) tokens.push({ kind: "math", tex });
+    at = (match.index ?? 0) + match[0].length;
+  }
+  pushText(line.slice(at).replace(/\$/g, ""));
+  return tokens;
+}
+
+/** Kalam's ी reaches over the space after it, so a word ending in it gets one more space. */
+export function handSpacing(text: string): string {
+  return text.replace(/(\u0940[\u0901-\u0903]?) (?=\S)/g, "$1  ");
+}
+
+export function textWidth(text: string, size: number, bold = false): number {
+  if (!text.trim()) return 0;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.ceil(size * text.length + size * 2)}" height="${Math.ceil(size * 2)}"><text x="0" y="${Math.round(size * 1.4)}" font-family="Kalam" font-weight="${bold ? 700 : 400}" font-size="${size}" word-spacing="${(size * WORD_SPACE).toFixed(1)}" xml:space="preserve">${xml(text)}</text></svg>`;
+  const box = new Resvg(svg, resvgOptions()).getBBox();
+  return box ? box.x + box.width : size * 0.5 * text.length;
+}
+
+type Laid = { markup: string; width: number; ascent: number; descent: number };
+
+type Typeset = { markup: string; width: number; height: number; depth: number };
+
+const typesetCache = new Map<string, Promise<Typeset | null>>();
+
+/** Typeset mathematics, with a light stroke so it weighs the same as the handwriting. */
+function typeset(tex: string, pxPerEx: number): Promise<Typeset | null> {
+  const key = `${pxPerEx}|${tex}`;
+  let cached = typesetCache.get(key);
+  if (!cached) {
+    cached = (async () => {
+      try {
+        const engine = await loadJax();
+        const svg = engine.outerHTML(engine.convert(tex, { display: true }));
+        const math = paintMath(svg, pxPerEx, 4000);
+        if (!math) return null;
+        const align = Number(svg.match(/vertical-align:\s*(-?[\d.]+)ex/)?.[1] ?? 0);
+        const markup = math.markup.replaceAll('stroke-width="0"', 'stroke-width="22"');
+        return { ...math, markup, depth: Math.max(0, -align * pxPerEx) };
+      } catch {
+        return null;
+      }
+    })();
+    if (typesetCache.size > 400) typesetCache.clear();
+    typesetCache.set(key, cached);
+  }
+  return cached;
+}
+
+/** An equation splits before each top-level relation, so a long chain can continue on the next row. */
+export function splitEquation(tex: string): string[] {
+  const pieces: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let index = 0; index < tex.length; index += 1) {
+    const rest = tex.slice(index);
+    if (/^\\left(?![A-Za-z])/.test(rest)) depth += 1;
+    else if (/^\\right(?![A-Za-z])/.test(rest)) depth = Math.max(0, depth - 1);
+    const char = tex[index];
+    if (char === "{") depth += 1;
+    else if (char === "}") depth = Math.max(0, depth - 1);
+    if (depth > 0 || tex[index - 1] === "\\") continue;
+    const breaks = char === "=" || /^\\(?:Rightarrow|implies)(?![A-Za-z])/.test(rest);
+    if (breaks && tex.slice(start, index).trim()) {
+      pieces.push(tex.slice(start, index).trim());
+      start = index;
+    }
+  }
+  pieces.push(tex.slice(start).trim());
+  return pieces.filter(Boolean);
+}
+
+/** Pieces a line may break between: words of text, and the parts of an equation. */
+export function lineChunks(line: string): Token[] {
+  const chunks: Token[] = [];
+  for (const token of lineTokens(line)) {
+    if (token.kind === "text") {
+      for (const word of token.text.split(/\s+/)) if (word) chunks.push({ kind: "text", text: word });
+      continue;
+    }
+    for (const tex of splitEquation(token.tex)) chunks.push({ kind: "math", tex });
+  }
+  return chunks;
+}
+
+function rowTokens(chunks: Token[]): Token[] {
+  const tokens: Token[] = [];
+  for (const chunk of chunks) {
+    const last = tokens[tokens.length - 1];
+    if (chunk.kind === "text" && last?.kind === "text") last.text += ` ${chunk.text}`;
+    else tokens.push({ ...chunk });
+  }
+  return tokens;
+}
+
+/** A good place to start a new row: after a comma, or before a relation. */
+function breakBefore(chunks: Token[], index: number): number {
+  const before = chunks[index - 1];
+  const chunk = chunks[index];
+  if (before?.kind === "text" && /[,;:]$/.test(before.text)) return 2;
+  if (chunk?.kind === "text" && /^[=≤≥<>≈]$/.test(chunk.text)) return 1;
+  if (chunk?.kind === "math" && /^(?:=|\\Rightarrow|\\implies)/.test(chunk.tex)) return 1;
+  return 0;
+}
+
+/**
+ * A line in rows no wider than the column. A line that needs more than three
+ * rows stays whole and is shrunk instead.
+ */
+export async function layRows(line: string, size: number, width: number): Promise<Laid[]> {
+  const chunks = lineChunks(line);
+  const whole = await layTokens(rowTokens(chunks), size);
+  if (whole.width <= width || chunks.length < 2) return [whole];
+  const rows: Laid[] = [];
+  let current: Token[] = [];
+  for (const chunk of chunks) {
+    const trial = [...current, chunk];
+    if (current.length === 0 || (await layTokens(rowTokens(trial), size)).width <= width) {
+      current = trial;
+      continue;
+    }
+    let cut = current.length;
+    let best = 0;
+    for (let index = current.length - 1; index >= 1; index -= 1) {
+      const score = breakBefore(current, index);
+      if (score > best) {
+        best = score;
+        cut = index;
+      }
+      if (score === 2) break;
+    }
+    rows.push(await layTokens(rowTokens(current.slice(0, cut)), size));
+    current = [...current.slice(cut), chunk];
+  }
+  rows.push(await layTokens(rowTokens(current), size));
+  return rows.length > 3 ? [whole] : rows;
+}
+
+/** One line laid out with its baseline at y = 0. */
+export function layLine(line: string, size: number): Promise<Laid> {
+  return layTokens(lineTokens(line), size);
+}
+
+async function layTokens(tokens: Token[], size: number): Promise<Laid> {
+  const parts: string[] = [];
+  let x = 0;
+  let ascent = size * 0.95;
+  let descent = size * 0.35;
+  let spaceBefore = false;
+  let first = true;
+  for (const token of tokens) {
+    if (token.kind === "text") {
+      const text = token.text.replace(/\s+/g, " ");
+      const trimmed = handSpacing(text.trim());
+      if (!trimmed) {
+        spaceBefore = true;
+        continue;
+      }
+      if (!first) x += /^\s/.test(text) || spaceBefore ? size * 0.28 : size * 0.04;
+      parts.push(
+        `<text x="${x.toFixed(1)}" y="0" fill="${INK}" font-family="Kalam" font-size="${size}" word-spacing="${(size * WORD_SPACE).toFixed(1)}" xml:space="preserve">${xml(trimmed)}</text>`,
+      );
+      x += textWidth(trimmed, size);
+      spaceBefore = /\s$/.test(text);
+      first = false;
+      continue;
+    }
+    const math = await typeset(token.tex, size * MATH_EX);
+    if (!math) {
+      const fallback = token.tex.replace(/\\/g, "");
+      if (!first) x += size * 0.28;
+      parts.push(
+        `<text x="${x.toFixed(1)}" y="0" fill="${INK}" font-family="Kalam" font-size="${size}" word-spacing="${(size * WORD_SPACE).toFixed(1)}" xml:space="preserve">${xml(fallback)}</text>`,
+      );
+      x += textWidth(fallback, size);
+      first = false;
+      spaceBefore = false;
+      continue;
+    }
+    if (!first) x += size * 0.28;
+    const top = math.height - math.depth;
+    parts.push(`<g transform="translate(${x.toFixed(1)} ${(-top).toFixed(1)})">${math.markup}</g>`);
+    x += math.width;
+    ascent = Math.max(ascent, top);
+    descent = Math.max(descent, math.depth);
+    first = false;
+    spaceBefore = true;
+  }
+  return { markup: parts.join(""), width: x, ascent, descent };
+}
+
+export type BoardLayout = {
+  title: { markup: string; box: Box } | null;
+  /** Each line in one or more rows, written in order. */
+  lines: { markup: string; rows: Box[] }[];
+  picture: Box | null;
+};
+
+function wobble(from: number, to: number, y: number, seed: number): string {
+  const points: string[] = [];
+  for (let x = from; x <= to; x += 14) {
+    points.push(`${x.toFixed(1)},${(y + Math.sin(x / 37 + seed) * 1.6).toFixed(1)}`);
+  }
+  points.push(`${to.toFixed(1)},${(y + Math.sin(to / 37 + seed) * 1.6).toFixed(1)}`);
+  return points.join(" ");
+}
+
+/**
+ * Where the title, the picture and every line sit. A long line wraps; lines
+ * shrink together only when they still do not fit. The writing is centred in
+ * its column, and a board without a picture writes larger in the middle.
+ */
+export async function layoutBoard(board: LessonBoard, hasPicture: boolean): Promise<BoardLayout> {
+  let title: BoardLayout["title"] = null;
+  if (board.title) {
+    const titleText = handSpacing(board.title);
+    const natural = textWidth(titleText, TITLE.size, true);
+    const scale = Math.min(1, (WIDTH - TITLE.x * 2) / Math.max(1, natural));
+    const width = natural * scale;
+    const underline = wobble(TITLE.x, TITLE.x + width, TITLE.baseline + 16, 1);
+    title = {
+      markup: `<g transform="translate(${TITLE.x} ${TITLE.baseline}) scale(${scale.toFixed(3)})"><text x="0" y="0" fill="${TITLE_INK}" font-family="Kalam" font-weight="700" font-size="${TITLE.size}" word-spacing="${(TITLE.size * WORD_SPACE).toFixed(1)}" xml:space="preserve">${xml(titleText)}</text></g><polyline points="${underline}" fill="none" stroke="${TITLE_INK}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.7"/>`,
+      box: { x: TITLE.x - 8, y: TITLE.baseline - TITLE.size, w: width + 20, h: TITLE.size + 26 },
+    };
+  }
+  const column = hasPicture ? COLUMN.picture : COLUMN.plain;
+  const size = hasPicture ? TEXT_SIZE.picture : TEXT_SIZE.plain;
+  const columnWidth = column.right - column.left;
+  const laid = await Promise.all(board.lines.map((line) => layRows(line, size, columnWidth)));
+  const fit = (row: Laid) => Math.min(1, columnWidth / Math.max(1, row.width));
+  const lineHeight = (rows: Laid[]) =>
+    rows.reduce((sum, row) => sum + (row.ascent + row.descent) * fit(row), 0) + ROW_GAP * (rows.length - 1);
+  const natural =
+    laid.reduce((sum, rows) => sum + lineHeight(rows), 0) + LINE_GAP * Math.max(0, laid.length - 1);
+  const room = COLUMN.bottom - COLUMN.top;
+  const shrink = Math.max(0.55, Math.min(1, room / Math.max(1, natural)));
+  const widest = Math.max(0, ...laid.flat().map((row) => row.width * fit(row) * shrink));
+  const left = hasPicture ? column.left : Math.max(column.left, Math.round((WIDTH - widest) / 2));
+  const lines: BoardLayout["lines"] = [];
+  let top = COLUMN.top + Math.max(0, (room - natural * shrink) / 2);
+  laid.forEach((rows) => {
+    const markup: string[] = [];
+    const boxes: Box[] = [];
+    rows.forEach((row, index) => {
+      const scale = fit(row) * shrink;
+      const baseline = top + row.ascent * scale;
+      markup.push(
+        `<g transform="translate(${left} ${baseline.toFixed(1)}) scale(${scale.toFixed(4)})">${row.markup}</g>`,
+      );
+      boxes.push({
+        x: left,
+        y: Math.round(top),
+        w: Math.ceil(row.width * scale),
+        h: Math.ceil((row.ascent + row.descent) * scale),
+      });
+      top += (row.ascent + row.descent) * scale + (index + 1 < rows.length ? ROW_GAP * shrink : 0);
+    });
+    lines.push({ markup: markup.join(""), rows: boxes });
+    top += LINE_GAP * shrink;
+  });
+  return { title, lines, picture: hasPicture ? PICTURE_BOX : null };
+}
+
+// ---------------------------------------------------------------- picture
+
+export function picturePrompt(description: string, problems: string[] = [], unlabeled = false): string {
   return [
-    "A teacher's whiteboard slide for a 16:9 lesson video.",
+    "A clean teaching diagram for a whiteboard lesson video, drawn in marker.",
     "Pure white background. No border, no frame, no title, no watermark.",
-    "Clean handwritten dark ink. Black for writing. Blue for fields and vectors, red only for a highlight.",
-    ...layout,
-    ...(lines ? [lines] : []),
-    "Each line sits on its own row with clear empty space above and below it. Medium size writing: one line is about one twelfth of the board height, so five lines fit. Start near the top.",
-    "Equations are given in LaTeX between dollar signs. Draw them as handwritten math with real fractions, powers and symbols. Never show dollar signs, backslashes or LaTeX commands.",
-    "Hindi is written exactly as given, in Devanagari.",
-    "Write only the content after each 'Line n:'. Never write line numbers, bullets or the word Line.",
-    "Write nothing else: no extra words, numbers, headings or notes beyond the diagram labels described.",
-    "Draw the diagram physically right: rays, forces and fields obey the physics, rays meet where the image forms, and every point sits where the description puts it.",
+    "Dark ink for outlines. Blue only for the arrows, rays or fields the description names. Red only for one highlight.",
+    `Draw: ${description}`,
+    "Draw only what this description names. Nothing decorative: no extra lines, axes, arrows, dots, shading or shapes it does not name.",
+    unlabeled
+      ? "Write no labels, letters, numbers or text of any kind. The shapes alone show the setup."
+      : "Write only the labels this description names, large and clear, each next to what it marks. A label is a symbol, a value, or one or two English words.",
+    "No equations, no sentences, no working, no answer, no extra numbers.",
+    "Physically and mathematically correct, with every part where the description puts it.",
+    "The drawing fills the square with a small even margin.",
+    ...(problems.length ? ["An earlier drawing had these problems. Avoid them:", ...problems.map((p) => `- ${p}`)] : []),
   ].join("\n");
 }
 
-const CHECK_PROMPT = `You check a whiteboard slide drawn by an image model against its script and the worked solution it teaches. Reply only with JSON: {"ok": true} or {"ok": false, "lines_ok": true or false, "problems": ["..."]}. lines_ok is true when every written line is right and only the diagram is wrong.
+const PICTURE_CHECK_PROMPT = `You check a teaching picture drawn by an image model against its description and the worked solution it belongs to. Reply only with JSON: {"ok": true, "labels": {...}} or {"ok": false, "problems": ["..."]}.
 
 Not ok when:
-- a scripted line is missing, misspelled, or has a wrong symbol, number, sign, power, subscript or fraction
-- a line on the board contradicts the solution, even if it matches the script; say what the solution has instead
-- the lines are out of order, or two lines share one row
-- line numbers, bullets, or text that is not in the script and is not a diagram label the script describes
-- dollar signs, backslashes or LaTeX commands are visible
-- the diagram contradicts its description, the solution's numbers, or the physics: a label marks the wrong part, an arrow points the wrong way, rays do not meet where the image forms, an object or image sits at the wrong point, a described part is missing
-- the writing overlaps the diagram
+- a described part or label is missing, or a label marks the wrong part
+- a point sits in the wrong place for the numbers: an object, image, focus, or value on the wrong side or out of order
+- the physics or mathematics is wrong: a ray that does not obey the lens or mirror, an arrow the wrong way, a wrong region shaded
+- it adds parts the description does not name that could mislead a student: extra lines, axes, arrows, points, or shading
+- it shows text that is not a described label: an equation, a sentence, a title, or numbers the description does not give
+- a label is garbled or misspelled
+- it shows a result the description does not show
 
-This board shows only the lines in its script. The rest of the solution is on other boards. Never report a solution step that this script does not list.
+Style, colour and exact size do not matter. Each problem is one short sentence that says what to fix.
 
-Handwriting style, colour and exact position do not matter. Each problem is one short sentence that says what to fix.`;
+When ok, also give "labels": for each label you are asked to find, its box in the picture as [x1, y1, x2, y2] on a 0 to 1000 scale, from the left and from the top. Leave out a label you cannot find.`;
 
-/** No readable verdict. The drawing is not trusted. */
-const UNKNOWN: BoardCheck = { ok: false, linesOk: false, problems: [], unknown: true };
+/** A label's box in the picture, on a 0 to 1000 scale. */
+export type LabelBox = [number, number, number, number];
 
-export function parseBoardCheck(raw: string): BoardCheck {
+export type PictureCheck = {
+  ok: boolean;
+  problems: string[];
+  labels: Map<string, LabelBox>;
+  /** The checker gave no readable verdict. */
+  unknown?: boolean;
+};
+
+const UNKNOWN: PictureCheck = { ok: false, problems: [], labels: new Map(), unknown: true };
+
+function labelBox(value: unknown): LabelBox | null {
+  if (!Array.isArray(value) || value.length !== 4) return null;
+  const box = value.map(Number);
+  if (box.some((n) => !Number.isFinite(n) || n < 0 || n > 1000)) return null;
+  const [x1, y1, x2, y2] = box as LabelBox;
+  return x2 > x1 && y2 > y1 ? [x1, y1, x2, y2] : null;
+}
+
+export function parsePictureCheck(raw: string): PictureCheck {
   const json = raw.match(/\{[\s\S]*\}/)?.[0];
   if (!json) return UNKNOWN;
   try {
-    const value = JSON.parse(json) as { ok?: unknown; lines_ok?: unknown; problems?: unknown };
+    const value = JSON.parse(json) as { ok?: unknown; problems?: unknown; labels?: unknown };
     if (typeof value.ok !== "boolean") return UNKNOWN;
     const problems = Array.isArray(value.problems)
       ? value.problems.filter((item): item is string => typeof item === "string" && item.trim() !== "")
       : [];
-    const ok = value.ok;
-    return { ok, linesOk: ok || value.lines_ok === true, problems: problems.slice(0, 6) };
+    const labels = new Map<string, LabelBox>();
+    if (value.labels && typeof value.labels === "object") {
+      for (const [label, box] of Object.entries(value.labels as Record<string, unknown>)) {
+        const parsed = labelBox(box);
+        if (parsed) labels.set(label.trim().toLowerCase(), parsed);
+      }
+    }
+    return { ok: value.ok, problems: problems.slice(0, 6), labels };
   } catch {
     return UNKNOWN;
   }
 }
 
-function boardScript(board: LessonBoard, solution: string): string {
-  const lines = board.lines.map((line, index) => `${index + 1}. ${line}`).join("\n");
-  return `Solution:\n${solution.slice(0, 6000)}\n\nBoard script:\nDiagram: ${board.diagram || "none"}\nLines:\n${lines || "none"}`;
+function pictureRequest(description: string, solution: string, labels: string[], unlabeled: boolean): string {
+  const note = unlabeled
+    ? "\n\nThis picture is drawn without any labels on purpose. Do not report missing labels; judge only the shapes and where they sit."
+    : "";
+  return `Solution:\n${solution.slice(0, 6000)}\n\nPicture description:\n${description}${note}\n\nLabels to find: ${labels.length && !unlabeled ? labels.join(", ") : "none"}`;
 }
 
-const BOARD_CHECK_EDGE = 1536;
-
 /**
- * Qwen reads the board back, thinking first, then directly if that gives no verdict.
- * Two reads without a verdict mean the drawing is not trusted.
+ * Qwen reads the picture back, thinking first, then directly if that gives no verdict.
+ * Two reads without a verdict mean the picture is not trusted.
  */
-export async function checkBoard(board: LessonBoard, image: Buffer, solution: string): Promise<BoardCheck> {
+export async function checkPicture(
+  description: string,
+  image: Buffer,
+  solution: string,
+  labels: string[],
+  unlabeled = false,
+): Promise<PictureCheck> {
   const messages = [
-    { role: "system" as const, content: CHECK_PROMPT },
+    { role: "system" as const, content: PICTURE_CHECK_PROMPT },
     {
       role: "user" as const,
       content: [
-        { type: "text" as const, text: boardScript(board, solution) },
-        {
-          type: "image_url" as const,
-          image_url: { url: visionImageUrl(image, "image/png", BOARD_CHECK_EDGE) },
-        },
+        { type: "text" as const, text: pictureRequest(description, solution, labels, unlabeled) },
+        { type: "image_url" as const, image_url: { url: visionImageUrl(image, "image/png", CHECK_EDGE) } },
       ],
     },
   ];
@@ -136,16 +504,13 @@ export async function checkBoard(board: LessonBoard, image: Buffer, solution: st
       temperature: 0,
       retries: 0,
       thinking: true,
-      label: "Board check",
+      label: "Picture check",
     });
-    const check = parseBoardCheck(reply);
+    const check = parsePictureCheck(reply);
     if (!check.unknown) return check;
-    console.error("Board check had no verdict, reading it again without a thinking trace");
+    console.error("Picture check had no verdict, reading it again without a thinking trace");
   } catch (error) {
-    console.error(
-      "Board check retrying without a thinking trace:",
-      error instanceof Error ? error.message : error,
-    );
+    console.error("Picture check retrying without a thinking trace:", error instanceof Error ? error.message : error);
   }
   try {
     const reply = await replyChatCompletion(messages, {
@@ -154,165 +519,74 @@ export async function checkBoard(board: LessonBoard, image: Buffer, solution: st
       temperature: 0,
       retries: 0,
       thinking: false,
-      label: "Board check",
+      label: "Picture check",
     });
-    return parseBoardCheck(reply);
+    return parsePictureCheck(reply);
   } catch (error) {
-    console.error("Board check failed:", error instanceof Error ? error.message : error);
+    console.error("Picture check failed:", error instanceof Error ? error.message : error);
     return UNKNOWN;
   }
 }
 
-function drawBoard(board: LessonBoard): Promise<Buffer> {
+function drawPicture(description: string, problems: string[] = [], unlabeled = false): Promise<Buffer> {
   return requestLessonImage(
     {
       model: boardImageModel(),
-      prompt: boardImagePrompt(board),
-      aspect_ratio: "16:9",
+      prompt: picturePrompt(description, problems, unlabeled),
+      aspect_ratio: "1:1",
       output_format: "png",
     },
-    BOARD_TIMEOUT_MS,
+    PICTURE_TIMEOUT_MS,
   );
 }
 
-function correctBoard(board: LessonBoard, image: Buffer, problems: string[]): Promise<Buffer> {
-  const prompt = [
-    "Correct this whiteboard slide. Fix these problems:",
-    ...problems.map((problem) => `- ${problem}`),
-    "Otherwise the corrected slide matches this description. Where a problem says what the solution has, write that instead:",
-    boardImagePrompt(board),
-    "Keep everything that is already correct where it is.",
-  ].join("\n");
-  return requestLessonImage(
-    {
-      model: boardImageModel(),
-      prompt,
-      aspect_ratio: "16:9",
-      output_format: "png",
-      input_references: [
-        { type: "image_url", image_url: { url: `data:image/png;base64,${image.toString("base64")}` } },
-      ],
-    },
-    BOARD_TIMEOUT_MS,
-  );
-}
-
-/** The drawing, centred on the video canvas, with its pixels for finding the lines. */
-export function fitBoard(image: Buffer): Pixels & { png: Buffer } {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}">
-  <rect width="${WIDTH}" height="${HEIGHT}" fill="${PAPER}"/>
-  <image href="data:image/png;base64,${image.toString("base64")}" x="0" y="0" width="${WIDTH}" height="${HEIGHT}" preserveAspectRatio="xMidYMid meet"/>
-</svg>`;
-  const rendered = new Resvg(svg, { background: PAPER }).render();
-  return {
-    png: rendered.asPng(),
-    pixels: Buffer.from(rendered.pixels),
-    width: rendered.width,
-    height: rendered.height,
-  };
-}
-
-function inkAt(image: Pixels, x: number, y: number): boolean {
-  const at = (y * image.width + x) * 4;
-  const luma =
-    0.299 * (image.pixels[at] ?? 255) +
-    0.587 * (image.pixels[at + 1] ?? 255) +
-    0.114 * (image.pixels[at + 2] ?? 255);
-  return luma < INK_LUMA;
-}
-
-/** Where the writing starts: the widest empty column strip between the diagram and the text. */
-export function writingColumn(image: Pixels, hasDiagram: boolean): number {
-  const marginX = Math.round(image.width * 0.015);
-  if (!hasDiagram) return marginX;
-  const marginY = Math.round(image.height * 0.015);
-  const from = Math.round(image.width * 0.25);
-  const to = Math.round(image.width * 0.65);
-  let best = { start: -1, length: 0 };
-  let start = -1;
-  for (let x = from; x <= to; x += 1) {
-    let empty = true;
-    for (let y = marginY; y < image.height - marginY && empty; y += 1) {
-      if (inkAt(image, x, y)) empty = false;
-    }
-    if (empty && x < to) {
-      if (start < 0) start = x;
-      continue;
-    }
-    if (start >= 0 && x - start > best.length) best = { start, length: x - start };
-    start = -1;
-  }
-  if (best.length < 8) return Math.round(image.width * 0.42);
-  return best.start + Math.floor(best.length / 2);
-}
+export type CheckedPicture = { image: Buffer; labels: Map<string, LabelBox> };
 
 /**
- * One band per written line, top to bottom. Rows of ink close together are one
- * line (a fraction has gaps). Returns null when fewer lines are drawn than scripted.
+ * Drawn and read back. A wrong picture is drawn once more with its problems
+ * listed. Still wrong, it is drawn a last time without labels, which cannot
+ * mislabel anything. Wrong or unread after that means no picture.
  */
-export function findBoardLines(image: Pixels, count: number, hasDiagram: boolean): BoardBand[] | null {
-  if (count <= 0) return [];
-  const marginX = Math.round(image.width * 0.015);
-  const marginY = Math.round(image.height * 0.015);
-  const left = writingColumn(image, hasDiagram);
-  const right = image.width - marginX;
-  const rows: number[] = [];
-  for (let y = 0; y < image.height; y += 1) {
-    let ink = 0;
-    if (y >= marginY && y < image.height - marginY) {
-      for (let x = left; x < right; x += 1) if (inkAt(image, x, y)) ink += 1;
-    }
-    rows.push(ink);
-  }
-  let bands: { top: number; bottom: number; ink: number }[] = [];
-  for (let y = 0; y < rows.length; y += 1) {
-    if ((rows[y] ?? 0) < 2) continue;
-    const last = bands[bands.length - 1];
-    if (last && y - last.bottom <= 4) {
-      last.bottom = y;
-      last.ink += rows[y] ?? 0;
-    } else {
-      bands.push({ top: y, bottom: y, ink: rows[y] ?? 0 });
-    }
-  }
-  bands = bands.filter((band) => band.bottom - band.top >= 5 && band.ink >= 25);
-  while (bands.length > count) {
-    let joint = 0;
-    let gap = Infinity;
-    for (let index = 0; index + 1 < bands.length; index += 1) {
-      const space = (bands[index + 1]?.top ?? 0) - (bands[index]?.bottom ?? 0);
-      if (space < gap) {
-        gap = space;
-        joint = index;
+export async function preparePicture(
+  description: string,
+  solution: string,
+  labels: string[],
+  name: string,
+): Promise<CheckedPicture | null> {
+  try {
+    let image = await drawPicture(description);
+    let check = await checkPicture(description, image, solution, labels);
+    if (!check.ok && !check.unknown) {
+      console.error(`${name} redrawn:`, check.problems.join(" | "));
+      const problems = check.problems;
+      image = await drawPicture(description, problems);
+      check = await checkPicture(description, image, solution, labels);
+      if (!check.ok && !check.unknown) {
+        console.error(`${name} drawn without labels:`, check.problems.join(" | "));
+        const all = [...new Set([...problems, ...check.problems])];
+        image = await drawPicture(description, all, true);
+        check = await checkPicture(description, image, solution, [], true);
+        if (check.ok) return { image, labels: new Map() };
       }
     }
-    const upper = bands[joint];
-    const lower = bands[joint + 1];
-    if (!upper || !lower) break;
-    bands.splice(joint, 2, { top: upper.top, bottom: lower.bottom, ink: upper.ink + lower.ink });
+    if (check.ok) return { image, labels: check.labels };
+    if (check.unknown) console.error(`${name} has no check verdict, leaving it out`);
+    else console.error(`${name} still wrong, leaving it out:`, check.problems.join(" | "));
+  } catch (error) {
+    console.error(`${name} failed, leaving it out:`, error instanceof Error ? error.message : error);
   }
-  if (bands.length < count) return null;
-  return bands.map((band) => {
-    let first = right;
-    let last = left;
-    for (let y = band.top; y <= band.bottom; y += 1) {
-      for (let x = left; x < right; x += 1) {
-        if (!inkAt(image, x, y)) continue;
-        if (x < first) first = x;
-        if (x > last) last = x;
-      }
-    }
-    return { top: band.top, bottom: band.bottom, left: first, right: last };
-  });
+  return null;
 }
 
-/** The most common light colour on the board. Generated "white" is often a shade off pure white. */
+type Pixels = { pixels: Buffer; width: number; height: number };
+
+/** The most common light colour. Generated "white" is often a shade off pure white. */
 export function paperColour(image: Pixels): [number, number, number] {
   const counts = new Map<number, number>();
   let best: [number, number, number] = [255, 255, 255];
   let most = 0;
-  for (let y = 0; y < image.height; y += 8) {
-    for (let x = 0; x < image.width; x += 8) {
+  for (let y = 0; y < image.height; y += 4) {
+    for (let x = 0; x < image.width; x += 4) {
       const at = (y * image.width + x) * 4;
       const r = image.pixels[at] ?? 255;
       const g = image.pixels[at + 1] ?? 255;
@@ -330,147 +604,380 @@ export function paperColour(image: Pixels): [number, number, number] {
   return best;
 }
 
-function paint(
-  pixels: Buffer,
-  width: number,
-  paper: [number, number, number],
-  x0: number,
-  x1: number,
-  y: number,
-): void {
-  for (let x = x0; x < x1; x += 1) {
-    const at = (y * width + x) * 4;
-    pixels[at] = paper[0];
-    pixels[at + 1] = paper[1];
-    pixels[at + 2] = paper[2];
-    pixels[at + 3] = 255;
-  }
-}
-
-/** The writing stays; everything left of it is painted over. A wrong diagram teaches the wrong thing. */
-export function withoutDiagram(image: Pixels): Buffer {
-  const pixels = Buffer.from(image.pixels);
-  const column = writingColumn(image, true);
-  const paper = paperColour(image);
-  for (let y = 0; y < image.height; y += 1) paint(pixels, image.width, paper, 0, column, y);
-  return pixels;
-}
-
-function wholeMath(line: string): string | null {
-  const match = line.trim().match(/^\$\$?([\s\S]+?)\$\$?$/);
-  return match?.[1]?.trim() || null;
-}
-
-/** The board written by our own renderer, without a diagram. Used when a drawing cannot be trusted. */
-export async function writtenBoard(board: LessonBoard): Promise<PreparedBoard> {
-  const width = WIDTH - WRITTEN.x * 2;
-  const parts: string[] = [];
-  const layout: BoardBand[] = [];
-  let y = WRITTEN.y;
-  for (const line of board.lines) {
-    const tex = wholeMath(line);
-    let math = null;
-    if (tex) {
-      try {
-        const engine = await loadJax();
-        math = paintMath(engine.outerHTML(engine.convert(tex, { display: true })), WRITTEN.mathEx, width);
-      } catch {
-        math = null;
-      }
+/** The picture fitted into its panel, its paper lifted to the board's white. */
+export function fitPicture(image: Buffer, panel: Box = PICTURE_BOX): Pixels & { place: Box } {
+  const raster = readRaster(image);
+  const sourceW = raster?.width ?? 1;
+  const sourceH = raster?.height ?? 1;
+  const scale = Math.min(panel.w / sourceW, panel.h / sourceH);
+  const place = {
+    x: Math.round((panel.w - sourceW * scale) / 2),
+    y: Math.round((panel.h - sourceH * scale) / 2),
+    w: Math.round(sourceW * scale),
+    h: Math.round(sourceH * scale),
+  };
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${panel.w}" height="${panel.h}" viewBox="0 0 ${panel.w} ${panel.h}">
+  <rect width="${panel.w}" height="${panel.h}" fill="#FFFFFF"/>
+  <image href="data:image/png;base64,${image.toString("base64")}" x="0" y="0" width="${panel.w}" height="${panel.h}" preserveAspectRatio="xMidYMid meet"/>
+</svg>`;
+  const rendered = new Resvg(svg, { ...NO_TEXT, background: "#FFFFFF" }).render();
+  const fitted: Pixels = { pixels: Buffer.from(rendered.pixels), width: rendered.width, height: rendered.height };
+  const paper = paperColour(fitted);
+  for (let at = 0; at < fitted.pixels.length; at += 4) {
+    for (let channel = 0; channel < 3; channel += 1) {
+      const level = paper[channel] ?? 255;
+      const value = fitted.pixels[at + channel] ?? 255;
+      fitted.pixels[at + channel] = Math.min(255, Math.round((value * 255) / Math.max(1, level)));
     }
-    if (math) {
-      parts.push(`<g transform="translate(${WRITTEN.x} ${y})">${math.markup}</g>`);
-      layout.push({ top: y, bottom: y + math.height, left: WRITTEN.x, right: WRITTEN.x + math.width });
-      y += math.height + WRITTEN.gap;
-      continue;
-    }
-    const text = line.replace(/\$\$?([^$]+)\$\$?/g, "$1").trim();
-    const baseline = y + WRITTEN.text;
-    parts.push(
-      `<text x="${WRITTEN.x}" y="${baseline}" xml:space="preserve" fill="${INK}" font-family="${fontFamily(text)}" font-size="${WRITTEN.text}">${xml(text)}</text>`,
-    );
-    layout.push({ top: y, bottom: y + Math.round(WRITTEN.text * 1.35), left: WRITTEN.x, right: WIDTH - WRITTEN.x });
-    y += Math.round(WRITTEN.text * 1.35) + WRITTEN.gap;
+    fitted.pixels[at + 3] = 255;
   }
-  const canvas = renderPng(`<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}">
-  <rect width="${WIDTH}" height="${HEIGHT}" fill="${PAPER}"/>
-  ${parts.join("\n  ")}
-</svg>`);
-  const fitted = fitBoard(canvas);
-  const bands = findBoardLines(fitted, board.lines.length, false) ?? layout;
-  return { board, pixels: fitted.pixels, paper: [255, 255, 255], bands };
+  return { ...fitted, place };
+}
+
+function canvasLabels(labels: Map<string, LabelBox>, place: Box, panel: Box = PICTURE_BOX): Map<string, Box> {
+  const boxes = new Map<string, Box>();
+  for (const [label, [x1, y1, x2, y2]] of labels) {
+    boxes.set(label, {
+      x: panel.x + place.x + (x1 / 1000) * place.w,
+      y: panel.y + place.y + (y1 / 1000) * place.h,
+      w: ((x2 - x1) / 1000) * place.w,
+      h: ((y2 - y1) / 1000) * place.h,
+    });
+  }
+  return boxes;
+}
+
+// ---------------------------------------------------------------- boards
+
+function boardSvg(layout: BoardLayout): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}">
+  <rect width="${WIDTH}" height="${HEIGHT}" fill="#FFFFFF"/>
+  ${layout.title?.markup ?? ""}
+  ${layout.lines.map((line) => line.markup).join("\n  ")}
+</svg>`;
+}
+
+/** Each row's reveal box, padded no further than halfway to the rows around it. */
+function revealRows(lines: Box[][]): Box[][] {
+  const padded = paddedRows(lines.flat());
+  let at = 0;
+  return lines.map((rows) => rows.map(() => padded[at++] as Box));
+}
+
+function paddedRows(boxes: Box[]): Box[] {
+  return boxes.map((box, index) => {
+    const above = index > 0 ? box.y - ((boxes[index - 1]?.y ?? 0) + (boxes[index - 1]?.h ?? 0)) : 24;
+    const below = index + 1 < boxes.length ? (boxes[index + 1]?.y ?? HEIGHT) - (box.y + box.h) : 24;
+    const top = Math.max(0, Math.min(12, Math.floor(above / 2)));
+    const bottom = Math.max(0, Math.min(12, Math.floor(below / 2)));
+    return {
+      x: box.x - 8,
+      y: box.y - top,
+      w: Math.min(WIDTH - (box.x - 8), box.w + 22),
+      h: box.h + top + bottom,
+    };
+  });
+}
+
+/** The finished board: our own title and lines, the picture pasted into its panel. */
+export async function composeBoard(
+  board: LessonBoard,
+  picture: CheckedPicture | null,
+  pictureIsNew: boolean,
+): Promise<PreparedBoard> {
+  const layout = await layoutBoard(board, Boolean(picture));
+  const rendered = new Resvg(boardSvg(layout), resvgOptions("#FFFFFF")).render();
+  const final = Buffer.from(rendered.pixels);
+  let labels = new Map<string, Box>();
+  if (picture && layout.picture) {
+    const fitted = fitPicture(picture.image, layout.picture);
+    for (let y = 0; y < fitted.height; y += 1) {
+      const from = y * fitted.width * 4;
+      const to = ((layout.picture.y + y) * WIDTH + layout.picture.x) * 4;
+      fitted.pixels.copy(final, to, from, from + fitted.width * 4);
+    }
+    labels = canvasLabels(picture.labels, fitted.place, layout.picture);
+  }
+  return {
+    board,
+    final,
+    title: layout.title?.box ?? null,
+    lines: revealRows(layout.lines.map((line) => line.rows)),
+    picture: layout.picture,
+    pictureIsNew: Boolean(picture) && pictureIsNew,
+    labels,
+  };
 }
 
 /**
- * Draw, then read the board back. A wrong diagram is erased. A wrong line is
- * corrected once. Anything that is still wrong is written by our renderer.
+ * A board without a picture would show only its title while its introduction
+ * is spoken, so the introduction is spoken while the first line is written.
+ * groups lists, for each step that remains, the original steps whose speech it joins.
  */
-export async function prepareBoard(
-  board: LessonBoard,
-  index: number,
-  solution: string,
-): Promise<PreparedBoard> {
-  try {
-    let image = await drawBoard(board);
-    let check = await checkBoard(board, image, solution);
-    if (!check.ok && !check.linesOk && !check.unknown) {
-      console.error(`Board ${index} line corrected:`, check.problems.join(" | "));
-      image = await correctBoard(board, image, check.problems);
-      check = await checkBoard(board, image, solution);
+export function withoutBlankIntros(prepared: PreparedBoard[]): { boards: PreparedBoard[]; groups: number[][] } {
+  const groups: number[][] = [];
+  let at = 0;
+  const boards = prepared.map((board) => {
+    const steps = board.board.steps;
+    const firstLine = steps.findIndex((step) => step.line !== null);
+    const intro = firstLine > 0 && steps.slice(0, firstLine).every((step) => step.line === null && !step.mark);
+    if (board.picture || !intro) {
+      steps.forEach(() => groups.push([at++]));
+      return board;
     }
-    const keepWriting = !check.ok && check.linesOk && Boolean(board.diagram);
-    if (check.unknown) {
-      console.error(`Board ${index} has no check verdict, writing it instead`);
-    } else if (check.ok || keepWriting) {
-      const fitted = fitBoard(image);
-      const bands = findBoardLines(fitted, board.lines.length, Boolean(board.diagram));
-      const paper = paperColour(fitted);
-      if (bands && keepWriting) {
-        console.error(`Board ${index} diagram dropped:`, check.problems.join(" | "));
-        return { board, pixels: withoutDiagram(fitted), paper, bands };
-      }
-      if (bands) return { board, pixels: fitted.pixels, paper, bands };
-      console.error(`Board ${index} lines not found, writing it instead`);
-    } else {
-      console.error(`Board ${index} still wrong, writing it instead:`, check.problems.join(" | "));
-    }
-  } catch (error) {
-    console.error(`Board ${index} drawing failed, writing it instead:`, error instanceof Error ? error.message : error);
-  }
-  return writtenBoard(board);
-}
-
-export function prepareBoards(boards: LessonBoard[], solution: string): Promise<PreparedBoard[]> {
-  return Promise.all(boards.map((board, index) => prepareBoard(board, index, solution)));
-}
-
-function maskPad(bands: BoardBand[], index: number): number {
-  const band = bands[index];
-  if (!band) return 0;
-  const above = index > 0 ? band.top - (bands[index - 1]?.bottom ?? 0) : 12;
-  const below = index + 1 < bands.length ? (bands[index + 1]?.top ?? HEIGHT) - band.bottom : 12;
-  return Math.max(0, Math.min(6, Math.floor(above / 2), Math.floor(below / 2)));
-}
-
-type Mask = { x: number; y: number; w: number; h: number };
-
-/** White covers over lines not yet written. Line `written` is part-way through its wipe. */
-export function boardMasks(prepared: PreparedBoard, written: number, progress: number): Mask[] {
-  const masks: Mask[] = [];
-  prepared.bands.forEach((band, index) => {
-    if (index < written) return;
-    if (index === written && progress >= 0.99) return;
-    const pad = maskPad(prepared.bands, index);
-    const from =
-      index === written && progress > 0
-        ? band.left + Math.round(progress * (band.right - band.left + 1))
-        : band.left - pad;
-    const to = band.right + pad + 1;
-    if (to <= from) return;
-    masks.push({ x: from, y: band.top - pad, w: to - from, h: band.bottom - band.top + 1 + pad * 2 });
+    const joined = steps.slice(0, firstLine + 1);
+    const merged = {
+      ...(steps[firstLine] as (typeof steps)[number]),
+      narration: joined.map((step) => step.narration).join(" "),
+    };
+    groups.push(joined.map(() => at++));
+    steps.slice(firstLine + 1).forEach(() => groups.push([at++]));
+    return { ...board, board: { ...board.board, steps: [merged, ...steps.slice(firstLine + 1)] } };
   });
-  return masks;
+  return { boards, groups };
+}
+
+/** Labels to find in each picture: every label a step circles on a board that shows it. */
+function wantedLabels(boards: LessonBoard[], diagram: string): string[] {
+  const labels = new Set<string>();
+  for (const board of boards) {
+    if (board.diagram !== diagram) continue;
+    for (const step of board.steps) if (step.mark?.kind === "circle") labels.add(step.mark.label);
+  }
+  return [...labels];
+}
+
+/** One drawing per distinct picture. Boards that say "same" share it and it stays still across the cut. */
+export async function prepareBoards(boards: LessonBoard[], solution: string): Promise<PreparedBoard[]> {
+  const pictures = new Map<string, Promise<CheckedPicture | null>>();
+  for (const board of boards) {
+    if (!board.diagram || pictures.has(board.diagram)) continue;
+    const name = `Picture ${pictures.size + 1}`;
+    pictures.set(board.diagram, preparePicture(board.diagram, solution, wantedLabels(boards, board.diagram), name));
+  }
+  const drawn = new Map<string, CheckedPicture | null>();
+  for (const [diagram, picture] of pictures) drawn.set(diagram, await picture);
+  return Promise.all(
+    boards.map((board, index) => {
+      const picture = board.diagram ? drawn.get(board.diagram) ?? null : null;
+      const before = boards[index - 1];
+      const shownBefore = Boolean(before && before.diagram === board.diagram && picture);
+      return composeBoard(board, picture, !shownBefore);
+    }),
+  );
+}
+
+// ---------------------------------------------------------------- frames
+
+type Point = [number, number];
+
+function union(boxes: Box[]): Box {
+  const left = Math.min(...boxes.map((box) => box.x));
+  const top = Math.min(...boxes.map((box) => box.y));
+  const right = Math.max(...boxes.map((box) => box.x + box.w));
+  const bottom = Math.max(...boxes.map((box) => box.y + box.h));
+  return { x: left, y: top, w: right - left, h: bottom - top };
+}
+
+/** The strokes of a mark, in drawing order. An underline runs under every row of its line. */
+export function markPath(mark: BoardMark, prepared: PreparedBoard): Point[][] | null {
+  if (mark.kind === "circle") {
+    const label = prepared.labels.get(mark.label.trim().toLowerCase());
+    if (!label) return null;
+    const cx = label.x + label.w / 2;
+    const cy = label.y + label.h / 2;
+    const rx = Math.max(28, label.w / 2 + 20);
+    const ry = Math.max(24, label.h / 2 + 16);
+    const points: Point[] = [];
+    for (let degrees = -150; degrees <= 228; degrees += 6) {
+      const angle = (degrees * Math.PI) / 180;
+      const grow = 1 + (degrees - -150) / 378 * 0.08;
+      points.push([cx + Math.cos(angle) * rx * grow, cy + Math.sin(angle) * ry * grow]);
+    }
+    return [points];
+  }
+  const rows = prepared.lines[mark.line];
+  if (!rows?.length) return null;
+  if (mark.kind === "underline") {
+    return rows.map((box) => {
+      const y = box.y + box.h - 2;
+      const points: Point[] = [];
+      for (let x = box.x + 4; x <= box.x + box.w - 4; x += 12) points.push([x, y + Math.sin(x / 29) * 1.8]);
+      points.push([box.x + box.w - 4, y + 1]);
+      return points;
+    });
+  }
+  const box = union(rows);
+  const left = box.x - 4;
+  const top = box.y - 2;
+  const right = box.x + box.w + 4;
+  const bottom = box.y + box.h + 2;
+  return [
+    [
+      [left + 6, top],
+      [right, top + 1],
+      [right + 1, bottom],
+      [left, bottom - 1],
+      [left - 1, top + 2],
+      [left + 24, top - 1],
+    ],
+  ];
+}
+
+function pathLength(points: Point[]): number {
+  let length = 0;
+  for (let index = 1; index < points.length; index += 1) {
+    const from = points[index - 1] as Point;
+    const to = points[index] as Point;
+    length += Math.hypot(to[0] - from[0], to[1] - from[1]);
+  }
+  return length;
+}
+
+/** The first part of a mark's strokes, by length, one stroke after another. */
+export function partialStrokes(strokes: Point[][], progress: number): Point[][] {
+  if (progress >= 1) return strokes;
+  const lengths = strokes.map(pathLength);
+  let left = lengths.reduce((sum, length) => sum + length, 0) * Math.max(0, progress);
+  const out: Point[][] = [];
+  strokes.forEach((stroke, index) => {
+    if (left <= 0) return;
+    const length = lengths[index] ?? 0;
+    out.push(partialPath(stroke, length > 0 ? Math.min(1, left / length) : 1));
+    left -= length;
+  });
+  return out;
+}
+
+/** The first part of a stroke, by length. */
+export function partialPath(points: Point[], progress: number): Point[] {
+  if (progress >= 1 || points.length < 2) return points;
+  const lengths = points.slice(1).map((point, index) => {
+    const prev = points[index] as Point;
+    return Math.hypot(point[0] - prev[0], point[1] - prev[1]);
+  });
+  let left = lengths.reduce((sum, length) => sum + length, 0) * Math.max(0, progress);
+  const out: Point[] = [points[0] as Point];
+  for (let index = 0; index < lengths.length; index += 1) {
+    const length = lengths[index] ?? 0;
+    const from = points[index] as Point;
+    const to = points[index + 1] as Point;
+    if (left >= length) {
+      out.push(to);
+      left -= length;
+      continue;
+    }
+    const t = length > 0 ? left / length : 0;
+    out.push([from[0] + (to[0] - from[0]) * t, from[1] + (to[1] - from[1]) * t]);
+    break;
+  }
+  return out;
+}
+
+type DrawnMark = { mark: BoardMark; progress: number };
+
+function marksOverlay(prepared: PreparedBoard, marks: DrawnMark[]): Buffer | null {
+  const strokes = marks.flatMap(({ mark, progress }) => {
+    const path = markPath(mark, prepared);
+    if (!path || progress <= 0) return [];
+    const colour = mark.kind === "underline" ? UNDERLINE_INK : MARK_INK;
+    return partialStrokes(path, progress)
+      .filter((points) => points.length >= 2)
+      .map((points) => {
+        const list = points.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
+        return `<polyline points="${list}" fill="none" stroke="${colour}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>`;
+      });
+  });
+  if (strokes.length === 0) return null;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}">${strokes.join("")}</svg>`;
+  return Buffer.from(new Resvg(svg, NO_TEXT).render().pixels);
+}
+
+function clamp(value: number): number {
+  return Math.max(0, Math.min(1, value));
+}
+
+/** Copies part of the finished board onto the frame, left to right with a soft pen edge. */
+function revealWipe(out: Buffer, final: Buffer, box: Box, progress: number): void {
+  if (progress <= 0) return;
+  const top = Math.max(0, Math.round(box.y));
+  const bottom = Math.min(HEIGHT, Math.round(box.y + box.h));
+  const left = Math.max(0, Math.round(box.x));
+  const right = Math.min(WIDTH, Math.round(box.x + box.w));
+  if (right <= left) return;
+  const edge = left + progress * (right - left + FEATHER);
+  for (let y = top; y < bottom; y += 1) {
+    const row = y * WIDTH * 4;
+    const solid = Math.min(right, Math.max(left, Math.floor(edge - FEATHER)));
+    if (solid > left) final.copy(out, row + left * 4, row + left * 4, row + solid * 4);
+    for (let x = solid; x < Math.min(right, Math.ceil(edge)); x += 1) {
+      const alpha = clamp((edge - x) / FEATHER);
+      const at = row + x * 4;
+      for (let channel = 0; channel < 3; channel += 1) {
+        const paper = out[at + channel] ?? 255;
+        out[at + channel] = Math.round(paper + ((final[at + channel] ?? 255) - paper) * alpha);
+      }
+    }
+  }
+}
+
+/** The picture draws in along a diagonal, left first, as if sketched. */
+function revealPicture(out: Buffer, final: Buffer, box: Box, progress: number): void {
+  if (progress <= 0) return;
+  if (progress >= 1) {
+    revealWipe(out, final, box, 1);
+    return;
+  }
+  const soft = 0.14;
+  const reach = progress * (1 + soft);
+  for (let y = box.y; y < box.y + box.h; y += 1) {
+    const row = y * WIDTH * 4;
+    for (let x = box.x; x < box.x + box.w; x += 1) {
+      const t = ((x - box.x) / box.w) * 0.72 + ((y - box.y) / box.h) * 0.28;
+      const alpha = clamp((reach - t) / soft);
+      if (alpha <= 0) continue;
+      const at = row + x * 4;
+      for (let channel = 0; channel < 3; channel += 1) {
+        const paper = out[at + channel] ?? 255;
+        out[at + channel] = Math.round(paper + ((final[at + channel] ?? 255) - paper) * alpha);
+      }
+    }
+  }
+}
+
+export type FrameState = {
+  title: number;
+  picture: number;
+  /** Progress of each line, 0 not written, 1 written. */
+  lines: number[];
+  marks: DrawnMark[];
+};
+
+/** One frame as RGBA pixels: only what has been drawn so far, nothing of what comes later. */
+export function composeFrame(prepared: PreparedBoard, state: FrameState): Buffer {
+  const out = Buffer.alloc(WIDTH * HEIGHT * 4, 255);
+  if (prepared.title) revealWipe(out, prepared.final, prepared.title, state.title);
+  if (prepared.picture) revealPicture(out, prepared.final, prepared.picture, state.picture);
+  prepared.lines.forEach((rows, index) => {
+    const progress = state.lines[index] ?? 0;
+    const total = rows.reduce((sum, row) => sum + row.w, 0);
+    let before = 0;
+    for (const row of rows) {
+      revealWipe(out, prepared.final, row, total > 0 ? (progress * total - before) / row.w : progress);
+      before += row.w;
+    }
+  });
+  const overlay = marksOverlay(prepared, state.marks);
+  if (overlay) {
+    for (let at = 0; at < out.length; at += 4) {
+      const alpha = (overlay[at + 3] ?? 0) / 255;
+      if (alpha <= 0) continue;
+      for (let channel = 0; channel < 3; channel += 1) {
+        out[at + channel] = Math.round((overlay[at + channel] ?? 0) + (out[at + channel] ?? 255) * (1 - alpha));
+      }
+    }
+  }
+  return out;
 }
 
 const CRC_TABLE = Array.from({ length: 256 }, (_, n) => {
@@ -521,37 +1028,78 @@ export function encodePng(rgba: Buffer, width: number, height: number): Buffer {
   ]);
 }
 
-export function renderBoardFrame(prepared: PreparedBoard, written: number, progress: number): Buffer {
-  const pixels = Buffer.from(prepared.pixels);
-  for (const mask of boardMasks(prepared, written, progress)) {
-    const top = Math.max(0, mask.y);
-    const bottom = Math.min(HEIGHT, mask.y + mask.h);
-    const left = Math.max(0, mask.x);
-    const right = Math.min(WIDTH, mask.x + mask.w);
-    if (right <= left) continue;
-    for (let y = top; y < bottom; y += 1) paint(pixels, WIDTH, prepared.paper, left, right, y);
-  }
-  return encodePng(pixels, WIDTH, HEIGHT);
+export type FocusPoint = { x: number; y: number };
+
+export type BoardMotion = {
+  /** One frame sequence per step, in speaking order. */
+  sequences: Buffer[][];
+  /** The board each step belongs to. The camera moves on one board and cuts between boards. */
+  boards: number[];
+  /** Where the camera pushes in on each board, as fractions of the canvas. */
+  focus: FocusPoint[];
+  /** Extra seconds held after each step: after a boxed result, and before a cut. */
+  pauses: number[];
+};
+
+const BOX_PAUSE = 0.8;
+const CUT_PAUSE = 0.35;
+
+function boardFocus(prepared: PreparedBoard): FocusPoint {
+  const boxes = [prepared.title, prepared.picture, ...prepared.lines.flat()].filter((box): box is Box => Boolean(box));
+  if (boxes.length === 0) return { x: 0.5, y: 0.5 };
+  const left = Math.min(...boxes.map((box) => box.x));
+  const right = Math.max(...boxes.map((box) => box.x + box.w));
+  const top = Math.min(...boxes.map((box) => box.y));
+  const bottom = Math.max(...boxes.map((box) => box.y + box.h));
+  const fraction = (value: number) => Math.max(0.3, Math.min(0.7, value));
+  return { x: fraction((left + right) / 2 / WIDTH), y: fraction((top + bottom) / 2 / HEIGHT) };
 }
 
-/** One sequence per step. The diagram stays; each line is wiped on while it is explained. */
-export function renderBoardMotion(prepared: PreparedBoard[]): Buffer[][] {
-  const sequences: Buffer[][] = [];
-  for (const board of prepared) {
-    let written = 0;
-    for (const step of board.board.steps) {
-      if (step.line === null || step.line >= board.bands.length) {
-        sequences.push([renderBoardFrame(board, written, 0)]);
-        continue;
+/**
+ * Every step shows something new. The first step writes the title and draws
+ * the picture in. A line is written while it is explained; a mark is drawn
+ * after its line, or at once when the step has no line. A box stays; an
+ * underline or a circle lasts for its own step.
+ */
+export function renderBoardMotion(prepared: PreparedBoard[]): BoardMotion {
+  const motion: BoardMotion = { sequences: [], boards: [], focus: [], pauses: [] };
+  prepared.forEach((board, boardIndex) => {
+    motion.focus.push(boardFocus(board));
+    const lines = board.lines.map(() => 0);
+    const kept: DrawnMark[] = [];
+    const steps = board.board.steps;
+    steps.forEach((step, stepIndex) => {
+      const opening = stepIndex === 0;
+      const drawsPicture = opening && board.pictureIsNew;
+      const writes = step.line !== null && step.line < board.lines.length ? step.line : null;
+      const mark = step.mark && markPath(step.mark, board) ? step.mark : null;
+      const changes = (opening && Boolean(board.title)) || drawsPicture || writes !== null || mark !== null;
+      const frames = changes ? BOARD_FRAMES : 1;
+      const pictureTo = writes !== null || mark ? 0.5 : 0.95;
+      const lineFrom = drawsPicture ? 0.5 : opening && board.title ? 0.3 : 0;
+      const lineTo = mark ? lineFrom + (1 - lineFrom) * 0.7 : 1;
+      const markFrom = writes !== null ? lineTo : drawsPicture ? 0.55 : opening && board.title ? 0.3 : 0;
+      const markTo = writes !== null ? 1 : Math.min(1, markFrom + 0.45);
+      const sequence: Buffer[] = [];
+      for (let frame = 1; frame <= frames; frame += 1) {
+        const p = changes ? frame / frames : 1;
+        const state: FrameState = {
+          title: opening ? clamp(p / 0.3) : 1,
+          picture: board.picture ? (drawsPicture ? clamp(p / pictureTo) : 1) : 0,
+          lines: lines.map((value, index) =>
+            index === writes ? clamp((p - lineFrom) / (lineTo - lineFrom)) : value,
+          ),
+          marks: [...kept, ...(mark ? [{ mark, progress: clamp((p - markFrom) / (markTo - markFrom)) }] : [])],
+        };
+        sequence.push(encodePng(composeFrame(board, state), WIDTH, HEIGHT));
       }
-      written = Math.max(written, step.line);
-      const frames: Buffer[] = [];
-      for (let frame = 1; frame <= WIPE_FRAMES; frame += 1) {
-        frames.push(renderBoardFrame(board, written, frame / WIPE_FRAMES));
-      }
-      sequences.push(frames);
-      written = step.line + 1;
-    }
-  }
-  return sequences;
+      if (writes !== null) lines[writes] = 1;
+      if (mark?.kind === "box") kept.push({ mark, progress: 1 });
+      motion.sequences.push(sequence);
+      motion.boards.push(boardIndex);
+      const last = stepIndex === steps.length - 1;
+      motion.pauses.push((mark?.kind === "box" ? BOX_PAUSE : 0) + (last ? CUT_PAUSE : 0));
+    });
+  });
+  return motion;
 }

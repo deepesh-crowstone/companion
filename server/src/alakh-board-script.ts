@@ -1,16 +1,24 @@
 import { visibleReply } from "./reply-client.js";
 
-export const BOARD_LIMIT = 8;
+export const BOARD_LIMIT = 10;
 export const BOARD_LINE_LIMIT = 5;
+
+/** Something pointed at while he speaks: a written line, or a label in the picture. */
+export type BoardMark =
+  | { kind: "underline" | "box"; line: number }
+  | { kind: "circle"; label: string };
 
 export type BoardStep = {
   /** What Alakh Sir says during this step. */
   narration: string;
   /** Index into the board's lines written during this step, or null while the board is only looked at. */
   line: number | null;
+  mark?: BoardMark;
 };
 
 export type LessonBoard = {
+  /** Two to four words at the top of the board. */
+  title: string;
   /** The picture on the left, with its labels. Empty when the board is writing only. */
   diagram: string;
   /** Lines written on the right, in order. Equations are LaTeX inside $...$. */
@@ -24,23 +32,36 @@ EXPLAIN
 the full spoken explanation
 
 BOARD
-Diagram: the picture on the left of this board, or -
-Say: what he says while the student looks at the picture
+Title: two to four words
+Picture: what to draw on the left of this board, or same, or -
+Say: what he says while the picture is drawn
 Line: one line he writes on the board
 Say: what he says while that line is written
+Show: circle F
+Say: what he says while F is circled in the picture
 Line: the next line
-Say: what he says while it is written
+Show: box 2
+Say: what he says while line 2 is written and boxed
 
 EXPLAIN is the lesson a student hears. Each Say is a contiguous piece of that explanation, in order, not a new essay.
 
-A board is one whiteboard slide. An image model draws the whole board, the diagram and every line, so describe exactly what must appear.
+The lesson is filmed like a good teacher's video. The picture is drawn by an image model; the title and every line are written by hand while he speaks. Something new appears with every Say: the picture being drawn, a line being written, or a Show. Never two Says in a row with nothing new on the board.
 
-Diagram:
-- Draw on almost every board: the setup, the object, the field, the ray, the circuit, the forces, the motion, the graph, or a comparison. Diagram: - only when nothing at all can be drawn.
-- Each board is drawn alone, by a model that never sees the other boards. Describe the whole picture every time. Never write "same as before" or "same setup".
-- Describe a physically correct picture in two or three sentences. Put things where the numbers put them: "object 30 cm left of the lens, between F (20 cm) and 2F (40 cm); image 60 cm right of the lens, beyond 2F, inverted and twice as tall".
+Order of boards:
+1. Title "Question": the picture of the situation, and one or two lines saying what is asked.
+2. Title "Given": each given value on its own line, for example "$u = -30$ cm". Circle each value's label in the picture as it is named.
+3. Working: one idea per board, titled by the idea, for example "Lens formula", "Lower bound".
+4. Title "Answer": the final result as one line, with Show: box 1.
+5. Title "Recap": two or three lines, the key formula and the result, copied from the earlier boards.
+If the solution is in Hindi, titles are in Hindi too, in Devanagari.
+
+Picture:
+- Use pictures as much as possible: the setup, the object, the rays, the forces, the circuit, the field, the motion, a graph, a Venn diagram, a number line. Picture: - only when nothing at all can be drawn.
+- Picture: same keeps the previous board's picture exactly. Use same while the setup does not change, so the lesson stays consistent.
+- A new picture is described in full in two or three sentences, physically correct. Put things in the right order and proportion: "object O left of the lens, between F and 2F".
 - Name every label and what it marks, for example "l is an arrow along the length of the strip", "B shown as crosses, into the page".
-- A label is plain text: a symbol like u, F, 2F, B, or one or two English words. No dollar signs, no equations, no sentences in the diagram.
+- A label names a thing: a symbol like O, I, F, 2F, A, B, or one or two English words. Never label a distance or a measurement in the picture; the lines carry the numbers. A percentage or count inside a region of a Venn diagram is fine. No dollar signs, no equations, no sentences.
+- A picture shows only what is known by that board. The picture on the question and given boards never shows the answer.
 
 Line:
 - One to five lines per board. Each line is short: a phrase of at most six words, or one equation.
@@ -48,13 +69,19 @@ Line:
 - Hindi words in Devanagari, English words and numbers in Latin. If the solution is English, every line is English.
 - A Line is what a student copies in a notebook. Never copy Say into Line.
 
+Show (optional, right before its Say, after the Line when both are given):
+- underline n: underlines line n of this board while he refers back to it, for example a value about to be used.
+- box n: boxes line n of this board. Use it for the final answer and for a key result.
+- circle X: circles the label X in this board's picture while he names it. X is a label exactly as the picture names it.
+
 Say:
+- One or two sentences per Say. Many short Says beat one long one.
 - Each Line is followed by exactly one Say that explains it. A Say before the first Line introduces the picture.
 - Hindi words in Devanagari. Never Roman Hindi. English words and numbers stay Latin.
 - If the solution is English, Say is English and contains no Hindi.
 - Do not put LaTeX in Say. Speak the mathematics in words.
 
-Open by teaching the problem, then the question, then the givens, then the working, then the result. Go slowly. A full numerical is several boards. At most eight boards.`;
+Go slowly. A full numerical is several boards. At most ten boards.`;
 
 function stripFence(raw: string): string {
   const trimmed = raw.trim();
@@ -66,15 +93,16 @@ function blank(value: string): boolean {
   return value === "" || value === "-" || /^none$/i.test(value);
 }
 
-type Entry = { key: "diagram" | "say" | "line"; value: string };
+type Entry = { key: "title" | "diagram" | "say" | "line" | "show"; value: string };
 
 function entriesOf(part: string): Entry[] {
   const entries: Entry[] = [];
   for (const raw of part.split("\n")) {
-    const match = raw.match(/^\s*(Diagram|Say|Line):\s*(.*)$/i);
+    const match = raw.match(/^\s*(Title|Picture|Diagram|Say|Line|Show):\s*(.*)$/i);
     if (match) {
+      const key = (match[1] ?? "").toLowerCase();
       entries.push({
-        key: (match[1] ?? "").toLowerCase() as Entry["key"],
+        key: (key === "picture" ? "diagram" : key) as Entry["key"],
         value: (match[2] ?? "").trim(),
       });
       continue;
@@ -85,32 +113,71 @@ function entriesOf(part: string): Entry[] {
   return entries.map((entry) => ({ ...entry, value: entry.value.replace(/\s+/g, " ").trim() }));
 }
 
-function boardFromPart(part: string): LessonBoard | null {
+/** A Show cue. A line number is 1-based; a bare box or underline means the line just written. */
+export function parseMark(value: string, written: number | null): BoardMark | null {
+  const match = value.trim().match(/^(underline|box|circle)\b\s*(.*)$/i);
+  if (!match) return null;
+  const kind = (match[1] ?? "").toLowerCase() as BoardMark["kind"];
+  const target = (match[2] ?? "").replace(/^(?:line|label)\s+/i, "").replace(/[$"'`*]/g, "").trim();
+  if (kind === "circle") {
+    return target && target.length <= 24 ? { kind, label: target } : null;
+  }
+  const number = Number(target.match(/^\d+/)?.[0]);
+  if (Number.isInteger(number) && number > 0) return { kind, line: number - 1 };
+  return written === null ? null : { kind, line: written };
+}
+
+/** A mark points at a line already on the board, or at a label of a board that has a picture. */
+function markFits(mark: BoardMark, writtenSoFar: number, hasPicture: boolean): boolean {
+  if (mark.kind === "circle") return hasPicture;
+  return mark.line >= 0 && mark.line < writtenSoFar;
+}
+
+const SAME_PICTURE =
+  /^same(?:\s+(?:as\s+(?:before|above|the\s+previous(?:\s+board)?|previous(?:\s+board)?)|picture|setup|diagram))?\.?$/i;
+
+function boardFromPart(part: string, previousDiagram: string): LessonBoard | null {
+  let title = "";
   let diagram = "";
   const lines: string[] = [];
   const steps: BoardStep[] = [];
   let pending: string | null = null;
+  let show: string | null = null;
   for (const entry of entriesOf(part)) {
+    if (entry.key === "title") {
+      if (!blank(entry.value)) title = entry.value.replace(/[$*#]/g, "").slice(0, 40);
+      continue;
+    }
     if (entry.key === "diagram") {
-      if (!blank(entry.value)) diagram = entry.value.slice(0, 400);
+      if (SAME_PICTURE.test(entry.value)) diagram = previousDiagram;
+      else if (!blank(entry.value)) diagram = entry.value.slice(0, 400);
       continue;
     }
     if (entry.key === "line") {
       pending = blank(entry.value) ? null : entry.value.slice(0, 160);
       continue;
     }
+    if (entry.key === "show") {
+      show = blank(entry.value) ? null : entry.value;
+      continue;
+    }
     if (!entry.value) continue;
     const narration = entry.value.slice(0, 1200);
+    let step: BoardStep;
     if (pending && lines.length < BOARD_LINE_LIMIT) {
       lines.push(pending);
-      steps.push({ narration, line: lines.length - 1 });
+      step = { narration, line: lines.length - 1 };
     } else {
-      steps.push({ narration, line: null });
+      step = { narration, line: null };
     }
+    const mark = show ? parseMark(show, step.line ?? (lines.length ? lines.length - 1 : null)) : null;
+    if (mark && markFits(mark, lines.length, Boolean(diagram))) step.mark = mark;
+    steps.push(step);
     pending = null;
+    show = null;
   }
   if (steps.length === 0 || (lines.length === 0 && !diagram)) return null;
-  return { diagram, lines, steps };
+  return { title, diagram, lines, steps };
 }
 
 const UNICODE_MATH: Record<string, string> = {
@@ -295,7 +362,7 @@ Rules:
 export function scriptReviewRequest(boards: LessonBoard[], solution: string, flagged: string[]): string {
   const listed = boards
     .map((board, index) => {
-      const rows = [`BOARD ${index + 1}`, `Diagram: ${board.diagram || "-"}`];
+      const rows = [`BOARD ${index + 1}`, `Title: ${board.title || "-"}`, `Picture: ${board.diagram || "-"}`];
       for (const step of board.steps) {
         if (step.line === null) rows.push(`Say: ${step.narration}`);
         else rows.push(`${step.line + 1}. Line: ${board.lines[step.line] ?? ""}`, `   Say: ${step.narration}`);
@@ -347,13 +414,15 @@ export function parseScriptReview(raw: string): ScriptChange[] {
 
 /**
  * Applies the review in place. A board that grows past five lines continues
- * on a new board with the same diagram, so no step is lost.
+ * on a new board with the same title and picture, so no step is lost. A mark
+ * follows its line; a mark whose line was dropped or moved to another board goes.
  */
 export function applyScriptReview(boards: LessonBoard[], changes: ScriptChange[]): LessonBoard[] {
   return boards.flatMap((board, index) => {
     const mine = changes.filter((change) => change.board === index);
     if (mine.length === 0) return [board];
-    type Item = { line: string | null; narration: string };
+    /** origin is the line's index before the review; an added line has none. */
+    type Item = { line: string | null; narration: string; origin?: number; mark?: BoardMark };
     const items: Item[] = [];
     const added = (after: number): Item[] =>
       mine
@@ -366,8 +435,9 @@ export function applyScriptReview(boards: LessonBoard[], changes: ScriptChange[]
       openingAdded = true;
     };
     for (const step of board.steps) {
+      const mark = step.mark ? { mark: step.mark } : {};
       if (step.line === null) {
-        items.push({ line: null, narration: step.narration });
+        items.push({ line: null, narration: step.narration, ...mark });
         continue;
       }
       addOpening();
@@ -375,26 +445,43 @@ export function applyScriptReview(boards: LessonBoard[], changes: ScriptChange[]
       const dropped = mine.some((change) => change.action === "drop" && change.line === at);
       const fix = mine.find((change) => change.action === "fix" && change.line === at);
       if (!dropped) {
-        items.push({ line: fix?.text || board.lines[at] || "", narration: fix?.say || step.narration });
+        items.push({
+          line: fix?.text || board.lines[at] || "",
+          narration: fix?.say || step.narration,
+          origin: at,
+          ...mark,
+        });
       }
       items.push(...added(at));
     }
     addOpening();
 
     const parts: LessonBoard[] = [];
-    let current: LessonBoard = { diagram: board.diagram, lines: [], steps: [] };
+    const fresh = (): LessonBoard => ({ title: board.title, diagram: board.diagram, lines: [], steps: [] });
+    let current = fresh();
+    let placed = new Map<number, number>();
+    const placedMark = (mark: BoardMark | undefined): BoardMark | undefined => {
+      if (!mark || mark.kind === "circle") return mark;
+      const line = placed.get(mark.line);
+      return line === undefined ? undefined : { kind: mark.kind, line };
+    };
     for (const item of items) {
       if (item.line === null) {
-        current.steps.push({ narration: item.narration, line: null });
+        const mark = placedMark(item.mark);
+        current.steps.push({ narration: item.narration, line: null, ...(mark ? { mark } : {}) });
         continue;
       }
       if (!item.line) continue;
       if (current.lines.length >= BOARD_LINE_LIMIT) {
         parts.push(current);
-        current = { diagram: board.diagram, lines: [], steps: [] };
+        current = fresh();
+        placed = new Map();
       }
       current.lines.push(item.line);
-      current.steps.push({ narration: item.narration, line: current.lines.length - 1 });
+      const line = current.lines.length - 1;
+      if (item.origin !== undefined) placed.set(item.origin, line);
+      const mark = placedMark(item.mark);
+      current.steps.push({ narration: item.narration, line, ...(mark ? { mark } : {}) });
     }
     parts.push(current);
     return parts.filter((part) => part.steps.length > 0 && (part.lines.length > 0 || Boolean(part.diagram)));
@@ -453,7 +540,7 @@ export function vagueDiagram(diagram: string): boolean {
   return Boolean(diagram) && VAGUE_DIAGRAM.some((pattern) => pattern.test(diagram));
 }
 
-export const DIAGRAM_FIX_PROMPT = `An image model draws each whiteboard board alone. It never sees the other boards. Rewrite the Diagram of each board you are asked for, so it can be drawn by itself.
+export const DIAGRAM_FIX_PROMPT = `An image model draws the picture of each whiteboard board alone. It never sees the other boards. Rewrite the Diagram of each board you are asked for, so it can be drawn by itself.
 
 Output only, for each board you were asked for:
 BOARD n
@@ -492,10 +579,14 @@ export function parseBoardScript(raw: string): { explain: string; boards: Lesson
   const text = stripFence(visibleReply(raw));
   const parts = text.split(/^\s*BOARD\s*$/gim);
   const explain = (parts[0] ?? "").replace(/^\s*EXPLAIN\s*/i, "").trim();
-  const boards = parts.slice(1).flatMap((part) => {
-    const board = boardFromPart(part);
-    return board ? [board] : [];
-  });
+  const boards: LessonBoard[] = [];
+  let previousDiagram = "";
+  for (const part of parts.slice(1)) {
+    const board = boardFromPart(part, previousDiagram);
+    if (!board) continue;
+    boards.push(board);
+    if (board.diagram) previousDiagram = board.diagram;
+  }
   if (boards.length <= BOARD_LIMIT) return { explain, boards };
   return { explain, boards: [...boards.slice(0, BOARD_LIMIT - 1), boards[boards.length - 1]] };
 }
