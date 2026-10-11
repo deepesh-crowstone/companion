@@ -100,9 +100,10 @@ Art: -`);
   assert.equal(beats[1]?.text, "Damping comes from the field");
   assert.match(beats[1]?.math ?? "", /\\frac/);
   assert.equal(beats[1]?.art, undefined);
-  assert.equal(chooseLayout({ art: { prompt: "Diagram of the circuit" }, math: "" }), "write");
+  assert.equal(chooseLayout({ art: { prompt: "Diagram of the circuit" }, math: "" }), "reference");
   assert.match(SOLUTION_VIDEO_SCRIPT_PROMPT, /Never put an equation in Art/);
-  assert.match(lessonArtPrompt("a leaf"), /no letters/);
+  assert.match(lessonArtPrompt("a leaf"), /no equations/);
+  assert.match(SOLUTION_VIDEO_SCRIPT_PROMPT, /almost every beat/);
   const cues = lessonArtCues([
     { narration: "a", display: "a", text: "a", math: "", art: { id: "sun", prompt: "a sun" } },
     { narration: "b", display: "b", text: "b", math: "", art: { id: "sun", prompt: "a sun" } },
@@ -111,7 +112,7 @@ Art: -`);
   ]);
   assert.deepEqual(
     cues.map((cue) => cue.id),
-    ["sun", "leaf"],
+    ["sun", "leaf", "tree"],
   );
   assert.equal(cues[0]?.aspect, "1:1");
   const memory = lessonMemory(beats, 1);

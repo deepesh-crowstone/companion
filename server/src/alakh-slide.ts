@@ -7,14 +7,14 @@ import { TeX } from "mathjax-full/js/input/tex.js";
 import "mathjax-full/js/input/tex/ams/AmsConfiguration.js";
 import { mathjax } from "mathjax-full/js/mathjax.js";
 import { SVG } from "mathjax-full/js/output/svg.js";
-import { generateLessonArt, usefulArt, WIPE_FRAMES } from "./alakh-motion.js";
+import { generateLessonArt, LESSON_PICTURE_LIMIT, usefulArt, WIPE_FRAMES } from "./alakh-motion.js";
 import type { LessonSlide, SlidePlate } from "./alakh-slide-script.js";
 
 const WIDTH = 1280;
 const HEIGHT = 720;
 const PAPER = "#FFFFFF";
 const INK = "#1C1C1C";
-const PLATE_LIMIT = 2;
+const PLATE_LIMIT = LESSON_PICTURE_LIMIT;
 const PLATE_BOX = { x: 48, y: 48, w: 384, h: 384 };
 const WELL_GAP = 28;
 const TEXT_SIZE = 26;
@@ -86,11 +86,21 @@ function paintMath(svg: string, pxPerEx: number, maxWidth: number): MathSvg | nu
   return { markup, width, height };
 }
 
-/** Unique honest plates, at most two. The same wording is drawn once. */
+/** A plate named once stays on the later slides, so the picture does not vanish when the well changes. */
+export function holdPlates(slides: LessonSlide[]): LessonSlide[] {
+  let held: SlidePlate | undefined;
+  return slides.map((slide) => {
+    if (slide.plate && usefulArt(slide.plate.prompt)) held = slide.plate;
+    if (!slide.plate && held) return { ...slide, plate: held };
+    return slide;
+  });
+}
+
+/** Unique plates, capped. The same wording is drawn once. */
 export function plateCues(slides: LessonSlide[]): SlidePlate[] {
   const seen = new Set<string>();
   const cues: SlidePlate[] = [];
-  for (const slide of slides) {
+  for (const slide of holdPlates(slides)) {
     const plate = slide.plate;
     if (!plate || seen.has(plate.id) || !usefulArt(plate.prompt)) continue;
     seen.add(plate.id);
@@ -111,7 +121,7 @@ export function slideWell(hasPlate: boolean): { x: number; y: number; w: number 
 
 export async function generateSlidePlates(slides: LessonSlide[]): Promise<Map<string, Buffer>> {
   const plates = new Map<string, Buffer>();
-  const cues = plateCues(slides);
+  const cues = plateCues(holdPlates(slides));
   if (cues.length === 0) return plates;
   if (!process.env.OPENROUTER_API_KEY?.trim()) {
     console.error("Slide plates skipped: OPENROUTER_API_KEY is not set");
@@ -218,7 +228,7 @@ export async function renderSlideFrames(
   plates: Map<string, Buffer> = new Map(),
 ): Promise<Buffer[]> {
   const frames: Buffer[] = [];
-  for (const slide of slides) frames.push(await renderSlide(slide, plates, 1));
+  for (const slide of holdPlates(slides)) frames.push(await renderSlide(slide, plates, 1));
   return frames;
 }
 
@@ -228,7 +238,7 @@ export async function renderSlideMotion(
   plates: Map<string, Buffer> = new Map(),
 ): Promise<Buffer[][]> {
   const sequences: Buffer[][] = [];
-  for (const slide of slides) {
+  for (const slide of holdPlates(slides)) {
     const frames: Buffer[] = [];
     for (let step = 1; step <= WIPE_FRAMES; step += 1) {
       frames.push(await renderSlide(slide, plates, step / WIPE_FRAMES));

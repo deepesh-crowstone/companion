@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { writeFile } from "node:fs/promises";
 import test from "node:test";
 import { Resvg } from "@resvg/resvg-js";
-import { plateCues, renderSlideFrames, renderSlideMotion, slideWell } from "../src/alakh-slide.ts";
+import { holdPlates, plateCues, renderSlideFrames, renderSlideMotion, slideWell } from "../src/alakh-slide.ts";
 import { parseSlideScript, SLIDE_SCRIPT_PROMPT } from "../src/alakh-slide-script.ts";
 import { solutionVideoUsesSlides } from "../src/alakh-video.ts";
 
@@ -38,6 +38,7 @@ test("the explanation is written first, then cut into slides", () => {
   ]);
   assert.match(lesson.slides[0]?.math ?? "", /0\.1/);
   assert.equal(lesson.slides[1]?.plate, undefined);
+  assert.equal(holdPlates(lesson.slides)[1]?.plate?.id, "a-metal-strip");
   assert.match(lesson.slides[1]?.math ?? "", /\\frac/);
   assert.equal(lesson.slides[2]?.plate?.id, "a-metal-strip");
   assert.equal(slideWell(false).x, 64);

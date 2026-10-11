@@ -7,7 +7,7 @@ export const SOLUTION_VIDEO_END_GAP_SECONDS = 1.2;
 export type ArtCue = {
   /** Stable name so the same picture is generated once and then reused. */
   id: string;
-  /** What to draw. The picture has no letters. Marks are written beside it. */
+  /** What to draw. Short labels only. Equations stay out of the picture. */
   prompt: string;
 };
 
@@ -52,18 +52,19 @@ Mark: part=symbol
 
 The page writes Text and Math on the right, in order, at a notebook size. Say is the spoken why. Text is the claim a mute student can follow. Never transcribe Say into Text. Never put an equation in Art or in Text.
 
-Art is - by default. Use Art only when the student must see an object, and only if that object can be drawn honestly. Reuse the same Art wording so the picture stays. At most two pictures in the whole lesson. No circuits, rays, graphs, or rails. No letters, Hindi, or equations inside the picture. Mark names a part in English and the symbol we write in the legend.
+Use a picture or a diagram on almost every beat. Art shows whatever this step needs the student to see: the object, the setup, the field, the ray, the circuit, the motion, or a comparison. When the idea changes, Art changes. Repeat the same Art wording only when the picture is the same. Art: - only when nothing at all can be drawn. Up to twelve different pictures. A label in the picture, if any, is one or two English words. Never an equation or a Hindi sentence inside the picture. Mark names a part and the symbol we also write beside it.
 
 Find names what it is asking, once. Given is one number or symbol the problem hands over. Those stay on the left for every later beat. Repeat Find on later beats if you must; do not invent a second unknown.
 
 Open by teaching the problem, before any solving:
-- First beat: what the situation is. Text is the claim. Art only if a single object helps. No equation.
+- First beat: what the situation is. Text is the claim. Art is a diagram of the setup. No equation.
 - Next beats: what it is asking. Find names the quantity. Text states that question in one short line.
 - Next beats: the given data, one Given per beat. Math shows that single value. Text says what the number means.
 - Only after the problem is clear, start the solution.
 
 Then one new idea per beat:
 - Say explains only this step: why, what each symbol means, and how the number came.
+- Art is a diagram of this step. Change it when the picture should change.
 - Text is the claim of this step, at most two short lines.
 - Math is one equation copied from the solution, written as $...$. Do not invent a new result.
 - Each Say is at least three sentences, usually four to six. Go slowly.

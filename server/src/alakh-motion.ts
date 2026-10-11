@@ -9,7 +9,8 @@ export const WIPE_FRAMES = 12;
 
 export const LESSON_ART_MODEL = "recraft/recraft-v4.1-flash";
 
-const ART_LIMIT = 2;
+/** Distinct pictures in one lesson. The same wording is still drawn once. */
+export const LESSON_PICTURE_LIMIT = 12;
 const IMAGE_URL = "https://openrouter.ai/api/v1/images";
 
 export type SceneLayout = "write" | "reference";
@@ -25,12 +26,10 @@ export function motionDrawSeconds(holdSeconds: number): number {
   return Math.min(Math.max(0.15, holdSeconds - 0.2), Math.max(0.8, holdSeconds * 0.65));
 }
 
-/** Recraft is for one object. Geometry that it would invent is skipped. */
+/** A named subject is drawn. A blank line is not a picture. */
 export function usefulArt(prompt: string): boolean {
   const subject = prompt.trim();
-  if (!subject) return false;
-  if (/^(diagram|circuit|graph|ray|rails?)\b/i.test(subject)) return false;
-  return !/\b(circuit|schematic|ray diagram|free body|graph of)\b/i.test(subject);
+  return subject.length > 0 && subject !== "-" && !/^none$/i.test(subject);
 }
 
 /**
@@ -45,10 +44,11 @@ export function chooseLayout(beat: { art?: { prompt: string }; math?: string }):
 
 export function lessonArtPrompt(subject: string): string {
   return [
-    "Flat educational illustration on a pure white background.",
-    "Crisp shapes, soft natural colors, generous empty margin, one clear subject.",
-    "No border, no watermark, no letters, no text, no numbers, no equations, no labels.",
-    "No arrows or extra marks the subject did not name.",
+    "Educational diagram on a pure white background.",
+    "Crisp shapes, soft natural colors, generous empty margin, the setup drawn clearly.",
+    "Arrows and simple parts are welcome when the subject needs them.",
+    "A label, if any, is one or two English words.",
+    "No border, no watermark, no sentences, no equations, no paragraphs.",
     `Subject: ${subject}.`,
   ].join(" ");
 }
@@ -61,7 +61,7 @@ export function lessonArtCues(beats: SolutionBeat[]): ArtCue[] {
     const art = beat.art;
     if (!art || seen.has(art.id) || !usefulArt(art.prompt)) continue;
     seen.add(art.id);
-    if (cues.length >= ART_LIMIT) continue;
+    if (cues.length >= LESSON_PICTURE_LIMIT) continue;
     cues.push({
       id: art.id,
       prompt: art.prompt,

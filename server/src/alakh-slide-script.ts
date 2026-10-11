@@ -33,7 +33,7 @@ Math: one equation, or -
 
 EXPLAIN is the lesson a student hears. Each Say is a contiguous piece of that explanation, in order, not a new essay. Write is the claim a mute student can read. Never transcribe Say into Write. Never put an equation in Plate or in Write.
 
-Plate is - unless one honest object helps the student see the situation. No letters, Hindi, numbers, or equations inside the plate. No circuits, rays, graphs, or rails. Reuse the same Plate wording when the object stays. At most two different plates in the lesson. At most eight slides.
+Every slide has a Plate: a picture or a diagram of what this part of the explanation needs the student to see. The setup, the object, the field, the ray, the circuit, the motion, or a comparison. When the idea changes, the Plate changes. Repeat the same Plate line only when the picture stays. Plate: - only when nothing at all can be drawn. Up to twelve different plates. At most eight slides. A label, if any, is one or two English words. Never an equation or a Hindi sentence inside the plate.
 
 Math is one equation copied from the solution, written as $...$, or -. Do not invent a result.
 
