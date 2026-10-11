@@ -13,6 +13,7 @@ RUN npm ci
 COPY server/tsconfig.json ./
 COPY server/src ./src
 RUN npm run build
+COPY server/assets ./assets
 
 ENV NODE_ENV=production
 ENV HOST=0.0.0.0

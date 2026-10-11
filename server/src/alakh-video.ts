@@ -2,19 +2,14 @@ import { spawn } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Resvg } from "@resvg/resvg-js";
-import { liteAdaptor } from "mathjax-full/js/adaptors/liteAdaptor.js";
-import { RegisterHTMLHandler } from "mathjax-full/js/handlers/html.js";
-import { TeX } from "mathjax-full/js/input/tex.js";
-import "mathjax-full/js/input/tex/ams/AmsConfiguration.js";
-import { mathjax } from "mathjax-full/js/mathjax.js";
-import { SVG } from "mathjax-full/js/output/svg.js";
 import {
   alakhSpeechChunks,
   readAlakhTtsConfig,
   synthesizeAlakhSpeech,
   type AlakhTtsConfig,
 } from "./alakh-tts.js";
+import { generateLessonPictures, motionDrawSeconds } from "./alakh-motion.js";
+import { renderSolutionFrames, renderSolutionMotion } from "./alakh-scene.js";
 import {
   narrationWithoutLatex,
   parseSolutionBeats,
@@ -22,362 +17,10 @@ import {
   SOLUTION_VIDEO_SCRIPT_PROMPT,
   type SolutionBeat,
 } from "./alakh-video-script.js";
-import {
-  boardTop,
-  drawingCues,
-  generateChalkSprites,
-  motionDrawSeconds,
-  planFrames,
-  WIPE_FRAMES,
-  type SpriteBox,
-} from "./alakh-motion.js";
 import { replyChatCompletion } from "./reply-client.js";
 import { prepareAlakhNarration } from "./xai.js";
 
-const WIDTH = 1280;
-const HEIGHT = 720;
-const LEFT = 80;
-const BOARD_BOTTOM = 660;
-const BOARD_TOP = 56;
-const TEXT_WIDTH = 1120;
-/** One body size for every line, current and earlier. */
-const TEXT_SIZE = 30;
-/** MathJax ex, chosen so glyphs match the body text instead of filling the frame. */
-const PX_PER_EX = 20;
-const BOARD = "#0B1020";
-const INK = "#F4F7FB";
-const MUTED = "#8E98AA";
-const ACCENT = "#E8B86D";
-
-type MathSvg = { markup: string; width: number; height: number };
-
-type Row =
-  | { type: "label"; text: string; size: number; color: string; pointed: boolean; ink: boolean }
-  | { type: "text"; text: string; size: number; color: string; pointed: boolean; ink: boolean }
-  | { type: "math"; math: MathSvg; pointed: boolean; ink: boolean };
-
-type Jax = {
-  outerHTML: (node: unknown) => string;
-  convert: (tex: string, options: { display: boolean }) => unknown;
-};
-
-let jaxPromise: Promise<Jax> | null = null;
-
-function loadJax(): Promise<Jax> {
-  if (!jaxPromise) {
-    jaxPromise = Promise.resolve().then(() => {
-      const adaptor = liteAdaptor();
-      RegisterHTMLHandler(adaptor);
-      const tex = new TeX({ packages: ["base", "ams"] });
-      const svg = new SVG({ fontCache: "none" });
-      const html = mathjax.document("", { InputJax: tex, OutputJax: svg });
-      return {
-        outerHTML: (node: unknown) =>
-          adaptor.outerHTML(node as Parameters<typeof adaptor.outerHTML>[0]),
-        convert: (value: string, options: { display: boolean }) => html.convert(value, options),
-      };
-    });
-  }
-  return jaxPromise;
-}
-
-function xml(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-type Piece =
-  | { kind: "text"; text: string }
-  | { kind: "math"; tex: string; display: boolean };
-
-function piecesOf(display: string): Piece[] {
-  const pieces: Piece[] = [];
-  const pattern = /\$\$([\s\S]+?)\$\$|\$([^$\n]+)\$/g;
-  let last = 0;
-  for (const match of display.matchAll(pattern)) {
-    const before = display.slice(last, match.index).trim();
-    if (before) pieces.push({ kind: "text", text: before });
-    const tex = (match[1] ?? match[2] ?? "").trim();
-    if (tex) pieces.push({ kind: "math", tex, display: match[1] != null });
-    last = (match.index ?? 0) + match[0].length;
-  }
-  const rest = display.slice(last).trim();
-  if (rest) pieces.push({ kind: "text", text: rest });
-  if (pieces.length === 0 && display.trim()) pieces.push({ kind: "text", text: display.trim() });
-  return pieces;
-}
-
-function wrapLines(text: string, size: number): string[] {
-  const maxChars = Math.max(16, Math.floor(TEXT_WIDTH / (size * 0.52)));
-  const lines: string[] = [];
-  for (const paragraph of text.split(/\n+/)) {
-    const words = paragraph.trim().split(/\s+/).filter(Boolean);
-    let line = "";
-    for (const word of words) {
-      const next = line ? `${line} ${word}` : word;
-      if (next.length > maxChars && line) {
-        lines.push(line);
-        line = word;
-      } else {
-        line = next;
-      }
-    }
-    if (line) lines.push(line);
-  }
-  return lines.slice(0, 5);
-}
-
-function paintMath(svg: string, color: string): MathSvg | null {
-  const inner = svg.match(/<svg[\s\S]*<\/svg>/)?.[0];
-  if (!inner || inner.includes("data-mjx-error")) return null;
-  const box = inner.match(/viewBox="([^"]+)"/)?.[1]?.trim().split(/\s+/).map(Number);
-  if (!box || box.length < 4 || !box[2] || !box[3]) return null;
-  const widthEx = Number(inner.match(/\bwidth="([\d.]+)ex"/)?.[1]);
-  const heightEx = Number(inner.match(/\bheight="([\d.]+)ex"/)?.[1]);
-  let width =
-    widthEx > 0 ? Math.round(widthEx * PX_PER_EX) : Math.round((box[2] / 430) * PX_PER_EX);
-  let height =
-    heightEx > 0 ? Math.round(heightEx * PX_PER_EX) : Math.round((box[3] / 430) * PX_PER_EX);
-  if (width > TEXT_WIDTH && width > 0) {
-    const scale = TEXT_WIDTH / width;
-    width = TEXT_WIDTH;
-    height = Math.max(1, Math.round(height * scale));
-  }
-  const open = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="${box.join(" ")}">`;
-  const markup = inner.replace(/<svg[^>]*>/, open).replaceAll("currentColor", color);
-  return { markup, width, height };
-}
-
-async function mathRow(tex: string, color: string, pointed: boolean, ink: boolean): Promise<Row> {
-  try {
-    const engine = await loadJax();
-    const node = engine.convert(tex, { display: false });
-    const painted = paintMath(engine.outerHTML(node), color);
-    if (painted) return { type: "math", math: painted, pointed, ink };
-  } catch {
-    // A broken formula stays on the board as text.
-  }
-  return { type: "text", text: tex, size: TEXT_SIZE, color, pointed, ink };
-}
-
-async function rowsForBeat(beat: SolutionBeat, index: number, current: boolean): Promise<Row[]> {
-  const color = current ? INK : MUTED;
-  const rows: Row[] = [];
-  if (current) {
-    rows.push({
-      type: "label",
-      text: `Step ${index + 1}`,
-      size: TEXT_SIZE,
-      color: ACCENT,
-      pointed: false,
-      ink: true,
-    });
-  }
-  for (const piece of piecesOf(beat.display)) {
-    if (piece.kind === "text") {
-      for (const line of wrapLines(piece.text, TEXT_SIZE)) {
-        rows.push({ type: "text", text: line, size: TEXT_SIZE, color, pointed: current, ink: current });
-      }
-    } else {
-      rows.push(await mathRow(piece.tex, color, current, current));
-    }
-  }
-  return rows;
-}
-
-function rowHeight(row: Row): number {
-  if (row.type === "math") return row.math.height + 16;
-  return row.size + 14;
-}
-
-/** Arrow and bar beside the line Alakh Sir is explaining. */
-function pointerMarkup(top: number, bottom: number): string {
-  const pad = 6;
-  const barTop = Math.round(top - pad);
-  const barHeight = Math.max(22, Math.round(bottom - top + pad * 2));
-  const cy = Math.round(barTop + barHeight / 2);
-  return `<polygon points="22,${cy - 12} 58,${cy} 22,${cy + 12}" fill="${ACCENT}"/>
-  <rect x="62" y="${barTop}" width="6" height="${barHeight}" rx="3" fill="${ACCENT}"/>`;
-}
-
-type LaidRows = {
-  settled: string[];
-  arriving: string[];
-  pointTop: number | null;
-  pointBottom: number | null;
-};
-
-/** Lines already on the board, then the line that strokes on with this beat. */
-function paintRows(rows: Row[], origin: number): LaidRows {
-  let y = origin;
-  const settled: string[] = [];
-  const arriving: string[] = [];
-  let pointTop: number | null = null;
-  let pointBottom: number | null = null;
-  const mark = (top: number, bottom: number, pointed: boolean) => {
-    if (!pointed) return;
-    pointTop = pointTop == null ? top : Math.min(pointTop, top);
-    pointBottom = pointBottom == null ? bottom : Math.max(pointBottom, bottom);
-  };
-  for (const row of rows) {
-    const bucket = row.ink ? arriving : settled;
-    if (row.type === "math") {
-      const top = y + 8;
-      mark(top, top + row.math.height, row.pointed);
-      y += 8;
-      bucket.push(`<g transform="translate(${LEFT} ${y})">${row.math.markup}</g>`);
-      y += row.math.height + 8;
-      continue;
-    }
-    const top = y + 4;
-    y += row.size;
-    mark(top, y + 4, row.pointed);
-    bucket.push(
-      `<text x="${LEFT}" y="${y}" fill="${row.color}" font-family="sans-serif" font-size="${row.size}">${xml(row.text)}</text>`,
-    );
-    y += 14;
-  }
-  return { settled, arriving, pointTop, pointBottom };
-}
-
-function svgDoc(body: string): string {
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}">
-  ${body}
-</svg>`;
-}
-
-function boardChrome(index: number, total: number): string {
-  const progress = Math.max(24, Math.round((TEXT_WIDTH * (index + 1)) / total));
-  return `<rect width="${WIDTH}" height="${HEIGHT}" fill="${BOARD}"/>
-  <rect x="0" y="0" width="8" height="${HEIGHT}" fill="${ACCENT}"/>
-  <rect x="${LEFT}" y="692" width="${TEXT_WIDTH}" height="4" rx="2" fill="#1C2436"/>
-  <rect x="${LEFT}" y="692" width="${progress}" height="4" rx="2" fill="${ACCENT}"/>`;
-}
-
-function pointerOf(laid: LaidRows): string {
-  if (laid.pointTop == null || laid.pointBottom == null) return "";
-  return pointerMarkup(laid.pointTop, laid.pointBottom);
-}
-
-function slideSvg(rows: Row[], index: number, total: number): string {
-  const laid = paintRows(rows, BOARD_TOP);
-  return svgDoc(`${boardChrome(index, total)}
-  ${laid.settled.join("\n  ")}
-  ${laid.arriving.join("\n  ")}
-  ${pointerOf(laid)}`);
-}
-
-type PlacedDrawing = SpriteBox & { dataUri: string };
-
-function drawingTag(sprite: PlacedDrawing): string {
-  return `<image href="${sprite.dataUri}" x="${sprite.x}" y="${sprite.y}" width="${sprite.w}" height="${sprite.h}" preserveAspectRatio="xMidYMid meet"/>`;
-}
-
-/** The doodle strokes across its own box, not after the pen has crossed the whole board. */
-function revealingDrawing(sprite: PlacedDrawing, progress: number): string {
-  const width = Math.max(1, Math.round(sprite.w * progress));
-  const id = `draw-${sprite.id.replace(/[^\p{L}\p{N}_-]+/gu, "")}`;
-  return `<clipPath id="${id}"><rect x="${sprite.x}" y="${sprite.y}" width="${width}" height="${sprite.h}"/></clipPath>
-  <g clip-path="url(#${id})">${drawingTag(sprite)}</g>`;
-}
-
-/** One frame of the stroke. clipWidth grows until the new line and drawing are fully on the board. */
-function motionSvg(
-  rows: Row[],
-  sprites: PlacedDrawing[],
-  clipWidth: number,
-  top: number,
-  index: number,
-  total: number,
-): string {
-  const laid = paintRows(rows, top);
-  const progress = clipWidth / WIDTH;
-  const held = sprites.filter((sprite) => !sprite.reveal).map(drawingTag).join("\n  ");
-  const arriving = sprites
-    .filter((sprite) => sprite.reveal)
-    .map((sprite) => revealingDrawing(sprite, progress))
-    .join("\n  ");
-  return svgDoc(`${boardChrome(index, total)}
-  ${held}
-  ${laid.settled.join("\n  ")}
-  ${arriving}
-  <clipPath id="wipe"><rect x="0" y="0" width="${clipWidth}" height="${HEIGHT}"/></clipPath>
-  <g clip-path="url(#wipe)">
-    ${laid.arriving.join("\n    ")}
-    ${pointerOf(laid)}
-  </g>`);
-}
-
-function fits(rows: Row[], top: number): boolean {
-  const height = rows.reduce((sum, row) => sum + rowHeight(row), 0);
-  return top + height <= BOARD_BOTTOM;
-}
-
-function renderPng(svg: string): Buffer {
-  const font = process.platform === "linux" ? "Liberation Sans" : "Helvetica";
-  return new Resvg(svg, {
-    background: BOARD,
-    font: {
-      loadSystemFonts: true,
-      sansSerifFamily: font,
-      defaultFontFamily: font,
-    },
-  })
-    .render()
-    .asPng();
-}
-
-async function visibleRows(beats: SolutionBeat[], index: number, top: number): Promise<Row[]> {
-  const groups = await Promise.all(
-    beats.slice(0, index + 1).map((beat, beatIndex) => rowsForBeat(beat, beatIndex, beatIndex === index)),
-  );
-  let start = 0;
-  while (start < groups.length - 1 && !fits(groups.slice(start).flat(), top)) start += 1;
-  return groups.slice(start).flat();
-}
-
-/** One PNG per beat. Each frame adds the new step and keeps what still fits above it. */
-export async function renderSolutionFrames(beats: SolutionBeat[]): Promise<Buffer[]> {
-  const frames: Buffer[] = [];
-  for (let index = 0; index < beats.length; index += 1) {
-    const rows = await visibleRows(beats, index, BOARD_TOP);
-    frames.push(renderPng(slideSvg(rows, index, beats.length)));
-  }
-  return frames;
-}
-
-/**
- * Twelve frames per beat. The new line, and any new drawing, stroke on from
- * the left. Drawings already on the board stay fully visible.
- */
-export async function renderSolutionMotion(
-  beats: SolutionBeat[],
-  chalk: Map<string, Buffer> = new Map(),
-): Promise<Buffer[][]> {
-  const plans = planFrames(beats);
-  const sequences: Buffer[][] = [];
-  for (let index = 0; index < beats.length; index += 1) {
-    const plan = plans[index] ?? { kind: "plain" as const, sprites: [] };
-    const top = boardTop(plan.kind);
-    const rows = await visibleRows(beats, index, top);
-    const sprites: PlacedDrawing[] = plan.sprites.flatMap((sprite) => {
-      const png = chalk.get(sprite.id);
-      if (!png) return [];
-      return [{ ...sprite, dataUri: `data:image/png;base64,${png.toString("base64")}` }];
-    });
-    const frames: Buffer[] = [];
-    for (let step = 1; step <= WIPE_FRAMES; step += 1) {
-      const clipWidth = Math.round((step / WIPE_FRAMES) * WIDTH);
-      frames.push(renderPng(motionSvg(rows, sprites, clipWidth, top, index, beats.length)));
-    }
-    sequences.push(frames);
-  }
-  return sequences;
-}
+export { renderSolutionFrames, renderSolutionMotion };
 
 function run(
   command: string,
@@ -480,6 +123,8 @@ export async function assembleSolutionVideo(
     const stop = Math.max(0, Math.ceil((hold - draw) * fps - 1e-3));
     const clip = join(workDir, `clip-${index}.mp4`);
     const encodeMs = Math.min(10 * 60_000, Math.max(60_000, Math.ceil(hold * 8_000)));
+    const audio = audioFiles[index];
+    if (!audio) throw new Error("Video frames and audio do not match");
     await run(
       ffmpegBin(),
       [
@@ -493,7 +138,7 @@ export async function assembleSolutionVideo(
         "-i",
         join(beatDir, "f%03d.png"),
         "-i",
-        audioFiles[index],
+        audio,
         "-f",
         "lavfi",
         "-t",
@@ -515,7 +160,7 @@ export async function assembleSolutionVideo(
         "-preset",
         "veryfast",
         "-crf",
-        "26",
+        "23",
         "-pix_fmt",
         "yuv420p",
         "-c:a",
@@ -605,7 +250,13 @@ async function scriptBeats(markdown: string): Promise<SolutionBeat[]> {
       );
     }
     if (!spoken.trim()) continue;
-    beats.push({ narration: spoken, display: beat.display, ...(beat.draw ? { draw: beat.draw } : {}) });
+    beats.push({
+      narration: spoken,
+      display: beat.display,
+      text: beat.text,
+      math: beat.math,
+      ...(beat.art ? { art: beat.art } : {}),
+    });
   }
   return beats;
 }
@@ -627,8 +278,8 @@ async function speakTake(text: string, config: AlakhTtsConfig): Promise<Buffer> 
 }
 
 /**
- * Builds the board video for a written solution. Each new line strokes on
- * while Alakh Sir speaks it. A Draw cue becomes a chalk doodle on the board.
+ * Builds the explanation video. Each scene is a white frame: the picture,
+ * the short explanation, and the equation stroke on while Alakh Sir speaks.
  * Returns null when the voice server or ffmpeg is absent.
  */
 export async function createSolutionVideo(markdown: string): Promise<Buffer | null> {
@@ -636,13 +287,15 @@ export async function createSolutionVideo(markdown: string): Promise<Buffer | nu
   if (!config || !(await ffmpegAvailable())) return null;
   const beats = await scriptBeats(markdown);
   if (beats.length === 0) throw new Error("Video script had no beats");
-  const chalk = await generateChalkSprites(drawingCues(beats));
-  const frames = await renderSolutionMotion(beats, chalk);
+  const pictures = await generateLessonPictures(beats);
+  const frames = await renderSolutionMotion(beats, pictures);
   const workDir = await mkdtemp(join(tmpdir(), "alakh-solution-"));
   try {
     const audioFiles: string[] = [];
     for (let index = 0; index < beats.length; index += 1) {
-      const chunks = alakhSpeechChunks([beats[index].narration], VIDEO_SPEECH_CHARS);
+      const beat = beats[index];
+      if (!beat) continue;
+      const chunks = alakhSpeechChunks([beat.narration], VIDEO_SPEECH_CHARS);
       const pieces: Buffer[] = [];
       for (const chunk of chunks) pieces.push(await speakTake(chunk, config));
       if (pieces.length === 1) {

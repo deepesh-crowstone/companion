@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { Resvg } from "@resvg/resvg-js";
-import { chalkFromLineArt, drawingCues, drawingPrompt, planFrames } from "../src/alakh-motion.ts";
+import { chooseLayout, lessonArtCues, lessonArtPrompt, lessonPicturePng } from "../src/alakh-motion.ts";
 import {
   narrationWithoutLatex,
   parseSolutionBeats,
@@ -74,56 +74,37 @@ test("each slide holds for the narration plus a pause", () => {
   assert.deepEqual(slideDurations([2, 3]), [2.45, 4.2]);
 });
 
-test("a drawing is a separate object, not part of the board line", () => {
+test("a picture stays out of the equation, and the words are a separate line", () => {
   const beats = parseSolutionBeats(`BEAT
-Say: The leaf takes in light. It happens in the green part of the plant.
-Show: Light enters the leaf
-Draw: a single leaf
-At: centre
+Say: The leaf takes in light. It happens in the green part of the plant. Watch the leaf.
+Text: Light enters the leaf
+Math: -
+Art: a single leaf
 BEAT
-Say: First the length. Then the constant. Then the field. Then the resistance.
-Show: l = 0.1 m, k = 0.5 N/m
-Draw: a single leaf`);
-  assert.equal(beats[0]?.display, "Light enters the leaf");
-  assert.equal(beats[0]?.draw?.id, "a-single-leaf");
-  assert.equal(beats[0]?.draw?.place, "center");
-  assert.equal(beats[1]?.draw?.id, "a-single-leaf");
-  assert.equal(beats[2]?.draw, undefined);
-  assert.match(SOLUTION_VIDEO_SCRIPT_PROMPT, /Do not Draw equations/);
-});
-
-test("drawings stay, then a stage shot replaces them", () => {
-  const plans = planFrames([
-    { draw: { id: "sun", place: "left" } },
-    { draw: { id: "leaf", place: "center" } },
-    {},
-    { draw: { id: "tree", place: "stage" } },
-    { draw: { id: "tree", place: "stage" } },
-  ]);
-  assert.equal(plans[0]?.kind, "row");
-  assert.equal(plans[0]?.sprites[0]?.reveal, true);
-  assert.equal(plans[1]?.sprites.length, 2);
-  assert.equal(plans[1]?.sprites.find((sprite) => sprite.id === "sun")?.reveal, false);
-  assert.equal(plans[1]?.sprites.find((sprite) => sprite.id === "leaf")?.reveal, true);
-  assert.equal(plans[2]?.sprites.every((sprite) => !sprite.reveal), true);
-  assert.equal(plans[3]?.kind, "stage");
-  assert.deepEqual(
-    plans[3]?.sprites.map((sprite) => sprite.id),
-    ["tree"],
-  );
-  assert.equal(plans[3]?.sprites[0]?.reveal, true);
-  assert.equal(plans[4]?.sprites[0]?.reveal, false);
-  const cues = drawingCues([
-    { draw: { id: "sun", prompt: "a sun", place: "left" } },
-    { draw: { id: "sun", prompt: "a sun", place: "left" } },
-    { draw: { id: "leaf", prompt: "a leaf", place: "center" } },
+Say: The damping constant comes from the field and the resistance. Write only that formula. Then stop.
+Text: Damping from the field
+Math: $b = \\frac{B^{2} l^{2}}{R}$
+Art: -`);
+  assert.equal(beats[0]?.text, "Light enters the leaf");
+  assert.equal(beats[0]?.math, "");
+  assert.equal(beats[0]?.art?.id, "a-single-leaf");
+  assert.equal(chooseLayout(beats[0] ?? { math: "" }), "split");
+  assert.equal(beats[1]?.text, "Damping from the field");
+  assert.match(beats[1]?.math ?? "", /\\frac/);
+  assert.equal(beats[1]?.art, undefined);
+  assert.equal(chooseLayout({ art: { prompt: "Diagram of the circuit" }, math: "" }), "stack");
+  assert.match(SOLUTION_VIDEO_SCRIPT_PROMPT, /Never put an equation in Art/);
+  assert.match(lessonArtPrompt("a leaf"), /one or two words/);
+  const cues = lessonArtCues([
+    { narration: "a", display: "a", text: "a", math: "", art: { id: "sun", prompt: "a sun" } },
+    { narration: "b", display: "b", text: "b", math: "", art: { id: "sun", prompt: "a sun" } },
+    { narration: "c", display: "c", text: "c", math: "", art: { id: "leaf", prompt: "a leaf" } },
   ]);
   assert.deepEqual(
     cues.map((cue) => cue.id),
     ["sun", "leaf"],
   );
-  assert.match(drawingPrompt("a leaf", false), /plain white background/);
-  assert.match(drawingPrompt("a leaf", true), /<image_0>/);
+  assert.equal(cues[0]?.aspect, "1:1");
 });
 
 test("frames reveal the steps and mux into one video", async () => {
@@ -213,25 +194,38 @@ function pixel(path: string, x: number, y: number): [number, number, number, num
   return [bytes[0] ?? 0, bytes[1] ?? 0, bytes[2] ?? 0, bytes[3] ?? 0];
 }
 
-test("marker art becomes chalk, and the new drawing strokes on", async () => {
+test("a webp lesson picture is converted to png before it is placed", async () => {
   const ffmpeg = spawnSync("ffmpeg", ["-version"], { stdio: "ignore" });
   if (ffmpeg.status !== 0) return;
-
-  const line = new Resvg(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80"><rect width="80" height="80" fill="#ffffff"/><circle cx="40" cy="40" r="16" fill="#000000"/></svg>`,
+  const png = new Resvg(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="#1F4B99"/></svg>`,
   )
     .render()
     .asPng();
-  const chalk = await chalkFromLineArt(line);
-  const chalkPath = "/tmp/alakh-chalk.png";
-  await writeFile(chalkPath, chalk);
-  const ink = pixel(chalkPath, 40, 40);
-  const paper = pixel(chalkPath, 4, 4);
-  assert.ok(ink[3] > 200, `chalk center alpha ${ink[3]}`);
-  assert.ok(paper[3] < 20, `paper alpha ${paper[3]}`);
+  const dir = await mkdtemp(join(tmpdir(), "alakh-webp-"));
+  try {
+    const src = join(dir, "in.png");
+    const dest = join(dir, "out.webp");
+    await writeFile(src, png);
+    const made = spawnSync("ffmpeg", ["-y", "-loglevel", "error", "-i", src, dest], { stdio: "ignore" });
+    assert.equal(made.status, 0);
+    const webp = await readFile(dest);
+    assert.equal(webp.subarray(0, 4).toString(), "RIFF");
+    const converted = await lessonPicturePng(webp);
+    assert.equal(converted.subarray(1, 4).toString(), "PNG");
+    const same = await lessonPicturePng(png);
+    assert.equal(same, png);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("the canvas is white, and the picture strokes on from the left", async () => {
+  const ffmpeg = spawnSync("ffmpeg", ["-version"], { stdio: "ignore" });
+  if (ffmpeg.status !== 0) return;
 
   const sticker = new Resvg(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><circle cx="100" cy="100" r="70" fill="#F4F7FB"/></svg>`,
+    `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><circle cx="100" cy="100" r="70" fill="#1F4B99"/></svg>`,
   )
     .render()
     .asPng();
@@ -239,9 +233,16 @@ test("marker art becomes chalk, and the new drawing strokes on", async () => {
     {
       narration: "The sun sends light to the leaf.",
       display: "Sunlight",
-      draw: { id: "sun", prompt: "a sun", place: "right" as const },
+      text: "Sunlight",
+      math: "",
+      art: { id: "sun", prompt: "a sun" },
     },
   ];
+  const still = await renderSolutionFrames(beats);
+  await writeFile("/tmp/alakh-scene-still.png", still[0] ?? Buffer.alloc(0));
+  const paper = pixel("/tmp/alakh-scene-still.png", 8, 8);
+  assert.ok(paper[0] > 245 && paper[1] > 245 && paper[2] > 245, `paper ${paper.join(",")}`);
+
   const sequences = await renderSolutionMotion(beats, new Map([["sun", sticker]]));
   const workDir = await mkdtemp(join(tmpdir(), "alakh-motion-"));
   try {
@@ -268,11 +269,11 @@ test("marker art becomes chalk, and the new drawing strokes on", async () => {
       );
       assert.equal(shot.status, 0);
     }
-    // Right-hand sun sits near the middle of its box. The stroke has not reached it yet.
-    const hidden = pixel(early, 1060, 186);
-    const shown = pixel(late, 1060, 186);
-    assert.ok(hidden[0] < 40, `early sprite pixel ${hidden.join(",")}`);
-    assert.ok(shown[0] > 200, `late sprite pixel ${shown.join(",")}`);
+    // The object sits in the left half. The first frame has only started the stroke.
+    const hidden = pixel(early, 336, 336);
+    const shown = pixel(late, 336, 336);
+    assert.ok(hidden[0] > 220, `early picture pixel ${hidden.join(",")}`);
+    assert.ok(shown[0] < 60 && shown[2] > 120, `late picture pixel ${shown.join(",")}`);
     await writeFile("/tmp/alakh-motion-early.png", await readFile(early));
     await writeFile("/tmp/alakh-motion-late.png", await readFile(late));
   } finally {
