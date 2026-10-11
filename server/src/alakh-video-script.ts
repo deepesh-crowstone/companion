@@ -4,11 +4,23 @@ export const SOLUTION_VIDEO_BEAT_LIMIT = 40;
 export const SOLUTION_VIDEO_BEAT_GAP_SECONDS = 0.45;
 export const SOLUTION_VIDEO_END_GAP_SECONDS = 1.2;
 
+export type DrawPlace = "left" | "center" | "right" | "stage";
+
+export type DrawCue = {
+  /** Stable name so the same object is drawn once and then reused. */
+  id: string;
+  /** Short English noun phrase sent to the image model. */
+  prompt: string;
+  place: DrawPlace;
+};
+
 export type SolutionBeat = {
   /** What Alakh Sir says while this step is on screen. */
   narration: string;
   /** The new board content revealed on this step. */
   display: string;
+  /** One physical object to stroke onto the board with this beat. */
+  draw?: DrawCue;
 };
 
 export const SOLUTION_VIDEO_SCRIPT_PROMPT = `Write a long, detailed board video of this solution. Output only beats.
@@ -38,7 +50,15 @@ Show:
 Say:
 - Hindi words in Devanagari. Never Roman Hindi. English words and numbers stay Latin.
 - If the solution is English, Say is English and contains no Hindi.
-- Do not put LaTeX in Say. Speak the mathematics in words.`;
+- Do not put LaTeX in Say. Speak the mathematics in words.
+
+Draw, only for a physical object the board cannot say:
+- Add it after Show, and only when that sentence introduces an object: a leaf, the sun, a ray, a circuit, a tree.
+- Draw: a short English noun phrase for one object. No sentence, and no text the drawing should contain.
+- At: left, center, right, or stage. stage clears earlier drawings and shows this object alone.
+- Repeat the same Draw phrase to keep an object. A new phrase makes a new drawing.
+- Do not Draw equations, given values, or algebra. Those stay in Show only.
+- For a process or concept, Show a short caption and Draw the one new object.`;
 
 function stripFence(raw: string): string {
   const trimmed = raw.trim();
@@ -46,18 +66,47 @@ function stripFence(raw: string): string {
   return (fenced?.[1] ?? trimmed).trim();
 }
 
-function looseBeat(narration: string, display: string): SolutionBeat | null {
+const DRAW_PLACES = new Set<DrawPlace>(["left", "center", "right", "stage"]);
+
+function drawId(prompt: string): string {
+  return prompt
+    .toLowerCase()
+    .normalize("NFKC")
+    .replace(/[^\p{L}\p{N}]+/gu, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+}
+
+function readDraw(part: string): DrawCue | undefined {
+  const prompt = part.match(/^Draw:\s*(.+)$/im)?.[1]?.replace(/\s+/g, " ").trim();
+  if (!prompt) return undefined;
+  const id = drawId(prompt);
+  if (!id) return undefined;
+  const word = part.match(/^At:\s*([A-Za-z]+)\s*$/im)?.[1]?.toLowerCase();
+  const normalized = word === "centre" ? "center" : word;
+  const place =
+    normalized && DRAW_PLACES.has(normalized as DrawPlace)
+      ? (normalized as DrawPlace)
+      : "center";
+  return { id, prompt: prompt.slice(0, 160), place };
+}
+
+function looseBeat(narration: string, display: string, draw?: DrawCue): SolutionBeat | null {
   const say = narration.replace(/\s+/g, " ").trim();
   const show = display.trim();
-  if (!say || !show) return null;
-  return { narration: say, display: show };
+  if (!say || (!show && !draw)) return null;
+  const beat: SolutionBeat = { narration: say, display: show };
+  if (draw) beat.draw = draw;
+  return beat;
 }
 
 function finalizeBeat(beat: SolutionBeat): SolutionBeat {
-  return {
+  const next: SolutionBeat = {
     narration: beat.narration.slice(0, 1800),
     display: beat.display.trim().slice(0, 500),
   };
+  if (beat.draw) next.draw = beat.draw;
+  return next;
 }
 
 function splitSentences(text: string): string[] {
@@ -125,6 +174,7 @@ function expandBeat(beat: SolutionBeat): SolutionBeat[] {
     finalizeBeat({
       display,
       narration: groups[index] || narrationWithoutLatex(display),
+      ...(index === 0 && beat.draw ? { draw: beat.draw } : {}),
     }),
   );
 }
@@ -133,9 +183,9 @@ function beatsFromMarkers(text: string): SolutionBeat[] {
   const parts = text.split(/^\s*BEAT\s*$/gim);
   const beats: SolutionBeat[] = [];
   for (const part of parts) {
-    const say = part.match(/Say:\s*([\s\S]*?)(?=\nShow:|$)/i);
-    const show = part.match(/Show:\s*([\s\S]*)$/i);
-    const beat = looseBeat(say?.[1] ?? "", show?.[1] ?? "");
+    const say = part.match(/Say:\s*([\s\S]*?)(?=\n(?:Show|Draw|At):|$)/i);
+    const show = part.match(/Show:\s*([\s\S]*?)(?=\n(?:Draw|At):|$)/i);
+    const beat = looseBeat(say?.[1] ?? "", show?.[1] ?? "", readDraw(part));
     if (beat) beats.push(beat);
   }
   return beats;
@@ -150,7 +200,18 @@ function beatsFromJson(text: string): SolutionBeat[] {
     const beats: SolutionBeat[] = [];
     for (const item of parsed.beats) {
       if (!item || typeof item !== "object") continue;
-      const record = item as { narration?: unknown; say?: unknown; display?: unknown; show?: unknown };
+      const record = item as {
+        narration?: unknown;
+        say?: unknown;
+        display?: unknown;
+        show?: unknown;
+        draw?: unknown;
+        at?: unknown;
+      };
+      const draw =
+        typeof record.draw === "string"
+          ? readDraw(`Draw: ${record.draw}\nAt: ${typeof record.at === "string" ? record.at : "center"}`)
+          : undefined;
       const beat = looseBeat(
         typeof record.narration === "string"
           ? record.narration
@@ -162,6 +223,7 @@ function beatsFromJson(text: string): SolutionBeat[] {
           : typeof record.show === "string"
             ? record.show
             : "",
+        draw,
       );
       if (beat) beats.push(beat);
     }

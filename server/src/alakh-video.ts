@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Resvg } from "@resvg/resvg-js";
@@ -22,6 +22,15 @@ import {
   SOLUTION_VIDEO_SCRIPT_PROMPT,
   type SolutionBeat,
 } from "./alakh-video-script.js";
+import {
+  boardTop,
+  drawingCues,
+  generateChalkSprites,
+  motionDrawSeconds,
+  planFrames,
+  WIPE_FRAMES,
+  type SpriteBox,
+} from "./alakh-motion.js";
 import { replyChatCompletion } from "./reply-client.js";
 import { prepareAlakhNarration } from "./xai.js";
 
@@ -43,9 +52,9 @@ const ACCENT = "#E8B86D";
 type MathSvg = { markup: string; width: number; height: number };
 
 type Row =
-  | { type: "label"; text: string; size: number; color: string; pointed: boolean }
-  | { type: "text"; text: string; size: number; color: string; pointed: boolean }
-  | { type: "math"; math: MathSvg; pointed: boolean };
+  | { type: "label"; text: string; size: number; color: string; pointed: boolean; ink: boolean }
+  | { type: "text"; text: string; size: number; color: string; pointed: boolean; ink: boolean }
+  | { type: "math"; math: MathSvg; pointed: boolean; ink: boolean };
 
 type Jax = {
   outerHTML: (node: unknown) => string;
@@ -142,31 +151,38 @@ function paintMath(svg: string, color: string): MathSvg | null {
   return { markup, width, height };
 }
 
-async function mathRow(tex: string, color: string, pointed: boolean): Promise<Row> {
+async function mathRow(tex: string, color: string, pointed: boolean, ink: boolean): Promise<Row> {
   try {
     const engine = await loadJax();
     const node = engine.convert(tex, { display: false });
     const painted = paintMath(engine.outerHTML(node), color);
-    if (painted) return { type: "math", math: painted, pointed };
+    if (painted) return { type: "math", math: painted, pointed, ink };
   } catch {
     // A broken formula stays on the board as text.
   }
-  return { type: "text", text: tex, size: TEXT_SIZE, color, pointed };
+  return { type: "text", text: tex, size: TEXT_SIZE, color, pointed, ink };
 }
 
 async function rowsForBeat(beat: SolutionBeat, index: number, current: boolean): Promise<Row[]> {
   const color = current ? INK : MUTED;
   const rows: Row[] = [];
   if (current) {
-    rows.push({ type: "label", text: `Step ${index + 1}`, size: TEXT_SIZE, color: ACCENT, pointed: false });
+    rows.push({
+      type: "label",
+      text: `Step ${index + 1}`,
+      size: TEXT_SIZE,
+      color: ACCENT,
+      pointed: false,
+      ink: true,
+    });
   }
   for (const piece of piecesOf(beat.display)) {
     if (piece.kind === "text") {
       for (const line of wrapLines(piece.text, TEXT_SIZE)) {
-        rows.push({ type: "text", text: line, size: TEXT_SIZE, color, pointed: current });
+        rows.push({ type: "text", text: line, size: TEXT_SIZE, color, pointed: current, ink: current });
       }
     } else {
-      rows.push(await mathRow(piece.tex, color, current));
+      rows.push(await mathRow(piece.tex, color, current, current));
     }
   }
   return rows;
@@ -187,9 +203,18 @@ function pointerMarkup(top: number, bottom: number): string {
   <rect x="62" y="${barTop}" width="6" height="${barHeight}" rx="3" fill="${ACCENT}"/>`;
 }
 
-function slideSvg(rows: Row[], index: number, total: number): string {
-  let y = BOARD_TOP;
-  const body: string[] = [];
+type LaidRows = {
+  settled: string[];
+  arriving: string[];
+  pointTop: number | null;
+  pointBottom: number | null;
+};
+
+/** Lines already on the board, then the line that strokes on with this beat. */
+function paintRows(rows: Row[], origin: number): LaidRows {
+  let y = origin;
+  const settled: string[] = [];
+  const arriving: string[] = [];
   let pointTop: number | null = null;
   let pointBottom: number | null = null;
   const mark = (top: number, bottom: number, pointed: boolean) => {
@@ -198,63 +223,160 @@ function slideSvg(rows: Row[], index: number, total: number): string {
     pointBottom = pointBottom == null ? bottom : Math.max(pointBottom, bottom);
   };
   for (const row of rows) {
+    const bucket = row.ink ? arriving : settled;
     if (row.type === "math") {
       const top = y + 8;
       mark(top, top + row.math.height, row.pointed);
       y += 8;
-      body.push(`<g transform="translate(${LEFT} ${y})">${row.math.markup}</g>`);
+      bucket.push(`<g transform="translate(${LEFT} ${y})">${row.math.markup}</g>`);
       y += row.math.height + 8;
       continue;
     }
     const top = y + 4;
     y += row.size;
     mark(top, y + 4, row.pointed);
-    body.push(
+    bucket.push(
       `<text x="${LEFT}" y="${y}" fill="${row.color}" font-family="sans-serif" font-size="${row.size}">${xml(row.text)}</text>`,
     );
     y += 14;
   }
-  if (pointTop != null && pointBottom != null) body.push(pointerMarkup(pointTop, pointBottom));
-  const progress = Math.max(24, Math.round((TEXT_WIDTH * (index + 1)) / total));
+  return { settled, arriving, pointTop, pointBottom };
+}
+
+function svgDoc(body: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}">
-  <rect width="${WIDTH}" height="${HEIGHT}" fill="${BOARD}"/>
-  <rect x="0" y="0" width="8" height="${HEIGHT}" fill="${ACCENT}"/>
-  ${body.join("\n  ")}
-  <rect x="${LEFT}" y="692" width="${TEXT_WIDTH}" height="4" rx="2" fill="#1C2436"/>
-  <rect x="${LEFT}" y="692" width="${progress}" height="4" rx="2" fill="${ACCENT}"/>
+  ${body}
 </svg>`;
 }
 
-function fits(rows: Row[]): boolean {
+function boardChrome(index: number, total: number): string {
+  const progress = Math.max(24, Math.round((TEXT_WIDTH * (index + 1)) / total));
+  return `<rect width="${WIDTH}" height="${HEIGHT}" fill="${BOARD}"/>
+  <rect x="0" y="0" width="8" height="${HEIGHT}" fill="${ACCENT}"/>
+  <rect x="${LEFT}" y="692" width="${TEXT_WIDTH}" height="4" rx="2" fill="#1C2436"/>
+  <rect x="${LEFT}" y="692" width="${progress}" height="4" rx="2" fill="${ACCENT}"/>`;
+}
+
+function pointerOf(laid: LaidRows): string {
+  if (laid.pointTop == null || laid.pointBottom == null) return "";
+  return pointerMarkup(laid.pointTop, laid.pointBottom);
+}
+
+function slideSvg(rows: Row[], index: number, total: number): string {
+  const laid = paintRows(rows, BOARD_TOP);
+  return svgDoc(`${boardChrome(index, total)}
+  ${laid.settled.join("\n  ")}
+  ${laid.arriving.join("\n  ")}
+  ${pointerOf(laid)}`);
+}
+
+type PlacedDrawing = SpriteBox & { dataUri: string };
+
+function drawingTag(sprite: PlacedDrawing): string {
+  return `<image href="${sprite.dataUri}" x="${sprite.x}" y="${sprite.y}" width="${sprite.w}" height="${sprite.h}" preserveAspectRatio="xMidYMid meet"/>`;
+}
+
+/** The doodle strokes across its own box, not after the pen has crossed the whole board. */
+function revealingDrawing(sprite: PlacedDrawing, progress: number): string {
+  const width = Math.max(1, Math.round(sprite.w * progress));
+  const id = `draw-${sprite.id.replace(/[^\p{L}\p{N}_-]+/gu, "")}`;
+  return `<clipPath id="${id}"><rect x="${sprite.x}" y="${sprite.y}" width="${width}" height="${sprite.h}"/></clipPath>
+  <g clip-path="url(#${id})">${drawingTag(sprite)}</g>`;
+}
+
+/** One frame of the stroke. clipWidth grows until the new line and drawing are fully on the board. */
+function motionSvg(
+  rows: Row[],
+  sprites: PlacedDrawing[],
+  clipWidth: number,
+  top: number,
+  index: number,
+  total: number,
+): string {
+  const laid = paintRows(rows, top);
+  const progress = clipWidth / WIDTH;
+  const held = sprites.filter((sprite) => !sprite.reveal).map(drawingTag).join("\n  ");
+  const arriving = sprites
+    .filter((sprite) => sprite.reveal)
+    .map((sprite) => revealingDrawing(sprite, progress))
+    .join("\n  ");
+  return svgDoc(`${boardChrome(index, total)}
+  ${held}
+  ${laid.settled.join("\n  ")}
+  ${arriving}
+  <clipPath id="wipe"><rect x="0" y="0" width="${clipWidth}" height="${HEIGHT}"/></clipPath>
+  <g clip-path="url(#wipe)">
+    ${laid.arriving.join("\n    ")}
+    ${pointerOf(laid)}
+  </g>`);
+}
+
+function fits(rows: Row[], top: number): boolean {
   const height = rows.reduce((sum, row) => sum + rowHeight(row), 0);
-  return BOARD_TOP + height <= BOARD_BOTTOM;
+  return top + height <= BOARD_BOTTOM;
+}
+
+function renderPng(svg: string): Buffer {
+  const font = process.platform === "linux" ? "Liberation Sans" : "Helvetica";
+  return new Resvg(svg, {
+    background: BOARD,
+    font: {
+      loadSystemFonts: true,
+      sansSerifFamily: font,
+      defaultFontFamily: font,
+    },
+  })
+    .render()
+    .asPng();
+}
+
+async function visibleRows(beats: SolutionBeat[], index: number, top: number): Promise<Row[]> {
+  const groups = await Promise.all(
+    beats.slice(0, index + 1).map((beat, beatIndex) => rowsForBeat(beat, beatIndex, beatIndex === index)),
+  );
+  let start = 0;
+  while (start < groups.length - 1 && !fits(groups.slice(start).flat(), top)) start += 1;
+  return groups.slice(start).flat();
 }
 
 /** One PNG per beat. Each frame adds the new step and keeps what still fits above it. */
 export async function renderSolutionFrames(beats: SolutionBeat[]): Promise<Buffer[]> {
-  const font = process.platform === "linux" ? "Liberation Sans" : "Helvetica";
   const frames: Buffer[] = [];
   for (let index = 0; index < beats.length; index += 1) {
-    const groups = await Promise.all(
-      beats.slice(0, index + 1).map((beat, beatIndex) => rowsForBeat(beat, beatIndex, beatIndex === index)),
-    );
-    let start = 0;
-    while (start < groups.length - 1 && !fits(groups.slice(start).flat())) start += 1;
-    const svg = slideSvg(groups.slice(start).flat(), index, beats.length);
-    const png = new Resvg(svg, {
-      background: BOARD,
-      font: {
-        loadSystemFonts: true,
-        sansSerifFamily: font,
-        defaultFontFamily: font,
-      },
-    })
-      .render()
-      .asPng();
-    frames.push(png);
+    const rows = await visibleRows(beats, index, BOARD_TOP);
+    frames.push(renderPng(slideSvg(rows, index, beats.length)));
   }
   return frames;
+}
+
+/**
+ * Twelve frames per beat. The new line, and any new drawing, stroke on from
+ * the left. Drawings already on the board stay fully visible.
+ */
+export async function renderSolutionMotion(
+  beats: SolutionBeat[],
+  chalk: Map<string, Buffer> = new Map(),
+): Promise<Buffer[][]> {
+  const plans = planFrames(beats);
+  const sequences: Buffer[][] = [];
+  for (let index = 0; index < beats.length; index += 1) {
+    const plan = plans[index] ?? { kind: "plain" as const, sprites: [] };
+    const top = boardTop(plan.kind);
+    const rows = await visibleRows(beats, index, top);
+    const sprites: PlacedDrawing[] = plan.sprites.flatMap((sprite) => {
+      const png = chalk.get(sprite.id);
+      if (!png) return [];
+      return [{ ...sprite, dataUri: `data:image/png;base64,${png.toString("base64")}` }];
+    });
+    const frames: Buffer[] = [];
+    for (let step = 1; step <= WIPE_FRAMES; step += 1) {
+      const clipWidth = Math.round((step / WIPE_FRAMES) * WIDTH);
+      frames.push(renderPng(motionSvg(rows, sprites, clipWidth, top, index, beats.length)));
+    }
+    sequences.push(frames);
+  }
+  return sequences;
 }
 
 function run(
@@ -328,22 +450,34 @@ async function probeDuration(path: string): Promise<number> {
 }
 
 export async function assembleSolutionVideo(
-  frames: Buffer[],
+  sequences: Buffer[][],
   audioFiles: string[],
   workDir: string,
 ): Promise<Buffer> {
-  if (frames.length === 0 || frames.length !== audioFiles.length) {
+  if (sequences.length === 0 || sequences.length !== audioFiles.length) {
+    throw new Error("Video frames and audio do not match");
+  }
+  if (sequences.some((frames) => frames.length === 0)) {
     throw new Error("Video frames and audio do not match");
   }
   const durations: number[] = [];
   for (const file of audioFiles) durations.push(await probeDuration(file));
   const holds = slideDurations(durations);
   const clipPaths: string[] = [];
-  for (let index = 0; index < frames.length; index += 1) {
-    const framePath = join(workDir, `frame-${index}.png`);
-    await writeFile(framePath, frames[index]);
+  for (let index = 0; index < sequences.length; index += 1) {
+    const frames = sequences[index] ?? [];
+    const beatDir = join(workDir, `beat-${index}`);
+    await mkdir(beatDir, { recursive: true });
+    for (let frame = 0; frame < frames.length; frame += 1) {
+      const png = frames[frame];
+      if (!png) continue;
+      await writeFile(join(beatDir, `f${String(frame + 1).padStart(3, "0")}.png`), png);
+    }
     const hold = holds[index] ?? 0.4;
     const pad = Math.max(0.05, hold - durations[index]);
+    const draw = Math.min(motionDrawSeconds(hold), hold);
+    const fps = frames.length / draw;
+    const stop = Math.max(0, Math.ceil((hold - draw) * fps - 1e-3));
     const clip = join(workDir, `clip-${index}.mp4`);
     const encodeMs = Math.min(10 * 60_000, Math.max(60_000, Math.ceil(hold * 8_000)));
     await run(
@@ -352,12 +486,12 @@ export async function assembleSolutionVideo(
         "-y",
         "-loglevel",
         "error",
-        "-loop",
-        "1",
         "-framerate",
-        "2",
+        fps.toFixed(3),
+        "-start_number",
+        "1",
         "-i",
-        framePath,
+        join(beatDir, "f%03d.png"),
         "-i",
         audioFiles[index],
         "-f",
@@ -367,23 +501,21 @@ export async function assembleSolutionVideo(
         "-i",
         "anullsrc=r=48000:cl=mono",
         "-filter_complex",
-        "[1:a]aformat=sample_rates=48000:channel_layouts=mono[speech];[2:a]aformat=sample_rates=48000:channel_layouts=mono[gap];[speech][gap]concat=n=2:v=0:a=1[a]",
+        `[0:v]tpad=stop_mode=clone:stop=${stop},format=yuv420p[v];[1:a]aformat=sample_rates=48000:channel_layouts=mono[speech];[2:a]aformat=sample_rates=48000:channel_layouts=mono[gap];[speech][gap]concat=n=2:v=0:a=1[a]`,
         "-map",
-        "0:v",
+        "[v]",
         "-map",
         "[a]",
         "-t",
         hold.toFixed(3),
         "-r",
-        "2",
+        "24",
         "-c:v",
         "libx264",
         "-preset",
         "veryfast",
-        "-tune",
-        "stillimage",
         "-crf",
-        "28",
+        "26",
         "-pix_fmt",
         "yuv420p",
         "-c:a",
@@ -473,7 +605,7 @@ async function scriptBeats(markdown: string): Promise<SolutionBeat[]> {
       );
     }
     if (!spoken.trim()) continue;
-    beats.push({ narration: spoken, display: beat.display });
+    beats.push({ narration: spoken, display: beat.display, ...(beat.draw ? { draw: beat.draw } : {}) });
   }
   return beats;
 }
@@ -495,15 +627,17 @@ async function speakTake(text: string, config: AlakhTtsConfig): Promise<Buffer> 
 }
 
 /**
- * Builds the board video for a written solution: each step appears while
- * Alakh Sir speaks it. Returns null when the voice server or ffmpeg is absent.
+ * Builds the board video for a written solution. Each new line strokes on
+ * while Alakh Sir speaks it. A Draw cue becomes a chalk doodle on the board.
+ * Returns null when the voice server or ffmpeg is absent.
  */
 export async function createSolutionVideo(markdown: string): Promise<Buffer | null> {
   const config = readAlakhTtsConfig();
   if (!config || !(await ffmpegAvailable())) return null;
   const beats = await scriptBeats(markdown);
   if (beats.length === 0) throw new Error("Video script had no beats");
-  const frames = await renderSolutionFrames(beats);
+  const chalk = await generateChalkSprites(drawingCues(beats));
+  const frames = await renderSolutionMotion(beats, chalk);
   const workDir = await mkdtemp(join(tmpdir(), "alakh-solution-"));
   try {
     const audioFiles: string[] = [];
