@@ -256,6 +256,9 @@ async function scriptBeats(markdown: string): Promise<SolutionBeat[]> {
       text: beat.text,
       math: beat.math,
       ...(beat.art ? { art: beat.art } : {}),
+      ...(beat.marks?.length ? { marks: beat.marks } : {}),
+      ...(beat.find ? { find: beat.find } : {}),
+      ...(beat.givens?.length ? { givens: beat.givens } : {}),
     });
   }
   return beats;
@@ -278,8 +281,8 @@ async function speakTake(text: string, config: AlakhTtsConfig): Promise<Buffer> 
 }
 
 /**
- * Builds the explanation video. Each scene is a white frame: the picture,
- * the short explanation, and the equation stroke on while Alakh Sir speaks.
+ * Builds the explanation video. The left pane keeps the reference. The right
+ * pane writes the claim and the equation while Alakh Sir speaks.
  * Returns null when the voice server or ffmpeg is absent.
  */
 export async function createSolutionVideo(markdown: string): Promise<Buffer | null> {

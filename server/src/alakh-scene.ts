@@ -7,13 +7,30 @@ import { TeX } from "mathjax-full/js/input/tex.js";
 import "mathjax-full/js/input/tex/ams/AmsConfiguration.js";
 import { mathjax } from "mathjax-full/js/mathjax.js";
 import { SVG } from "mathjax-full/js/output/svg.js";
-import { chooseLayout, WIPE_FRAMES, type SceneLayout } from "./alakh-motion.js";
-import type { SolutionBeat } from "./alakh-video-script.js";
+import { chooseLayout, usefulArt, WIPE_FRAMES } from "./alakh-motion.js";
+import {
+  classifyShow,
+  lessonMemory,
+  type MarkCue,
+  type SolutionBeat,
+} from "./alakh-video-script.js";
 
 const WIDTH = 1280;
 const HEIGHT = 720;
 const PAPER = "#FFFFFF";
 const INK = "#1C1C1C";
+const MUTED = "#4A5560";
+const MARGIN = 40;
+const LEFT_WITH_ART = 384;
+const LEFT_THIN = 268;
+const GAP = 28;
+const TEXT_SIZE = 26;
+const PRIOR_SIZE = 22;
+const FIND_SIZE = 20;
+const GIVEN_SIZE = 18;
+const MATH_EX = 28;
+const PRIOR_MATH_EX = 18;
+const GIVEN_MATH_EX = 16;
 
 const FONT_DIR = join(dirname(fileURLToPath(import.meta.url)), "../assets/fonts");
 const FONT_FILES = ["NotoSans-Regular.ttf", "NotoSansDevanagari-Regular.ttf"].map((name) =>
@@ -23,10 +40,22 @@ const FONT_FILES = ["NotoSans-Regular.ttf", "NotoSansDevanagari-Regular.ttf"].ma
 type MathSvg = { markup: string; width: number; height: number };
 
 type Block =
+  | { kind: "label"; text: string; size: number; color: string }
   | { kind: "text"; lines: string[]; size: number; color: string }
   | { kind: "math"; math: MathSvg };
 
 type Box = { x: number; y: number; w: number; h: number };
+
+type Page = {
+  left: Box | null;
+  write: Box;
+  picture: Box | null;
+  find: string;
+  givens: string[];
+  marks: MarkCue[];
+  priors: SolutionBeat[];
+  current: SolutionBeat;
+};
 
 type Jax = {
   outerHTML: (node: unknown) => string;
@@ -61,11 +90,21 @@ function xml(text: string): string {
     .replace(/"/g, "&quot;");
 }
 
+function hasDevanagari(text: string): boolean {
+  return /[\u0900-\u097F]/.test(text);
+}
+
+function fontFamily(text: string): string {
+  return hasDevanagari(text)
+    ? "'Noto Sans Devanagari', 'Noto Sans'"
+    : "'Noto Sans', 'Noto Sans Devanagari'";
+}
+
 function glyphWidth(text: string, size: number): number {
   let width = 0;
   for (const char of text) {
     const code = char.codePointAt(0) ?? 0;
-    width += code >= 0x0900 && code <= 0x097f ? size * 0.92 : size * 0.52;
+    width += code >= 0x0900 && code <= 0x097f ? size * 0.72 : size * 0.52;
   }
   return width;
 }
@@ -89,19 +128,6 @@ function wrapLines(text: string, size: number, maxWidth: number): string[] {
   return lines;
 }
 
-function fitText(
-  text: string,
-  width: number,
-  maxSize: number,
-  maxLines: number,
-): { lines: string[]; size: number } {
-  for (let size = maxSize; size >= 26; size -= 2) {
-    const lines = wrapLines(text, size, width);
-    if (lines.length <= maxLines) return { lines, size };
-  }
-  return { lines: wrapLines(text, 26, width).slice(0, maxLines), size: 26 };
-}
-
 function paintMath(svg: string, color: string, pxPerEx: number, maxWidth: number): MathSvg | null {
   const inner = svg.match(/<svg[\s\S]*<\/svg>/)?.[0];
   if (!inner || inner.includes("data-mjx-error")) return null;
@@ -121,128 +147,243 @@ function paintMath(svg: string, color: string, pxPerEx: number, maxWidth: number
   return { markup, width, height };
 }
 
-async function mathBlock(
+async function mathSvg(
   tex: string,
   color: string,
   pxPerEx: number,
   maxWidth: number,
-): Promise<Block | null> {
+): Promise<MathSvg | null> {
   try {
     const engine = await loadJax();
     const node = engine.convert(tex, { display: true });
-    const painted = paintMath(engine.outerHTML(node), color, pxPerEx, maxWidth);
-    if (painted) return { kind: "math", math: painted };
+    return paintMath(engine.outerHTML(node), color, pxPerEx, maxWidth);
   } catch {
-    // A broken formula stays on the canvas as text.
+    return null;
   }
-  return null;
 }
 
 function blockHeight(block: Block): number {
-  if (block.kind === "math") return block.math.height + 36;
-  return block.lines.length * Math.round(block.size * 1.45);
+  if (block.kind === "math") return block.math.height + 16;
+  if (block.kind === "label") return block.size + 10;
+  return block.lines.length * Math.round(block.size * 1.35);
 }
 
-function textColumn(layout: SceneLayout): {
-  x: number;
-  width: number;
-  top: number;
-  bottom: number;
-  align: "start" | "middle";
-} {
-  if (layout === "split") return { x: 656, width: 560, top: 80, bottom: 600, align: "start" };
-  if (layout === "stack") return { x: 80, width: 1120, top: 448, bottom: 680, align: "middle" };
-  return { x: 120, width: 1040, top: 80, bottom: 660, align: "middle" };
+function normalizeBeat(beat: SolutionBeat): SolutionBeat {
+  if (beat.text !== undefined && beat.math !== undefined) return beat;
+  const parts = classifyShow(beat.display ?? "");
+  return {
+    ...beat,
+    text: beat.text ?? parts.text,
+    math: beat.math ?? parts.math,
+  };
 }
 
-function artBox(layout: SceneLayout): Box | null {
-  if (layout === "split") return { x: 48, y: 48, w: 560, h: 560 };
-  if (layout === "stack") return { x: 64, y: 28, w: 1152, h: 400 };
-  return null;
+function claimsOf(text: string): string[] {
+  const parts = text
+    .split(/(?<=[.!?।])\s+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (parts.length <= 1) return text.trim() ? [text.trim()] : [];
+  return [parts[0] ?? "", parts.slice(1).join(" ")].filter(Boolean).slice(0, 2);
 }
 
-async function sceneBlocks(beat: SolutionBeat, layout: SceneLayout): Promise<Block[]> {
-  const column = textColumn(layout);
-  const textSize = layout === "type" ? 52 : layout === "split" ? 40 : 36;
-  const mathEx = layout === "type" ? 58 : layout === "split" ? 36 : 40;
-  const maxLines = layout === "stack" ? 2 : layout === "split" ? 4 : 3;
+function pictureFor(
+  memory: ReturnType<typeof lessonMemory>,
+  pictures: Map<string, Buffer>,
+): { art: NonNullable<SolutionBeat["art"]>; png: Buffer } | null {
+  const art = memory.art;
+  if (!art || !usefulArt(art.prompt) || !pictures.has(art.id)) return null;
+  const png = pictures.get(art.id);
+  return png ? { art, png } : null;
+}
+
+export function lessonPage(
+  beats: SolutionBeat[],
+  index: number,
+  pictures: Map<string, Buffer> = new Map(),
+): { leftWidth: number; hasPicture: boolean; find: string; givens: string[] } {
+  const current = normalizeBeat(beats[index] ?? emptyBeat());
+  const memory = lessonMemory(beats.map(normalizeBeat), index);
+  const picture = pictureFor(memory, pictures);
+  const leftWidth = picture ? LEFT_WITH_ART : memory.find || memory.givens.length ? LEFT_THIN : 0;
+  return {
+    leftWidth,
+    hasPicture: Boolean(picture),
+    find: memory.find,
+    givens: memory.givens,
+  };
+}
+
+function emptyBeat(): SolutionBeat {
+  return { narration: "", display: "", text: "", math: "" };
+}
+
+function pageOf(beats: SolutionBeat[], index: number, pictures: Map<string, Buffer>): Page {
+  const normalized = beats.map(normalizeBeat);
+  const current = normalized[index] ?? emptyBeat();
+  const memory = lessonMemory(normalized, index);
+  const picture = pictureFor(memory, pictures);
+  const leftWidth = picture ? LEFT_WITH_ART : memory.find || memory.givens.length ? LEFT_THIN : 0;
+  const left = leftWidth
+    ? { x: MARGIN, y: MARGIN, w: leftWidth, h: HEIGHT - MARGIN * 2 }
+    : null;
+  const writeX = left ? left.x + left.w + GAP : MARGIN + 16;
+  const write = {
+    x: writeX,
+    y: MARGIN,
+    w: WIDTH - writeX - MARGIN,
+    h: HEIGHT - MARGIN * 2,
+  };
+  const pictureBox =
+    picture && left
+      ? { x: left.x, y: left.y, w: left.w, h: Math.min(left.w, 340) }
+      : null;
+  return {
+    left,
+    write,
+    picture: pictureBox,
+    find: memory.find,
+    givens: memory.givens,
+    marks: memory.marks,
+    priors: memory.priors,
+    current,
+  };
+}
+
+async function textBlock(
+  text: string,
+  width: number,
+  size: number,
+  color: string,
+  maxLines: number,
+): Promise<Block | null> {
+  if (!text) return null;
+  return { kind: "text", lines: wrapLines(text, size, width).slice(0, maxLines), size, color };
+}
+
+async function mathOrText(
+  value: string,
+  width: number,
+  size: number,
+  color: string,
+  pxPerEx: number,
+): Promise<Block | null> {
+  if (!value) return null;
+  const math = await mathSvg(value, color, pxPerEx, width);
+  if (math) return { kind: "math", math };
+  return textBlock(value, width, size, color, 2);
+}
+
+async function referenceBlocks(page: Page): Promise<Block[]> {
+  if (!page.left) return [];
+  const width = page.left.w;
   const blocks: Block[] = [];
-  if (beat.text) {
-    const fitted = fitText(beat.text, column.width, textSize, maxLines);
-    blocks.push({ kind: "text", lines: fitted.lines, size: fitted.size, color: INK });
+  if (page.find) {
+    blocks.push({ kind: "label", text: "Find", size: 14, color: MUTED });
+    const find = await mathOrText(page.find, width, FIND_SIZE, INK, GIVEN_MATH_EX);
+    if (find) blocks.push(find);
   }
-  if (beat.math) {
-    const hero = await mathBlock(beat.math, INK, mathEx, column.width);
-    blocks.push(
-      hero ?? {
-        kind: "text",
-        lines: wrapLines(beat.math, textSize, column.width).slice(0, 2),
-        size: textSize,
-        color: INK,
-      },
-    );
+  if (page.givens.length) {
+    blocks.push({ kind: "label", text: "Given", size: 14, color: MUTED });
+    for (const given of page.givens) {
+      const block = await mathOrText(given, width, GIVEN_SIZE, INK, GIVEN_MATH_EX);
+      if (block) blocks.push(block);
+    }
+  }
+  if (page.marks.length) {
+    const legend = page.marks
+      .map((mark) => (mark.symbol ? `${mark.part} → ${mark.symbol}` : mark.part))
+      .join("   ");
+    const block = await textBlock(legend, width, 16, MUTED, 2);
+    if (block) blocks.push(block);
   }
   return blocks;
 }
 
-function placeBlocks(blocks: Block[], layout: SceneLayout): { y: number } {
-  const column = textColumn(layout);
-  const height = blocks.reduce((sum, block) => sum + blockHeight(block), 0);
-  if (layout === "stack") return { y: column.top };
-  const room = column.bottom - column.top;
-  return { y: column.top + Math.max(0, Math.round((room - height) / 2)) };
-}
-
-function wordsMarkup(blocks: Block[], layout: SceneLayout): string {
-  const column = textColumn(layout);
-  let y = placeBlocks(blocks, layout).y;
-  const anchor = column.align === "middle" ? column.x + column.width / 2 : column.x;
-  const parts: string[] = [];
-  for (const block of blocks) {
-    if (block.kind === "math") {
-      y += 18;
-      const x = column.align === "middle" ? column.x + (column.width - block.math.width) / 2 : column.x;
-      parts.push(`<g transform="translate(${x} ${y})">${block.math.markup}</g>`);
-      y += block.math.height + 18;
-      continue;
+async function writingBlocks(page: Page): Promise<{ prior: Block[]; current: Block[] }> {
+  const width = page.write.w;
+  const prior: Block[] = [];
+  for (const beat of page.priors) {
+    if (beat.text) {
+      const text = await textBlock(claimsOf(beat.text)[0] ?? beat.text, width, PRIOR_SIZE, MUTED, 2);
+      if (text) prior.push(text);
     }
-    const gap = Math.round(block.size * 0.45);
-    for (const line of block.lines) {
-      y += block.size;
-      parts.push(
-        `<text x="${anchor}" y="${y}" text-anchor="${column.align}" fill="${block.color}" font-family="Noto Sans, Noto Sans Devanagari" font-size="${block.size}">${xml(line)}</text>`,
-      );
-      y += gap;
+    if (beat.math) {
+      const math = await mathOrText(beat.math, width, PRIOR_SIZE, MUTED, PRIOR_MATH_EX);
+      if (math) prior.push(math);
     }
   }
-  return parts.join("\n  ");
+  const current: Block[] = [];
+  const claims = claimsOf(page.current.text);
+  for (const claim of claims) {
+    const text = await textBlock(claim, width, TEXT_SIZE, INK, 3);
+    if (text) current.push(text);
+  }
+  if (page.current.math) {
+    const lines = page.current.math.split(/\n|;/).map((part) => part.trim()).filter(Boolean);
+    const parts = lines.length > 1 ? lines.slice(0, 2) : [page.current.math];
+    for (const part of parts) {
+      const math = await mathOrText(part, width, TEXT_SIZE, INK, MATH_EX);
+      if (math) current.push(math);
+    }
+  }
+  return { prior, current };
+}
+
+function paintBlocks(blocks: Block[], x: number, y: number): { markup: string; y: number } {
+  const parts: string[] = [];
+  let cursor = y;
+  for (const block of blocks) {
+    if (block.kind === "math") {
+      parts.push(`<g transform="translate(${x} ${cursor})">${block.math.markup}</g>`);
+      cursor += blockHeight(block);
+      continue;
+    }
+    if (block.kind === "label") {
+      cursor += block.size;
+      parts.push(
+        `<text x="${x}" y="${cursor}" xml:space="preserve" fill="${block.color}" font-family="${fontFamily(block.text)}" font-size="${block.size}">${xml(block.text)}</text>`,
+      );
+      cursor += 8;
+      continue;
+    }
+    const gap = Math.round(block.size * 0.32);
+    for (const line of block.lines) {
+      cursor += block.size;
+      parts.push(
+        `<text x="${x}" y="${cursor}" xml:space="preserve" fill="${block.color}" font-family="${fontFamily(line)}" font-size="${block.size}">${xml(line)}</text>`,
+      );
+      cursor += gap;
+    }
+    cursor += 6;
+  }
+  return { markup: parts.join("\n  "), y: cursor };
 }
 
 function sceneSvg(
-  blocks: Block[],
-  layout: SceneLayout,
+  page: Page,
   art: { dataUri: string } | null,
-  progress: number,
+  reference: Block[],
+  prior: Block[],
+  current: Block[],
+  revealed: number,
+  pictureOpacity: number,
 ): string {
-  const column = textColumn(layout);
-  const picture = artBox(layout);
-  const wordsWidth = Math.max(2, Math.round(column.width * progress));
-  const artWidth = picture ? Math.max(2, Math.round(picture.w * progress)) : 0;
+  const shown = current.slice(0, revealed);
+  const picture = page.picture;
   const pictureMarkup =
-    picture && art
-      ? `<clipPath id="art"><rect x="${picture.x}" y="${picture.y}" width="${artWidth}" height="${picture.h}"/></clipPath>
-  <g clip-path="url(#art)">
-    <image href="${art.dataUri}" x="${picture.x}" y="${picture.y}" width="${picture.w}" height="${picture.h}" preserveAspectRatio="xMidYMid meet"/>
-  </g>`
+    picture && art && pictureOpacity > 0
+      ? `<image href="${art.dataUri}" x="${picture.x}" y="${picture.y}" width="${picture.w}" height="${picture.h}" opacity="${pictureOpacity.toFixed(2)}" preserveAspectRatio="xMidYMid meet"/>`
       : "";
+  const refTop = picture ? picture.y + picture.h + 16 : page.left?.y ?? MARGIN;
+  const ref = page.left ? paintBlocks(reference, page.left.x, refTop) : { markup: "", y: 0 };
+  const writing = paintBlocks([...prior, ...shown], page.write.x, page.write.y);
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}">
   <rect width="${WIDTH}" height="${HEIGHT}" fill="${PAPER}"/>
   ${pictureMarkup}
-  <clipPath id="words"><rect x="${column.x}" y="0" width="${wordsWidth}" height="${HEIGHT}"/></clipPath>
-  <g clip-path="url(#words)">
-    ${wordsMarkup(blocks, layout)}
-  </g>
+  ${ref.markup}
+  ${writing.markup}
 </svg>`;
 }
 
@@ -261,9 +402,10 @@ function renderPng(svg: string): Buffer {
     .asPng();
 }
 
-function layoutOf(beat: SolutionBeat, pictures: Map<string, Buffer>): SceneLayout {
-  if (!beat.art || !pictures.has(beat.art.id)) return "type";
-  return chooseLayout(beat);
+function revealedCount(total: number, progress: number): number {
+  if (total <= 0) return 0;
+  if (progress >= 0.99) return total;
+  return Math.max(1, Math.min(total, Math.ceil(progress * total)));
 }
 
 async function renderBeat(
@@ -272,13 +414,18 @@ async function renderBeat(
   pictures: Map<string, Buffer>,
   progress: number,
 ): Promise<Buffer> {
-  const beat = beats[index];
-  if (!beat) return renderPng(sceneSvg([], "type", null, 1));
-  const layout = layoutOf(beat, pictures);
-  const blocks = await sceneBlocks(beat, layout);
-  const png = beat.art ? pictures.get(beat.art.id) : undefined;
-  const art = png ? { dataUri: `data:image/png;base64,${png.toString("base64")}` } : null;
-  return renderPng(sceneSvg(blocks, layout, art, progress));
+  const page = pageOf(beats, index, pictures);
+  const memory = lessonMemory(beats.map(normalizeBeat), index);
+  const picture = pictureFor(memory, pictures);
+  const art = picture ? { dataUri: `data:image/png;base64,${picture.png.toString("base64")}` } : null;
+  const reference = await referenceBlocks(page);
+  const writing = await writingBlocks(page);
+  const introduced = Boolean(beats[index]?.art && chooseLayout(beats[index] ?? emptyBeat()) === "reference");
+  const pictureOpacity = art ? (introduced ? (progress < 0.2 ? 0 : 1) : 1) : 0;
+  const revealed = revealedCount(writing.current.length, progress);
+  return renderPng(
+    sceneSvg(page, art, reference, writing.prior, writing.current, revealed, pictureOpacity),
+  );
 }
 
 /** The finished white frame for each scene. */
@@ -293,7 +440,7 @@ export async function renderSolutionFrames(
   return frames;
 }
 
-/** The picture, the sentence, and the equation stroke on together. */
+/** The claim and the equation appear in order while the reference stays put. */
 export async function renderSolutionMotion(
   beats: SolutionBeat[],
   pictures: Map<string, Buffer> = new Map(),

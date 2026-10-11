@@ -6,7 +6,9 @@ import { join } from "node:path";
 import test from "node:test";
 import { Resvg } from "@resvg/resvg-js";
 import { chooseLayout, lessonArtCues, lessonArtPrompt, lessonPicturePng } from "../src/alakh-motion.ts";
+import { lessonPage } from "../src/alakh-scene.ts";
 import {
+  lessonMemory,
   narrationWithoutLatex,
   parseSolutionBeats,
   slideDurations,
@@ -79,32 +81,43 @@ test("a picture stays out of the equation, and the words are a separate line", (
 Say: The leaf takes in light. It happens in the green part of the plant. Watch the leaf.
 Text: Light enters the leaf
 Math: -
+Find: rate
+Given: green leaf
 Art: a single leaf
+Mark: leaf=A
 BEAT
 Say: The damping constant comes from the field and the resistance. Write only that formula. Then stop.
-Text: Damping from the field
+Text: Damping comes from the field
 Math: $b = \\frac{B^{2} l^{2}}{R}$
 Art: -`);
   assert.equal(beats[0]?.text, "Light enters the leaf");
   assert.equal(beats[0]?.math, "");
   assert.equal(beats[0]?.art?.id, "a-single-leaf");
-  assert.equal(chooseLayout(beats[0] ?? { math: "" }), "split");
-  assert.equal(beats[1]?.text, "Damping from the field");
+  assert.equal(beats[0]?.find, "rate");
+  assert.deepEqual(beats[0]?.givens, ["green leaf"]);
+  assert.deepEqual(beats[0]?.marks, [{ part: "leaf", symbol: "A" }]);
+  assert.equal(chooseLayout(beats[0] ?? { math: "" }), "reference");
+  assert.equal(beats[1]?.text, "Damping comes from the field");
   assert.match(beats[1]?.math ?? "", /\\frac/);
   assert.equal(beats[1]?.art, undefined);
-  assert.equal(chooseLayout({ art: { prompt: "Diagram of the circuit" }, math: "" }), "stack");
+  assert.equal(chooseLayout({ art: { prompt: "Diagram of the circuit" }, math: "" }), "write");
   assert.match(SOLUTION_VIDEO_SCRIPT_PROMPT, /Never put an equation in Art/);
-  assert.match(lessonArtPrompt("a leaf"), /one or two words/);
+  assert.match(lessonArtPrompt("a leaf"), /no letters/);
   const cues = lessonArtCues([
     { narration: "a", display: "a", text: "a", math: "", art: { id: "sun", prompt: "a sun" } },
     { narration: "b", display: "b", text: "b", math: "", art: { id: "sun", prompt: "a sun" } },
     { narration: "c", display: "c", text: "c", math: "", art: { id: "leaf", prompt: "a leaf" } },
+    { narration: "d", display: "d", text: "d", math: "", art: { id: "tree", prompt: "a tree" } },
   ]);
   assert.deepEqual(
     cues.map((cue) => cue.id),
     ["sun", "leaf"],
   );
   assert.equal(cues[0]?.aspect, "1:1");
+  const memory = lessonMemory(beats, 1);
+  assert.equal(memory.find, "rate");
+  assert.deepEqual(memory.givens, ["green leaf"]);
+  assert.equal(memory.art?.id, "a-single-leaf");
 });
 
 test("frames reveal the steps and mux into one video", async () => {
@@ -269,9 +282,9 @@ test("the canvas is white, and the picture strokes on from the left", async () =
       );
       assert.equal(shot.status, 0);
     }
-    // The object sits in the left half. The first frame has only started the stroke.
-    const hidden = pixel(early, 336, 336);
-    const shown = pixel(late, 336, 336);
+    // The object sits in the left reference. It is held back for the first fifth of the take.
+    const hidden = pixel(early, 232, 210);
+    const shown = pixel(late, 232, 210);
     assert.ok(hidden[0] > 220, `early picture pixel ${hidden.join(",")}`);
     assert.ok(shown[0] < 60 && shown[2] > 120, `late picture pixel ${shown.join(",")}`);
     await writeFile("/tmp/alakh-motion-early.png", await readFile(early));
@@ -279,4 +292,49 @@ test("the canvas is white, and the picture strokes on from the left", async () =
   } finally {
     await rm(workDir, { recursive: true, force: true });
   }
+});
+
+test("givens stay on the left while the right column adds a line", async () => {
+  const sticker = new Resvg(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><circle cx="100" cy="100" r="70" fill="#1F4B99"/></svg>`,
+  )
+    .render()
+    .asPng();
+  const beats = [
+    {
+      narration: "The length is ten centimetres.",
+      display: "length",
+      text: "The strip is ten centimetres long",
+      math: "l = 0.1 m",
+      givens: ["l = 0.1 m"],
+      find: "N",
+      art: { id: "sun", prompt: "a sun" },
+    },
+    {
+      narration: "Write the damping constant.",
+      display: "damping",
+      text: "Damping comes from the field",
+      math: String.raw`b = \frac{B^{2} l^{2}}{R}`,
+    },
+  ];
+  const pictures = new Map([["sun", sticker]]);
+  const first = lessonPage(beats, 0, pictures);
+  const second = lessonPage(beats, 1, pictures);
+  assert.equal(first.leftWidth, 384);
+  assert.equal(second.leftWidth, 384);
+  assert.equal(second.hasPicture, true);
+  assert.equal(second.find, "N");
+  assert.deepEqual(second.givens, ["l = 0.1 m"]);
+  const frames = await renderSolutionFrames(beats, pictures);
+  await writeFile("/tmp/alakh-page-given.png", frames[0] ?? Buffer.alloc(0));
+  await writeFile("/tmp/alakh-page-work.png", frames[1] ?? Buffer.alloc(0));
+  const hindi = await renderSolutionFrames([
+    {
+      narration: "length",
+      display: "length",
+      text: "स्ट्रिप की लंबाई",
+      math: String.raw`l = 0.1\,\mathrm{m}`,
+    },
+  ]);
+  await writeFile("/tmp/alakh-page-hindi.png", hindi[0] ?? Buffer.alloc(0));
 });

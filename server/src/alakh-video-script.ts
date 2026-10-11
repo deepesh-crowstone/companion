@@ -7,8 +7,15 @@ export const SOLUTION_VIDEO_END_GAP_SECONDS = 1.2;
 export type ArtCue = {
   /** Stable name so the same picture is generated once and then reused. */
   id: string;
-  /** What to draw. Labels only; equations and sentences stay out of the picture. */
+  /** What to draw. The picture has no letters. Marks are written beside it. */
   prompt: string;
+};
+
+export type MarkCue = {
+  /** The part of the picture, in a word or two of English. */
+  part: string;
+  /** The symbol that part stands for, such as l or B. */
+  symbol: string;
 };
 
 export type SolutionBeat = {
@@ -16,41 +23,49 @@ export type SolutionBeat = {
   narration: string;
   /** Words and equation joined, for logs and older callers. */
   display: string;
-  /** Short explanation written to fit the space beside or under the picture. */
+  /** The claim written on the right. Not a title. Not the spoken why. */
   text: string;
   /** One formula, without dollar signs. Empty when this scene has no equation. */
   math: string;
-  /** One picture. Where it sits is decided by the layout, not by the script. */
+  /** One picture, only when seeing the thing helps. Reused by id. */
   art?: ArtCue;
+  /** Short legend under the picture. Never drawn inside the image. */
+  marks?: MarkCue[];
+  /** The quantity the problem asks for. Stays pinned on the left. */
+  find?: string;
+  /** Data this beat adds to the pinned given-list. */
+  givens?: string[];
   /** True when Text and Math were written as one scene, so they are not split apart. */
   composed?: boolean;
 };
 
-export const SOLUTION_VIDEO_SCRIPT_PROMPT = `Write a clear explanation video of this solution. Output only beats. Each beat is one finished scene, not a scrolling list.
+export const SOLUTION_VIDEO_SCRIPT_PROMPT = `Write a clear explanation video of this solution. Output only beats. The page is two columns: a left reference, and a right writing column. You name content. You do not pick left or right.
 
 BEAT
-Say: spoken explanation
-Text: words on the white canvas
+Say: the why, spoken
+Text: the claim, one or two short lines
 Math: one equation, or -
-Art: one picture, or -
+Find: the quantity to find, or -
+Given: one given, or -
+Art: one reusable object, or -
+Mark: part=symbol
 
-The video decides where the picture sits, and Text must be written for that space:
-- Art names one object: the picture goes on the left, Text and Math on the right. Text is at most 14 words.
-- Art starts with the word Diagram: the picture is a wide setup, graph, ray, or circuit across the top, and Text sits underneath. Text is at most 16 words.
-- Art is -: there is no picture. Text and Math are alone on the canvas. Text is at most 18 words. Math is the main thing on screen.
-- Math is one equation copied from the solution, written as $...$. Never put an equation in Art or in Text.
-- Art may include a label of one or two English words. No sentences, no Hindi, and no equations inside the picture.
-- Pure algebra has Art: -. Do not invent a new result.
+The page writes Text and Math on the right, in order, at a notebook size. Say is the spoken why. Text is the claim a mute student can follow. Never transcribe Say into Text. Never put an equation in Art or in Text.
+
+Art is - by default. Use Art only when the student must see an object, and only if that object can be drawn honestly. Reuse the same Art wording so the picture stays. At most two pictures in the whole lesson. No circuits, rays, graphs, or rails. No letters, Hindi, or equations inside the picture. Mark names a part in English and the symbol we write in the legend.
+
+Find names what it is asking, once. Given is one number or symbol the problem hands over. Those stay on the left for every later beat. Repeat Find on later beats if you must; do not invent a second unknown.
 
 Open by teaching the problem, before any solving:
-- First beat: what the situation is, in plain speech. Text is a short title. Art may show the physical setup. No equation.
-- Next beats: what it is asking. Name the quantity to find and what kind of answer is expected. Text states that question in one short line.
-- Next beats: the given data, one given per beat. Math shows that single value. Text says what the number means.
+- First beat: what the situation is. Text is the claim. Art only if a single object helps. No equation.
+- Next beats: what it is asking. Find names the quantity. Text states that question in one short line.
+- Next beats: the given data, one Given per beat. Math shows that single value. Text says what the number means.
 - Only after the problem is clear, start the solution.
 
 Then one new idea per beat:
-- Say explains only this scene: why this step, what each symbol means, and how the number came. Do not preview the next line.
-- Explain the idea in words before the formula, and again after it, so a student hearing it for the first time can follow.
+- Say explains only this step: why, what each symbol means, and how the number came.
+- Text is the claim of this step, at most two short lines.
+- Math is one equation copied from the solution, written as $...$. Do not invent a new result.
 - Each Say is at least three sentences, usually four to six. Go slowly.
 - Use as many beats as the working needs. A short idea is about 8 beats. A full numerical is 12 to 20.
 
@@ -74,14 +89,23 @@ function artId(prompt: string): string {
     .slice(0, 48);
 }
 
+const FIELD_STOP = "Say|Show|Text|Math|Art|Draw|At|Find|Given|Mark|Kind";
+
 function field(part: string, name: string): string {
   const match = part.match(
-    new RegExp(
-      `^${name}:\\s*([\\s\\S]*?)(?=\\n(?:Say|Show|Text|Math|Art|Draw|At):|(?![\\s\\S]))`,
-      "im",
-    ),
+    new RegExp(`^${name}:\\s*([\\s\\S]*?)(?=\\n(?:${FIELD_STOP}):|(?![\\s\\S]))`, "im"),
   );
   return (match?.[1] ?? "").replace(/\s+/g, " ").trim();
+}
+
+function fields(part: string, name: string): string[] {
+  const values: string[] = [];
+  const pattern = new RegExp(`^${name}:\\s*(.+)`, "gim");
+  for (const match of part.matchAll(pattern)) {
+    const value = (match[1] ?? "").replace(/\s+/g, " ").trim();
+    if (!blank(value)) values.push(value);
+  }
+  return values;
 }
 
 function blank(value: string): boolean {
@@ -115,19 +139,61 @@ function readArt(part: string): ArtCue | undefined {
   return { id, prompt: prompt.slice(0, 180) };
 }
 
-function looseBeat(narration: string, display: string, art?: ArtCue): SolutionBeat | null {
+function readMarks(part: string): MarkCue[] {
+  const marks: MarkCue[] = [];
+  for (const raw of fields(part, "Mark")) {
+    const pair = raw.match(/^(.+?)\s*=\s*(.+)$/);
+    if (pair?.[1] && pair[2]) {
+      marks.push({ part: pair[1].trim().slice(0, 40), symbol: pair[2].trim().slice(0, 20) });
+      continue;
+    }
+    marks.push({ part: raw.slice(0, 40), symbol: "" });
+  }
+  return marks;
+}
+
+function readGivens(part: string): string[] {
+  return fields(part, "Given").map((value) => stripDollars(value).slice(0, 80)).filter(Boolean);
+}
+
+function extras(
+  beat: SolutionBeat,
+  art?: ArtCue,
+  marks?: MarkCue[],
+  find?: string,
+  givens?: string[],
+): SolutionBeat {
+  if (art) beat.art = art;
+  if (marks?.length) beat.marks = marks;
+  if (find) beat.find = find.slice(0, 80);
+  if (givens?.length) beat.givens = givens.slice(0, 6);
+  return beat;
+}
+
+function looseBeat(
+  narration: string,
+  display: string,
+  art?: ArtCue,
+  marks?: MarkCue[],
+  find?: string,
+  givens?: string[],
+): SolutionBeat | null {
   const say = narration.replace(/\s+/g, " ").trim();
   const show = display.trim();
   const parts = classifyShow(show);
-  if (!say || (!parts.text && !parts.math && !art)) return null;
-  const beat: SolutionBeat = {
-    narration: say,
-    display: show.slice(0, 500),
-    text: parts.text.slice(0, 280),
-    math: parts.math.slice(0, 400),
-  };
-  if (art) beat.art = art;
-  return beat;
+  if (!say || (!parts.text && !parts.math && !art && !find && !givens?.length)) return null;
+  return extras(
+    {
+      narration: say,
+      display: show.slice(0, 500),
+      text: parts.text.slice(0, 280),
+      math: parts.math.slice(0, 400),
+    },
+    art,
+    marks,
+    find,
+    givens,
+  );
 }
 
 function sceneBeat(
@@ -135,33 +201,102 @@ function sceneBeat(
   text: string,
   math: string,
   art?: ArtCue,
+  marks?: MarkCue[],
+  find?: string,
+  givens?: string[],
 ): SolutionBeat | null {
   const say = narration.replace(/\s+/g, " ").trim();
   const words = blank(text) ? "" : text.trim();
   const tex = stripDollars(math);
-  if (!say || (!words && !tex && !art)) return null;
+  if (!say || (!words && !tex && !art && !find && !givens?.length)) return null;
   const display = [words, tex ? `$${tex}$` : ""].filter(Boolean).join(" ");
-  const beat: SolutionBeat = {
-    narration: say.slice(0, 1800),
-    display: display.slice(0, 500),
-    text: words.slice(0, 280),
-    math: tex.slice(0, 400),
-  };
-  if (art) beat.art = art;
-  beat.composed = true;
-  return beat;
+  return extras(
+    {
+      narration: say.slice(0, 1800),
+      display: display.slice(0, 500),
+      text: words.slice(0, 280),
+      math: tex.slice(0, 400),
+      composed: true,
+    },
+    art,
+    marks,
+    find,
+    givens,
+  );
 }
 
 function finalizeBeat(beat: SolutionBeat, reclassify = false): SolutionBeat {
   const parts = reclassify ? classifyShow(beat.display) : { text: beat.text, math: beat.math };
-  const next: SolutionBeat = {
-    narration: beat.narration.slice(0, 1800),
-    display: beat.display.trim().slice(0, 500),
-    text: parts.text.slice(0, 280),
-    math: parts.math.slice(0, 400),
-  };
-  if (beat.art) next.art = beat.art;
-  return next;
+  return extras(
+    {
+      narration: beat.narration.slice(0, 1800),
+      display: beat.display.trim().slice(0, 500),
+      text: parts.text.slice(0, 280),
+      math: parts.math.slice(0, 400),
+    },
+    beat.art,
+    beat.marks,
+    beat.find,
+    beat.givens,
+  );
+}
+
+/** A short assignment of a number, not a derived formula. */
+export function looksLikeGiven(beat: { text?: string; math?: string; givens?: string[] }): boolean {
+  if (beat.givens && beat.givens.length > 0) return true;
+  const line = (beat.math || beat.text || "").replace(/\\,/g, " ").trim();
+  if (!line || /\\frac/.test(line)) return false;
+  return /^(?:[A-Za-z][A-Za-z0-9]*|\\[A-Za-z]+)\s*=\s*[0-9]/.test(line);
+}
+
+function looksLikeFind(beat: { text?: string; find?: string }): boolean {
+  if (beat.find) return true;
+  return /^(find|we need|what we|ज्ञात|निकाल|क्या पूछा)/i.test((beat.text ?? "").trim());
+}
+
+/** Pinned reference and the last two working lines, for the page the student can see. */
+export function lessonMemory(
+  beats: SolutionBeat[],
+  index: number,
+): {
+  find: string;
+  givens: string[];
+  art?: ArtCue;
+  marks: MarkCue[];
+  priors: SolutionBeat[];
+} {
+  const seen = beats.slice(0, Math.max(0, index) + 1);
+  let find = "";
+  const givens: string[] = [];
+  const givenSeen = new Set<string>();
+  let art: ArtCue | undefined;
+  let marks: MarkCue[] = [];
+  for (const beat of seen) {
+    if (beat.find) find = beat.find;
+    else if (!find && looksLikeFind(beat) && (beat.math || beat.text)) {
+      find = (beat.math || beat.text).slice(0, 80);
+    }
+    const added = beat.givens?.length
+      ? beat.givens
+      : looksLikeGiven(beat)
+        ? [beat.math || beat.text]
+        : [];
+    for (const given of added) {
+      const key = given.replace(/\s+/g, " ").trim();
+      if (!key || givenSeen.has(key) || givenSeen.size >= 5) continue;
+      givenSeen.add(key);
+      givens.push(key);
+    }
+    if (beat.art) {
+      art = beat.art;
+      marks = beat.marks ?? [];
+    }
+  }
+  const priors = seen
+    .slice(0, -1)
+    .filter((beat) => !looksLikeGiven(beat) && !looksLikeFind(beat) && (beat.text || beat.math))
+    .slice(-2);
+  return { find, givens, art, marks, priors };
 }
 
 function splitSentences(text: string): string[] {
@@ -242,10 +377,15 @@ function expandBeat(beat: SolutionBeat): SolutionBeat[] {
 function beatFromPart(part: string): SolutionBeat | null {
   const say = field(part, "Say");
   const art = readArt(part);
+  const marks = readMarks(part);
+  const find = blank(field(part, "Find")) ? "" : field(part, "Find");
+  const givens = readGivens(part);
   const text = field(part, "Text");
   const math = field(part, "Math");
-  if (text || math || art) return sceneBeat(say, text, math, art);
-  return looseBeat(say, field(part, "Show"), art);
+  if (text || math || art || find || givens.length) {
+    return sceneBeat(say, text, math, art, marks, find, givens);
+  }
+  return looseBeat(say, field(part, "Show"), art, marks, find, givens);
 }
 
 function beatsFromMarkers(text: string): SolutionBeat[] {
@@ -276,6 +416,10 @@ function beatsFromJson(text: string): SolutionBeat[] {
         math?: unknown;
         art?: unknown;
         draw?: unknown;
+        find?: unknown;
+        given?: unknown;
+        givens?: unknown;
+        marks?: unknown;
       };
       const say =
         typeof record.narration === "string"
@@ -290,12 +434,29 @@ function beatsFromJson(text: string): SolutionBeat[] {
             ? record.draw
             : "";
       const art = artPrompt && !blank(artPrompt) ? readArt(`Art: ${artPrompt}`) : undefined;
-      if (typeof record.text === "string" || typeof record.math === "string" || art) {
+      const find = typeof record.find === "string" ? record.find : "";
+      const givens = Array.isArray(record.givens)
+        ? record.givens.filter((item): item is string => typeof item === "string")
+        : typeof record.given === "string"
+          ? [record.given]
+          : [];
+      const marks = Array.isArray(record.marks)
+        ? record.marks.flatMap((item) => {
+            if (!item || typeof item !== "object") return [];
+            const mark = item as { part?: unknown; symbol?: unknown };
+            if (typeof mark.part !== "string") return [];
+            return [{ part: mark.part, symbol: typeof mark.symbol === "string" ? mark.symbol : "" }];
+          })
+        : [];
+      if (typeof record.text === "string" || typeof record.math === "string" || art || find || givens.length) {
         const beat = sceneBeat(
           say,
           typeof record.text === "string" ? record.text : "",
           typeof record.math === "string" ? record.math : "",
           art,
+          marks,
+          find,
+          givens,
         );
         if (beat) beats.push(beat);
         continue;

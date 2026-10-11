@@ -9,10 +9,10 @@ export const WIPE_FRAMES = 12;
 
 export const LESSON_ART_MODEL = "recraft/recraft-v4.1-flash";
 
-const ART_LIMIT = 8;
+const ART_LIMIT = 2;
 const IMAGE_URL = "https://openrouter.ai/api/v1/images";
 
-export type SceneLayout = "type" | "split" | "stack";
+export type SceneLayout = "write" | "reference";
 
 export type ArtCue = {
   id: string;
@@ -20,31 +20,35 @@ export type ArtCue = {
   aspect: "1:1" | "16:9";
 };
 
-/** How long the new words, equation, and picture take to stroke on. */
+/** How long the new claim and equation take to appear while he speaks. */
 export function motionDrawSeconds(holdSeconds: number): number {
-  return Math.min(1.15, Math.max(0.35, holdSeconds * 0.5));
+  return Math.min(Math.max(0.15, holdSeconds - 0.2), Math.max(0.8, holdSeconds * 0.65));
+}
+
+/** Recraft is for one object. Geometry that it would invent is skipped. */
+export function usefulArt(prompt: string): boolean {
+  const subject = prompt.trim();
+  if (!subject) return false;
+  if (/^(diagram|circuit|graph|ray|rails?)\b/i.test(subject)) return false;
+  return !/\b(circuit|schematic|ray diagram|free body|graph of)\b/i.test(subject);
 }
 
 /**
- * The picture's place is chosen here, then the on-screen sentence is written
- * to fit the space that remains.
- * type: words and the equation alone, centered.
- * split: one object on the left, the explanation on the right.
- * stack: a wide diagram on top, the explanation underneath.
+ * The left pane is a reference only when a picture earned that space.
+ * write: the writing column uses the width that remains after pinned givens.
+ * reference: an object sits on the left, writing stays on the right.
  */
-export function chooseLayout(beat: { art?: { prompt: string }; math: string }): SceneLayout {
-  if (!beat.art) return "type";
-  if (/^diagram\b/i.test(beat.art.prompt.trim()) || beat.math.length > 70) return "stack";
-  return "split";
+export function chooseLayout(beat: { art?: { prompt: string }; math?: string }): SceneLayout {
+  if (!beat.art || !usefulArt(beat.art.prompt)) return "write";
+  return "reference";
 }
 
 export function lessonArtPrompt(subject: string): string {
   return [
     "Flat educational illustration on a pure white background.",
     "Crisp shapes, soft natural colors, generous empty margin, one clear subject.",
-    "No border, no watermark, no equations, no sentences, no paragraphs.",
-    "A label, if any, is one or two words, written in English, naming a part.",
-    "Do not add extra lines, arrows, or marks the subject did not name.",
+    "No border, no watermark, no letters, no text, no numbers, no equations, no labels.",
+    "No arrows or extra marks the subject did not name.",
     `Subject: ${subject}.`,
   ].join(" ");
 }
@@ -55,13 +59,13 @@ export function lessonArtCues(beats: SolutionBeat[]): ArtCue[] {
   const cues: ArtCue[] = [];
   for (const beat of beats) {
     const art = beat.art;
-    if (!art || seen.has(art.id)) continue;
+    if (!art || seen.has(art.id) || !usefulArt(art.prompt)) continue;
     seen.add(art.id);
     if (cues.length >= ART_LIMIT) continue;
     cues.push({
       id: art.id,
       prompt: art.prompt,
-      aspect: chooseLayout(beat) === "stack" ? "16:9" : "1:1",
+      aspect: "1:1",
     });
   }
   return cues;
