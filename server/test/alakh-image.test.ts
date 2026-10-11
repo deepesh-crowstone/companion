@@ -1,16 +1,20 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { parseSolutionCheck } from "../src/alakh-solution.ts";
+import { XAI_CHAT_MODEL } from "../src/mia.ts";
 import { ALAKH_IMAGE_TIMEOUT_MS, chatWithAlakhImage, isXaiConfigured } from "../src/xai.ts";
 
-test("a student photo is solved by Qwen with thinking off", async () => {
-  const previousKey = process.env.REPLY_API_KEY;
-  process.env.REPLY_API_KEY = "test-key";
+test("a student photo is solved by Grok with lighter reasoning", async () => {
+  const previousKey = process.env.XAI_API_KEY;
+  process.env.XAI_API_KEY = "xai-real-key-value-1234567890";
   const originalFetch = globalThis.fetch;
   let sawTimeoutSignal = false;
+  let url = "";
   let body: {
+    model?: string;
     max_tokens?: number;
     temperature?: number;
+    top_p?: number;
     reasoning_effort?: string;
     chat_template_kwargs?: { enable_thinking?: boolean };
     messages?: Array<{
@@ -21,9 +25,10 @@ test("a student photo is solved by Qwen with thinking off", async () => {
 
   let calls = 0;
   let checkBody: typeof body = {};
-  globalThis.fetch = (async (_url, init) => {
+  globalThis.fetch = (async (requestUrl, init) => {
     calls += 1;
     if (calls === 1) {
+      url = String(requestUrl);
       sawTimeoutSignal = init?.signal instanceof AbortSignal;
       body = JSON.parse(String(init?.body));
     } else {
@@ -52,8 +57,11 @@ test("a student photo is solved by Qwen with thinking off", async () => {
       assert.match(turn.markdown, /## Answer/);
       assert.equal(turn.markdown.includes("SOLUTION"), false);
     }
-    assert.equal(body.chat_template_kwargs?.enable_thinking, false);
-    assert.equal(body.reasoning_effort, undefined);
+    assert.equal(url, "https://api.x.ai/v1/chat/completions");
+    assert.equal(body.model, XAI_CHAT_MODEL);
+    assert.equal(body.chat_template_kwargs, undefined);
+    assert.equal(body.top_p, undefined);
+    assert.equal(body.reasoning_effort, "low");
     assert.equal(body.max_tokens, 8192);
     assert.equal(body.temperature, 0.4);
     assert.ok(ALAKH_IMAGE_TIMEOUT_MS >= 240_000);
@@ -69,12 +77,13 @@ test("a student photo is solved by Qwen with thinking off", async () => {
     assert.doesNotMatch(String(system[0]?.content), /cannot render LaTeX/);
     assert.equal(sawTimeoutSignal, true);
     assert.equal(calls, 2);
-    assert.equal(checkBody.chat_template_kwargs?.enable_thinking, true);
+    assert.equal(checkBody.reasoning_effort, "high");
+    assert.equal(checkBody.chat_template_kwargs, undefined);
     assert.match(String(checkBody.messages?.[0]?.content), /Work through it yourself/);
   } finally {
     globalThis.fetch = originalFetch;
-    if (previousKey == null) delete process.env.REPLY_API_KEY;
-    else process.env.REPLY_API_KEY = previousKey;
+    if (previousKey == null) delete process.env.XAI_API_KEY;
+    else process.env.XAI_API_KEY = previousKey;
   }
 });
 

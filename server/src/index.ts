@@ -23,7 +23,6 @@ import { checkDbConnection, initDb } from "./db.js";
 import { recoverInterruptedGenerations } from "./profile-factory/store.js";
 import { checkBucketConnection, isBucketConfigured } from "./storage.js";
 import { isXaiConfigured, verifyXaiConnection } from "./xai.js";
-import { insecureReplyEndpointWarning } from "./reply-client.js";
 
 function validateEnv(): void {
   if (!process.env.JWT_SECRET?.trim()) {
@@ -111,10 +110,6 @@ app.get("/admin", (_req, res) => {
 });
 
 async function main(): Promise<void> {
-  const replyEndpointWarning = insecureReplyEndpointWarning();
-  if (replyEndpointWarning) {
-    console.warn(`⚠ ${replyEndpointWarning}`);
-  }
   await initDb();
   console.log("✓ PostgreSQL schema ready");
   for (const botId of ["riva", "alakh"] as const satisfies readonly TelegramBotId[]) {
@@ -146,7 +141,7 @@ async function main(): Promise<void> {
   app.listen(port, host, async () => {
     console.log(`Zara server listening on http://${host}:${port}`);
     if (!isXaiConfigured()) {
-      console.warn("⚠ XAI_API_KEY is not set. Live voice and companion pictures need it.");
+      console.warn("⚠ XAI_API_KEY is not set. Chat replies, live voice, and companion pictures need it.");
     } else {
       try {
         await verifyXaiConnection();

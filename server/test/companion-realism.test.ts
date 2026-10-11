@@ -31,7 +31,6 @@ import {
 import {
   REPLY_MAX_TOKENS,
   collapseLeadingSystemMessages,
-  insecureReplyEndpointWarning,
   visibleReply,
 } from "../src/reply-client.js";
 import {
@@ -460,19 +459,6 @@ test("reply request keeps one leading system message and a finished think trace"
   );
   assert.equal(visibleReply(answer, "stop"), answer);
   assert.ok(REPLY_MAX_TOKENS >= 4096);
-});
-
-test("non-local HTTP reply endpoint produces a key-free warning", () => {
-  const previous = process.env.REPLY_API_BASE_URL;
-  process.env.REPLY_API_BASE_URL = "http://example.com/v1";
-  try {
-    const warning = insecureReplyEndpointWarning();
-    assert.match(warning ?? "", /unencrypted HTTP/);
-    assert.doesNotMatch(warning ?? "", /REPLY_API_KEY|Bearer/);
-  } finally {
-    if (previous == null) delete process.env.REPLY_API_BASE_URL;
-    else process.env.REPLY_API_BASE_URL = previous;
-  }
 });
 
 test("openers are profile-specific, language-aware, and stable", () => {

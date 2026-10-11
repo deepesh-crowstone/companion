@@ -574,9 +574,9 @@ export async function checkPicture(
     });
     const check = parsePictureCheck(reply);
     if (!check.unknown) return check;
-    console.error("Picture check had no verdict, reading it again without a thinking trace");
+    console.error("Picture check had no verdict, reading it again with lighter reasoning");
   } catch (error) {
-    console.error("Picture check retrying without a thinking trace:", error instanceof Error ? error.message : error);
+    console.error("Picture check retrying with lighter reasoning:", error instanceof Error ? error.message : error);
   }
   try {
     const reply = await replyChatCompletion(messages, {

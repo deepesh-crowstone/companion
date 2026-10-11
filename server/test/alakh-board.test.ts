@@ -611,16 +611,16 @@ test("the picture check reads a verdict and label boxes, and an unreadable reply
 });
 
 function withReplies(reply: (body: Record<string, unknown>, url: string) => Response) {
-  const previousKey = process.env.REPLY_API_KEY;
+  const previousKey = process.env.XAI_API_KEY;
   const previousImageKey = process.env.OPENROUTER_API_KEY;
-  process.env.REPLY_API_KEY = "test-key";
+  process.env.XAI_API_KEY = "xai-real-key-value-1234567890";
   process.env.OPENROUTER_API_KEY = "test-image-key";
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async (url, init) => reply(JSON.parse(String(init?.body)), String(url))) as typeof fetch;
   return () => {
     globalThis.fetch = originalFetch;
-    if (previousKey == null) delete process.env.REPLY_API_KEY;
-    else process.env.REPLY_API_KEY = previousKey;
+    if (previousKey == null) delete process.env.XAI_API_KEY;
+    else process.env.XAI_API_KEY = previousKey;
     if (previousImageKey == null) delete process.env.OPENROUTER_API_KEY;
     else process.env.OPENROUTER_API_KEY = previousImageKey;
   };
@@ -629,19 +629,23 @@ function withReplies(reply: (body: Record<string, unknown>, url: string) => Resp
 const json = (value: unknown) =>
   new Response(JSON.stringify(value), { status: 200, headers: { "Content-Type": "application/json" } });
 
-test("a picture check thinks first, asks for the circled labels, and two reads without a verdict are not trusted", async () => {
+test("a picture check reasons first, asks for the circled labels, and two reads without a verdict are not trusted", async () => {
   const bodies: Record<string, unknown>[] = [];
-  const restore = withReplies((body) => {
+  const urls: string[] = [];
+  const restore = withReplies((body, url) => {
     bodies.push(body);
+    urls.push(url);
     return json({ choices: [{ message: { content: "Looks fine to me." } }] });
   });
   try {
     const check = await checkPicture("a lens", picturePng(), "v = 60 cm", ["F", "2F"]);
     assert.equal(check.unknown, true);
-    const thinking = bodies.map(
-      (body) => (body.chat_template_kwargs as { enable_thinking?: boolean } | undefined)?.enable_thinking === true,
+    assert.ok(urls.every((url) => url === "https://api.x.ai/v1/chat/completions"));
+    assert.deepEqual(
+      bodies.map((body) => body.reasoning_effort),
+      ["high", "low"],
     );
-    assert.deepEqual(thinking, [true, false]);
+    assert.ok(bodies.every((body) => body.chat_template_kwargs === undefined && body.top_p === undefined));
     assert.equal(bodies[0]?.max_tokens, 8192);
     const messages = bodies[0]?.messages as Array<{ role: string; content: unknown }>;
     const user = messages.find((message) => message.role === "user")?.content as Array<{ type: string; text?: string }>;

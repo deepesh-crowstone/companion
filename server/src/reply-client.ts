@@ -1,7 +1,5 @@
 const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
-
-const DEFAULT_REPLY_API_BASE = "http://103.48.50.181:6006/v1";
-const DEFAULT_REPLY_MODEL = "nvidia/Qwen3.6-35B-A3B-NVFP4";
+const XAI_CHAT_URL = "https://api.x.ai/v1/chat/completions";
 
 function envValue(name: string): string | undefined {
   const raw = process.env[name]?.trim().replace(/^['"]|['"]$/g, "");
@@ -15,31 +13,10 @@ function numberEnv(name: string, fallback: number): number {
   return Number.isFinite(value) ? value : fallback;
 }
 
-function replyApiBase(): string {
-  return (envValue("REPLY_API_BASE_URL") ?? DEFAULT_REPLY_API_BASE).replace(
-    /\/+$/,
-    "",
-  );
-}
-
-export function insecureReplyEndpointWarning(): string | null {
-  const base = replyApiBase();
-  try {
-    const url = new URL(base);
-    const localHosts = new Set(["localhost", "127.0.0.1", "::1"]);
-    if (url.protocol === "http:" && !localHosts.has(url.hostname)) {
-      return `Reply API uses unencrypted HTTP (${url.host}). Requests and responses are not protected in transit; keep this only while the configured provider requires HTTP.`;
-    }
-  } catch {
-    return "REPLY_API_BASE_URL is not a valid URL.";
-  }
-  return null;
-}
-
-function replyApiKey(): string {
-  const key = envValue("REPLY_API_KEY");
+function xaiApiKey(): string {
+  const key = envValue("XAI_API_KEY");
   if (!key) {
-    throw new Error("REPLY_API_KEY is not set");
+    throw new Error("XAI_API_KEY is not set");
   }
   return key;
 }
@@ -64,7 +41,10 @@ export type ReplyChatOptions = {
   /** Overrides the default completion budget. Solution write-ups need more than a chat bubble. */
   maxTokens?: number;
   temperature?: number;
-  /** Qwen thinking is on for chat. Long jobs can turn it off so the answer is not spent on the trace. */
+  /**
+   * Grok always reasons. High is the default. A job that only needs a fast
+   * read, or a retry after a slow one, asks for low.
+   */
   thinking?: boolean;
 };
 
@@ -110,19 +90,10 @@ export function collapseLeadingSystemMessages(
   return [{ role: "system", content }, ...messages.slice(end)];
 }
 
-/**
- * Thinking is on. This template prefills a think trace, and those tokens
- * count against max_tokens. A normal follow-up used about 2000 completion
- * tokens before </think> and the answer, so a 1024 cap ended inside the
- * trace. 4096 leaves room for that trace plus the short reply.
- * Visible bubble length is enforced after generation; do not lower this
- * cap to shorten the reply, or the think trace gets cut off before </think>.
- */
+/** Default completion budget for a chat reply. Long lessons pass their own. */
 export const REPLY_MAX_TOKENS = 4096;
 
-/**
- * Generates a reply from the OpenAI-compatible chat server.
- */
+/** Generates a reply from xAI. Photos go through as image parts on the same call. */
 export async function replyChatCompletion(
   messages: ReplyChatMessage[],
   options: ReplyChatOptions = {},
@@ -133,13 +104,12 @@ export async function replyChatCompletion(
   const label = options.label ?? "Chat";
 
   const body = {
-    model: envValue("REPLY_MODEL") ?? DEFAULT_REPLY_MODEL,
+    model: envValue("XAI_CHAT_MODEL") ?? "grok-4.7",
     messages: collapseLeadingSystemMessages(messages),
     stream: false,
     max_tokens: options.maxTokens ?? REPLY_MAX_TOKENS,
     temperature: options.temperature ?? 0.7,
-    top_p: 0.8,
-    chat_template_kwargs: { enable_thinking: options.thinking !== false },
+    reasoning_effort: options.thinking === false ? "low" : "high",
   };
 
   let lastError: Error = new Error(`${label} failed`);
@@ -147,10 +117,10 @@ export async function replyChatCompletion(
   for (let attempt = 0; attempt <= retries; attempt++) {
     let res: Response;
     try {
-      res = await fetch(`${replyApiBase()}/chat/completions`, {
+      res = await fetch(XAI_CHAT_URL, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${replyApiKey()}`,
+          Authorization: `Bearer ${xaiApiKey()}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify(body),

@@ -311,7 +311,7 @@ async function scriptBeats(markdown: string): Promise<SolutionBeat[]> {
     raw = await requestScript(markdown, true);
   } catch (error) {
     console.error(
-      "Alakh video script retrying without a thinking trace:",
+      "Alakh video script retrying with lighter reasoning:",
       error instanceof Error ? error.message : error,
     );
     raw = await requestScript(markdown, false);
@@ -440,7 +440,7 @@ async function requestLessonScript(
     });
   } catch (error) {
     console.error(
-      `${label} retrying without a thinking trace:`,
+      `${label} retrying with lighter reasoning:`,
       error instanceof Error ? error.message : error,
     );
     return replyChatCompletion(messages, {
@@ -476,7 +476,7 @@ async function reviewBoardScript(boards: LessonBoard[], solution: string): Promi
     });
   } catch (error) {
     console.error(
-      "Board script review retrying without a thinking trace:",
+      "Board script review retrying with lighter reasoning:",
       error instanceof Error ? error.message : error,
     );
     try {
