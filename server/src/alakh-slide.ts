@@ -25,17 +25,17 @@ const FONT_FILES = ["NotoSans-Regular.ttf", "NotoSansDevanagari-Regular.ttf"].ma
   join(FONT_DIR, name),
 );
 
-type MathSvg = { markup: string; width: number; height: number };
+export type MathSvg = { markup: string; width: number; height: number };
 type WellBlock = { kind: "text"; line: string } | { kind: "math"; math: MathSvg };
 
-type Jax = {
+export type Jax = {
   outerHTML: (node: unknown) => string;
   convert: (tex: string, options: { display: boolean }) => unknown;
 };
 
 let jaxPromise: Promise<Jax> | null = null;
 
-function loadJax(): Promise<Jax> {
+export function loadJax(): Promise<Jax> {
   if (!jaxPromise) {
     jaxPromise = Promise.resolve().then(() => {
       const adaptor = liteAdaptor();
@@ -53,7 +53,7 @@ function loadJax(): Promise<Jax> {
   return jaxPromise;
 }
 
-function xml(text: string): string {
+export function xml(text: string): string {
   return text
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -61,13 +61,13 @@ function xml(text: string): string {
     .replace(/"/g, "&quot;");
 }
 
-function fontFamily(text: string): string {
+export function fontFamily(text: string): string {
   return /[\u0900-\u097F]/.test(text)
     ? "'Noto Sans Devanagari', 'Noto Sans'"
     : "'Noto Sans', 'Noto Sans Devanagari'";
 }
 
-function paintMath(svg: string, pxPerEx: number, maxWidth: number): MathSvg | null {
+export function paintMath(svg: string, pxPerEx: number, maxWidth: number): MathSvg | null {
   const inner = svg.match(/<svg[\s\S]*<\/svg>/)?.[0];
   if (!inner || inner.includes("data-mjx-error")) return null;
   const box = inner.match(/viewBox="([^"]+)"/)?.[1]?.trim().split(/\s+/).map(Number);
@@ -196,7 +196,7 @@ function slideSvg(
 </svg>`;
 }
 
-function renderPng(svg: string): Buffer {
+export function renderPng(svg: string): Buffer {
   return new Resvg(svg, {
     background: PAPER,
     font: {

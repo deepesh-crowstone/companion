@@ -8,7 +8,9 @@ import {
   synthesizeAlakhSpeech,
   type AlakhTtsConfig,
 } from "./alakh-tts.js";
-import { generateLessonPictures, motionDrawSeconds } from "./alakh-motion.js";
+import { prepareBoards, renderBoardMotion } from "./alakh-board.js";
+import { BOARD_SCRIPT_PROMPT, parseBoardScript, type LessonBoard } from "./alakh-board-script.js";
+import { generateLessonPictures, motionDrawSeconds, openRouterKey } from "./alakh-motion.js";
 import { renderSolutionFrames, renderSolutionMotion } from "./alakh-scene.js";
 import { generateSlidePlates, renderSlideMotion } from "./alakh-slide.js";
 import { parseSlideScript, SLIDE_SCRIPT_PROMPT, type LessonSlide } from "./alakh-slide-script.js";
@@ -332,56 +334,74 @@ export function solutionVideoUsesSlides(): boolean {
   return process.env.ALAKH_VIDEO_SLIDES?.trim() === "1";
 }
 
-async function scriptSlides(markdown: string): Promise<LessonSlide[]> {
-  let raw: string;
+/** Boards are opt-in and win over slides. Each board is drawn whole by the image model. */
+export function solutionVideoUsesBoards(): boolean {
+  return process.env.ALAKH_VIDEO_BOARD?.trim() === "1";
+}
+
+async function requestLessonScript(prompt: string, markdown: string, label: string): Promise<string> {
+  const messages = [
+    { role: "system", content: prompt },
+    { role: "user", content: markdown },
+  ];
   try {
-    raw = await replyChatCompletion(
-      [
-        { role: "system", content: SLIDE_SCRIPT_PROMPT },
-        { role: "user", content: markdown },
-      ],
-      {
-        timeoutMs: 180_000,
-        maxTokens: 12288,
-        temperature: 0.3,
-        retries: 0,
-        thinking: true,
-        label: "Slide script",
-      },
-    );
+    return await replyChatCompletion(messages, {
+      timeoutMs: 180_000,
+      maxTokens: 12288,
+      temperature: 0.3,
+      retries: 0,
+      thinking: true,
+      label,
+    });
   } catch (error) {
     console.error(
-      "Slide script retrying without a thinking trace:",
+      `${label} retrying without a thinking trace:`,
       error instanceof Error ? error.message : error,
     );
-    raw = await replyChatCompletion(
-      [
-        { role: "system", content: SLIDE_SCRIPT_PROMPT },
-        { role: "user", content: markdown },
-      ],
-      {
-        timeoutMs: 180_000,
-        maxTokens: 8192,
-        temperature: 0.3,
-        retries: 0,
-        thinking: false,
-        label: "Slide script",
-      },
-    );
+    return replyChatCompletion(messages, {
+      timeoutMs: 180_000,
+      maxTokens: 8192,
+      temperature: 0.3,
+      retries: 0,
+      thinking: false,
+      label,
+    });
   }
+}
+
+async function spokenNarration(text: string): Promise<string> {
+  const plain = narrationWithoutLatex(text);
+  try {
+    return (await prepareAlakhNarration(plain)).trim() || plain;
+  } catch (error) {
+    console.error(
+      "Alakh narration rewrite failed:",
+      error instanceof Error ? error.message : error,
+    );
+    return plain;
+  }
+}
+
+async function scriptBoards(markdown: string): Promise<LessonBoard[]> {
+  const raw = await requestLessonScript(BOARD_SCRIPT_PROMPT, markdown, "Board script");
+  const parsed = parseBoardScript(raw);
+  const boards = await Promise.all(
+    parsed.boards.map(async (board) => {
+      const steps = await Promise.all(
+        board.steps.map(async (step) => ({ ...step, narration: await spokenNarration(step.narration) })),
+      );
+      return { ...board, steps: steps.filter((step) => step.narration.trim()) };
+    }),
+  );
+  return boards.filter((board) => board.steps.length > 0);
+}
+
+async function scriptSlides(markdown: string): Promise<LessonSlide[]> {
+  const raw = await requestLessonScript(SLIDE_SCRIPT_PROMPT, markdown, "Slide script");
   const parsed = parseSlideScript(raw);
   const slides: LessonSlide[] = [];
   for (const slide of parsed.slides) {
-    const plain = narrationWithoutLatex(slide.narration);
-    let spoken = plain;
-    try {
-      spoken = (await prepareAlakhNarration(plain)).trim() || plain;
-    } catch (error) {
-      console.error(
-        "Alakh narration rewrite failed:",
-        error instanceof Error ? error.message : error,
-      );
-    }
+    const spoken = await spokenNarration(slide.narration);
     if (!spoken.trim()) continue;
     slides.push({ ...slide, narration: spoken });
   }
@@ -441,11 +461,54 @@ export async function createSlideVideo(markdown: string): Promise<Buffer | null>
 }
 
 /**
- * Builds the explanation video. Slides run only when ALAKH_VIDEO_SLIDES=1.
- * A failed slide video falls back to the two-column page.
+ * The talk is cut into boards. The image model draws each finished board; a
+ * vision check reads it back. Lines are wiped on while Alakh Sir explains them.
+ * Returns null when the voice, ffmpeg, the image key, or the board script is absent.
+ */
+export async function createBoardVideo(markdown: string): Promise<Buffer | null> {
+  const config = readAlakhTtsConfig();
+  if (!config || !openRouterKey() || !(await ffmpegAvailable())) return null;
+  const boards = await scriptBoards(markdown);
+  if (boards.length === 0) return null;
+  const steps = boards.flatMap((board) => board.steps);
+  const workDir = await mkdtemp(join(tmpdir(), "alakh-boards-"));
+  try {
+    const [prepared, audioFiles] = await Promise.all([
+      prepareBoards(boards, markdown),
+      (async () => {
+        const files: string[] = [];
+        for (let index = 0; index < steps.length; index += 1) {
+          const step = steps[index];
+          if (step) files.push(await recordNarration(step.narration, config, workDir, index));
+        }
+        return files;
+      })(),
+    ]);
+    return await assembleSolutionVideo(renderBoardMotion(prepared), audioFiles, workDir);
+  } finally {
+    await rm(workDir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Builds the explanation video. Boards run only when ALAKH_VIDEO_BOARD=1,
+ * slides only when ALAKH_VIDEO_SLIDES=1. A failure falls through to the
+ * next one, and the two-column page is always last.
  * Returns null when the voice server or ffmpeg is absent.
  */
 export async function createSolutionVideo(markdown: string): Promise<Buffer | null> {
+  if (solutionVideoUsesBoards()) {
+    try {
+      const video = await createBoardVideo(markdown);
+      if (video) return video;
+      console.error("Board video had no boards, trying the next video");
+    } catch (error) {
+      console.error(
+        "Board video failed, trying the next video:",
+        error instanceof Error ? error.message : error,
+      );
+    }
+  }
   if (solutionVideoUsesSlides()) {
     try {
       const video = await createSlideVideo(markdown);

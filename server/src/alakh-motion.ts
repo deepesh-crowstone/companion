@@ -71,12 +71,16 @@ export function lessonArtCues(beats: SolutionBeat[]): ArtCue[] {
   return cues;
 }
 
-function openRouterKey(): string | null {
+export function openRouterKey(): string | null {
   const key = process.env.OPENROUTER_API_KEY?.trim().replace(/^['"]|['"]$/g, "");
   return key || null;
 }
 
-async function postImage(body: Record<string, unknown>, key: string): Promise<Buffer> {
+async function postImage(
+  body: Record<string, unknown>,
+  key: string,
+  timeoutMs = 60_000,
+): Promise<Buffer> {
   const response = await fetch(IMAGE_URL, {
     method: "POST",
     headers: {
@@ -84,7 +88,7 @@ async function postImage(body: Record<string, unknown>, key: string): Promise<Bu
       "Content-Type": "application/json",
     },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(60_000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   if (!response.ok) {
     const err = await response.text();
@@ -137,6 +141,16 @@ export async function lessonPicturePng(bytes: Buffer): Promise<Buffer> {
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+}
+
+/** Any OpenRouter image request, returned as PNG. */
+export async function requestLessonImage(
+  body: Record<string, unknown>,
+  timeoutMs = 60_000,
+): Promise<Buffer> {
+  const key = openRouterKey();
+  if (!key) throw new Error("OPENROUTER_API_KEY is not set");
+  return lessonPicturePng(await postImage(body, key, timeoutMs));
 }
 
 export async function generateLessonArt(subject: string, aspect: ArtCue["aspect"]): Promise<Buffer> {
