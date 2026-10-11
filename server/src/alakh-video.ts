@@ -10,6 +10,8 @@ import {
 } from "./alakh-tts.js";
 import { generateLessonPictures, motionDrawSeconds } from "./alakh-motion.js";
 import { renderSolutionFrames, renderSolutionMotion } from "./alakh-scene.js";
+import { generateSlidePlates, renderSlideMotion } from "./alakh-slide.js";
+import { parseSlideScript, SLIDE_SCRIPT_PROMPT, type LessonSlide } from "./alakh-slide-script.js";
 import {
   narrationWithoutLatex,
   parseSolutionBeats,
@@ -280,12 +282,118 @@ async function speakTake(text: string, config: AlakhTtsConfig): Promise<Buffer> 
   throw last;
 }
 
+async function recordNarration(
+  text: string,
+  config: AlakhTtsConfig,
+  workDir: string,
+  index: number,
+): Promise<string> {
+  const chunks = alakhSpeechChunks([text], VIDEO_SPEECH_CHARS);
+  const pieces: Buffer[] = [];
+  for (const chunk of chunks) pieces.push(await speakTake(chunk, config));
+  if (pieces.length === 1) {
+    const path = join(workDir, `beat-${index}.ogg`);
+    await writeFile(path, pieces[0]);
+    return path;
+  }
+  const partPaths: string[] = [];
+  for (let part = 0; part < pieces.length; part += 1) {
+    const path = join(workDir, `beat-${index}-${part}.ogg`);
+    await writeFile(path, pieces[part]);
+    partPaths.push(path);
+  }
+  const merged = join(workDir, `beat-${index}.ogg`);
+  const labels = partPaths.map(
+    (_path, part) => `[${part}:a]aformat=sample_rates=48000:channel_layouts=mono[a${part}]`,
+  );
+  const joined = partPaths.map((_path, part) => `[a${part}]`).join("");
+  await run(
+    ffmpegBin(),
+    [
+      "-y",
+      "-loglevel",
+      "error",
+      ...partPaths.flatMap((path) => ["-i", path]),
+      "-filter_complex",
+      `${labels.join(";")};${joined}concat=n=${partPaths.length}:v=0:a=1[out]`,
+      "-map",
+      "[out]",
+      "-c:a",
+      "libopus",
+      merged,
+    ],
+    120_000,
+  );
+  return merged;
+}
+
+/** Slides are opt-in. The two-column page stays the video Telegram sends. */
+export function solutionVideoUsesSlides(): boolean {
+  return process.env.ALAKH_VIDEO_SLIDES?.trim() === "1";
+}
+
+async function scriptSlides(markdown: string): Promise<LessonSlide[]> {
+  let raw: string;
+  try {
+    raw = await replyChatCompletion(
+      [
+        { role: "system", content: SLIDE_SCRIPT_PROMPT },
+        { role: "user", content: markdown },
+      ],
+      {
+        timeoutMs: 180_000,
+        maxTokens: 12288,
+        temperature: 0.3,
+        retries: 0,
+        thinking: true,
+        label: "Slide script",
+      },
+    );
+  } catch (error) {
+    console.error(
+      "Slide script retrying without a thinking trace:",
+      error instanceof Error ? error.message : error,
+    );
+    raw = await replyChatCompletion(
+      [
+        { role: "system", content: SLIDE_SCRIPT_PROMPT },
+        { role: "user", content: markdown },
+      ],
+      {
+        timeoutMs: 180_000,
+        maxTokens: 8192,
+        temperature: 0.3,
+        retries: 0,
+        thinking: false,
+        label: "Slide script",
+      },
+    );
+  }
+  const parsed = parseSlideScript(raw);
+  const slides: LessonSlide[] = [];
+  for (const slide of parsed.slides) {
+    const plain = narrationWithoutLatex(slide.narration);
+    let spoken = plain;
+    try {
+      spoken = (await prepareAlakhNarration(plain)).trim() || plain;
+    } catch (error) {
+      console.error(
+        "Alakh narration rewrite failed:",
+        error instanceof Error ? error.message : error,
+      );
+    }
+    if (!spoken.trim()) continue;
+    slides.push({ ...slide, narration: spoken });
+  }
+  return slides;
+}
+
 /**
- * Builds the explanation video. The left pane keeps the reference. The right
- * pane writes the claim and the equation while Alakh Sir speaks.
+ * The two-column page. The left pane keeps the reference. The right pane
+ * writes the claim and the equation while Alakh Sir speaks.
  * Returns null when the voice server or ffmpeg is absent.
  */
-export async function createSolutionVideo(markdown: string): Promise<Buffer | null> {
+export async function createPageVideo(markdown: string): Promise<Buffer | null> {
   const config = readAlakhTtsConfig();
   if (!config || !(await ffmpegAvailable())) return null;
   const beats = await scriptBeats(markdown);
@@ -298,45 +406,57 @@ export async function createSolutionVideo(markdown: string): Promise<Buffer | nu
     for (let index = 0; index < beats.length; index += 1) {
       const beat = beats[index];
       if (!beat) continue;
-      const chunks = alakhSpeechChunks([beat.narration], VIDEO_SPEECH_CHARS);
-      const pieces: Buffer[] = [];
-      for (const chunk of chunks) pieces.push(await speakTake(chunk, config));
-      if (pieces.length === 1) {
-        const path = join(workDir, `beat-${index}.ogg`);
-        await writeFile(path, pieces[0]);
-        audioFiles.push(path);
-        continue;
-      }
-      const partPaths: string[] = [];
-      for (let part = 0; part < pieces.length; part += 1) {
-        const path = join(workDir, `beat-${index}-${part}.ogg`);
-        await writeFile(path, pieces[part]);
-        partPaths.push(path);
-      }
-      const merged = join(workDir, `beat-${index}.ogg`);
-      const labels = partPaths.map(
-        (_path, part) => `[${part}:a]aformat=sample_rates=48000:channel_layouts=mono[a${part}]`,
-      );
-      const joined = partPaths.map((_path, part) => `[a${part}]`).join("");
-      await run(ffmpegBin(), [
-        "-y",
-        "-loglevel",
-        "error",
-        ...partPaths.flatMap((path) => ["-i", path]),
-        "-filter_complex",
-        `${labels.join(";")};${joined}concat=n=${partPaths.length}:v=0:a=1[out]`,
-        "-map",
-        "[out]",
-        "-c:a",
-        "libopus",
-        merged,
-      ],
-      120_000,
-      );
-      audioFiles.push(merged);
+      audioFiles.push(await recordNarration(beat.narration, config, workDir, index));
     }
     return await assembleSolutionVideo(frames, audioFiles, workDir);
   } finally {
     await rm(workDir, { recursive: true, force: true });
   }
+}
+
+/**
+ * The talk is written first, then cut into slides. Each plate stays still.
+ * The well fills while Alakh Sir speaks that slide.
+ * Returns null when the voice, ffmpeg, or the slide script is absent.
+ */
+export async function createSlideVideo(markdown: string): Promise<Buffer | null> {
+  const config = readAlakhTtsConfig();
+  if (!config || !(await ffmpegAvailable())) return null;
+  const slides = await scriptSlides(markdown);
+  if (slides.length === 0) return null;
+  const plates = await generateSlidePlates(slides);
+  const frames = await renderSlideMotion(slides, plates);
+  const workDir = await mkdtemp(join(tmpdir(), "alakh-slides-"));
+  try {
+    const audioFiles: string[] = [];
+    for (let index = 0; index < slides.length; index += 1) {
+      const slide = slides[index];
+      if (!slide) continue;
+      audioFiles.push(await recordNarration(slide.narration, config, workDir, index));
+    }
+    return await assembleSolutionVideo(frames, audioFiles, workDir);
+  } finally {
+    await rm(workDir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Builds the explanation video. Slides run only when ALAKH_VIDEO_SLIDES=1.
+ * A failed slide video falls back to the two-column page.
+ * Returns null when the voice server or ffmpeg is absent.
+ */
+export async function createSolutionVideo(markdown: string): Promise<Buffer | null> {
+  if (solutionVideoUsesSlides()) {
+    try {
+      const video = await createSlideVideo(markdown);
+      if (video) return video;
+      console.error("Slide video had no slides, using the page");
+    } catch (error) {
+      console.error(
+        "Slide video failed, using the page:",
+        error instanceof Error ? error.message : error,
+      );
+    }
+  }
+  return createPageVideo(markdown);
 }
