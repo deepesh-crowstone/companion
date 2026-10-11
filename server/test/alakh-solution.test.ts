@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  ALAKH_TURN_OUTPUT_FORMAT,
   alakhRichMessage,
   parseAlakhTurn,
   plainSolutionFallback,
@@ -32,6 +33,13 @@ $$`;
   assert.match(turn.markdown, /N \\approx 5000/);
   assert.equal(turn.markdown.includes("SOLUTION"), false);
   assert.equal(turn.markdown.split("$$").length > 2, true);
+});
+
+test("academic work is one reply and guidance stays a chat", () => {
+  assert.match(ALAKH_TURN_OUTPUT_FORMAT, /understand a concept/);
+  assert.match(ALAKH_TURN_OUTPUT_FORMAT, /only the part they did not get/);
+  assert.match(ALAKH_TURN_OUTPUT_FORMAT, /if they understood/);
+  assert.match(ALAKH_TURN_OUTPUT_FORMAT, /feel like talking/);
 });
 
 test("a greeting stays chat bubbles", () => {
