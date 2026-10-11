@@ -3,7 +3,8 @@ import { Resvg } from "@resvg/resvg-js";
 import type { LessonBoard } from "./alakh-board-script.js";
 import { requestLessonImage, WIPE_FRAMES } from "./alakh-motion.js";
 import { fontFamily, loadJax, paintMath, renderPng, xml } from "./alakh-slide.js";
-import { xaiChatCompletion } from "./xai-client.js";
+import { replyChatCompletion } from "./reply-client.js";
+import { visionImageUrl } from "./vision-image.js";
 
 const WIDTH = 1280;
 const HEIGHT = 720;
@@ -102,29 +103,21 @@ function boardScript(board: LessonBoard, solution: string): string {
   return `Solution:\n${solution.slice(0, 6000)}\n\nBoard script:\nDiagram: ${board.diagram || "none"}\nLines:\n${lines || "none"}`;
 }
 
-/** A vision model reads the board back. A failed check call keeps the drawing. */
-async function checkBoard(board: LessonBoard, image: Buffer, solution: string): Promise<BoardCheck> {
+/** Qwen reads the board back with thinking off. A failed check call keeps the drawing. */
+export async function checkBoard(board: LessonBoard, image: Buffer, solution: string): Promise<BoardCheck> {
   try {
-    const reply = await xaiChatCompletion(
-      {
-        model: process.env.XAI_CHAT_MODEL?.trim() || "grok-4.7",
-        messages: [
-          { role: "system", content: CHECK_PROMPT },
-          {
-            role: "user",
-            content: [
-              { type: "text", text: boardScript(board, solution) },
-              {
-                type: "image_url",
-                image_url: { url: `data:image/png;base64,${image.toString("base64")}`, detail: "high" },
-              },
-            ],
-          },
-        ],
-        temperature: 0,
-        reasoning_effort: "low",
-      },
-      { timeoutMs: 90_000, label: "Board check" },
+    const reply = await replyChatCompletion(
+      [
+        { role: "system", content: CHECK_PROMPT },
+        {
+          role: "user",
+          content: [
+            { type: "text", text: boardScript(board, solution) },
+            { type: "image_url", image_url: { url: visionImageUrl(image, "image/png") } },
+          ],
+        },
+      ],
+      { timeoutMs: 90_000, maxTokens: 1024, temperature: 0, thinking: false, label: "Board check" },
     );
     return parseBoardCheck(reply);
   } catch (error) {
@@ -372,7 +365,10 @@ export async function writtenBoard(board: LessonBoard): Promise<PreparedBoard> {
   return { board, pixels: fitted.pixels, paper: [255, 255, 255], bands };
 }
 
-/** Draw, read back, correct once, then trust it. Anything that still fails is written by our renderer. */
+/**
+ * Draw, then read the board back. A wrong diagram is erased. A wrong line is
+ * corrected once. Anything that is still wrong is written by our renderer.
+ */
 export async function prepareBoard(
   board: LessonBoard,
   index: number,
@@ -381,8 +377,8 @@ export async function prepareBoard(
   try {
     let image = await drawBoard(board);
     let check = await checkBoard(board, image, solution);
-    if (!check.ok) {
-      console.error(`Board ${index} corrected:`, check.problems.join(" | "));
+    if (!check.ok && !check.linesOk) {
+      console.error(`Board ${index} line corrected:`, check.problems.join(" | "));
       image = await correctBoard(board, image, check.problems);
       check = await checkBoard(board, image, solution);
     }

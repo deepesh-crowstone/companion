@@ -9,7 +9,20 @@ import {
   type AlakhTtsConfig,
 } from "./alakh-tts.js";
 import { prepareBoards, renderBoardMotion } from "./alakh-board.js";
-import { BOARD_SCRIPT_PROMPT, parseBoardScript, type LessonBoard } from "./alakh-board-script.js";
+import {
+  BOARD_SCRIPT_PROMPT,
+  DIAGRAM_FIX_PROMPT,
+  diagramFixRequest,
+  dropInventedLines,
+  equationsNotInSolution,
+  parseDiagramFix,
+  parseFixedLines,
+  parseBoardScript,
+  plainDiagram,
+  spliceFixedLines,
+  vagueDiagram,
+  type LessonBoard,
+} from "./alakh-board-script.js";
 import { generateLessonPictures, motionDrawSeconds, openRouterKey } from "./alakh-motion.js";
 import { renderSolutionFrames, renderSolutionMotion } from "./alakh-scene.js";
 import { generateSlidePlates, renderSlideMotion } from "./alakh-slide.js";
@@ -339,7 +352,12 @@ export function solutionVideoUsesBoards(): boolean {
   return process.env.ALAKH_VIDEO_BOARD?.trim() === "1";
 }
 
-async function requestLessonScript(prompt: string, markdown: string, label: string): Promise<string> {
+async function requestLessonScript(
+  prompt: string,
+  markdown: string,
+  label: string,
+  thinking: boolean,
+): Promise<string> {
   const messages = [
     { role: "system", content: prompt },
     { role: "user", content: markdown },
@@ -347,10 +365,10 @@ async function requestLessonScript(prompt: string, markdown: string, label: stri
   try {
     return await replyChatCompletion(messages, {
       timeoutMs: 180_000,
-      maxTokens: 12288,
+      maxTokens: thinking ? 12288 : 8192,
       temperature: 0.3,
       retries: 0,
-      thinking: true,
+      thinking,
       label,
     });
   } catch (error) {
@@ -369,6 +387,83 @@ async function requestLessonScript(prompt: string, markdown: string, label: stri
   }
 }
 
+const LINE_FIX_PROMPT = `Some lines on a whiteboard use an equation the solution does not contain. Output only corrected lines, in order:
+
+Line: one phrase or one equation copied from the solution
+Say: one spoken sentence for that line
+
+Copy equations exactly. Do not rearrange them or add a step. Keep a line that is already in the solution. Drop a line you cannot fix. No diagram and no explanation.`;
+
+/** One short rewrite when a line invents an equation. Lines that are still invented are dropped. */
+async function repairBoardLines(board: LessonBoard, solution: string): Promise<LessonBoard> {
+  const invented = equationsNotInSolution(board.lines, solution);
+  if (invented.length === 0) return board;
+  console.error("Board equation not in the solution:", invented.join(" | "));
+  try {
+    const raw = await replyChatCompletion(
+      [
+        { role: "system", content: LINE_FIX_PROMPT },
+        {
+          role: "user",
+          content: `Solution:\n${solution.slice(0, 6000)}\n\nLines:\n${board.lines.join("\n")}\n\nNot in the solution:\n${invented.join("\n")}`,
+        },
+      ],
+      {
+        timeoutMs: 60_000,
+        maxTokens: 2048,
+        temperature: 0.2,
+        retries: 0,
+        thinking: false,
+        label: "Board line fix",
+      },
+    );
+    const fixed = parseFixedLines(raw).filter(
+      (item) => equationsNotInSolution([item.line], solution).length === 0,
+    );
+    if (fixed.length > 0) return spliceFixedLines(board, fixed, solution);
+  } catch (error) {
+    console.error("Board line fix failed:", error instanceof Error ? error.message : error);
+  }
+  return dropInventedLines(board, solution);
+}
+
+/** One short rewrite for diagrams that point at another board or are boxes of text. Still vague means no diagram. */
+async function repairDiagrams(boards: LessonBoard[], solution: string): Promise<string[]> {
+  const diagrams = boards.map((board) => board.diagram);
+  const wanted = boards.flatMap((board, index) => (vagueDiagram(board.diagram) ? [index] : []));
+  if (wanted.length === 0) return diagrams;
+  console.error("Board diagrams rewritten:", wanted.join(", "));
+  try {
+    const raw = await replyChatCompletion(
+      [
+        { role: "system", content: DIAGRAM_FIX_PROMPT },
+        { role: "user", content: diagramFixRequest(boards, wanted, solution) },
+      ],
+      {
+        timeoutMs: 60_000,
+        maxTokens: 3072,
+        temperature: 0.2,
+        retries: 0,
+        thinking: false,
+        label: "Board diagram fix",
+      },
+    );
+    const fixed = parseDiagramFix(raw);
+    for (const index of wanted) {
+      const diagram = fixed.get(index);
+      if (diagram !== undefined) diagrams[index] = diagram;
+    }
+  } catch (error) {
+    console.error("Board diagram fix failed:", error instanceof Error ? error.message : error);
+  }
+  return diagrams.map((diagram) => (vagueDiagram(diagram) ? "" : diagram));
+}
+
+async function boardDiagrams(boards: LessonBoard[], solution: string): Promise<string[]> {
+  const diagrams = await repairDiagrams(boards, solution);
+  return diagrams.map((diagram) => plainDiagram(diagram));
+}
+
 async function spokenNarration(text: string): Promise<string> {
   const plain = narrationWithoutLatex(text);
   try {
@@ -383,21 +478,26 @@ async function spokenNarration(text: string): Promise<string> {
 }
 
 async function scriptBoards(markdown: string): Promise<LessonBoard[]> {
-  const raw = await requestLessonScript(BOARD_SCRIPT_PROMPT, markdown, "Board script");
+  const raw = await requestLessonScript(BOARD_SCRIPT_PROMPT, markdown, "Board script", false);
   const parsed = parseBoardScript(raw);
+  const [checked, diagrams] = await Promise.all([
+    Promise.all(parsed.boards.map((board) => repairBoardLines(board, markdown))),
+    boardDiagrams(parsed.boards, markdown),
+  ]);
   const boards = await Promise.all(
-    parsed.boards.map(async (board) => {
+    checked.map(async (board, index) => {
+      board = { ...board, diagram: diagrams[index] ?? board.diagram };
       const steps = await Promise.all(
         board.steps.map(async (step) => ({ ...step, narration: await spokenNarration(step.narration) })),
       );
       return { ...board, steps: steps.filter((step) => step.narration.trim()) };
     }),
   );
-  return boards.filter((board) => board.steps.length > 0);
+  return boards.filter((board) => board.steps.length > 0 && (board.lines.length > 0 || Boolean(board.diagram)));
 }
 
 async function scriptSlides(markdown: string): Promise<LessonSlide[]> {
-  const raw = await requestLessonScript(SLIDE_SCRIPT_PROMPT, markdown, "Slide script");
+  const raw = await requestLessonScript(SLIDE_SCRIPT_PROMPT, markdown, "Slide script", true);
   const parsed = parseSlideScript(raw);
   const slides: LessonSlide[] = [];
   for (const slide of parsed.slides) {

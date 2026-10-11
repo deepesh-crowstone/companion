@@ -419,6 +419,21 @@ test("bounded context keeps recent chronology and verbatim older excerpts", () =
   assert.doesNotMatch(prepared.contextNote, /continuity text 1"/);
 });
 
+test("Alakh context is the last five messages and nothing older", () => {
+  const history = Array.from({ length: 12 }, (_, index) =>
+    message(index + 1, index % 2 === 0 ? "user" : "assistant"),
+  );
+  const prepared = prepareConversationContext(history, new Date("2026-01-02T12:00:00.000Z"), {
+    recentMessages: 5,
+    continuity: false,
+  });
+  assert.equal(prepared.recentMessages.length, 5);
+  assert.match(prepared.recentMessages[0].content, /continuity text 8/);
+  assert.match(prepared.recentMessages[4].content, /continuity text 12/);
+  assert.doesNotMatch(prepared.contextNote, /older user excerpts/);
+  assert.doesNotMatch(prepared.contextNote, /continuity text 7/);
+});
+
 test("reply request keeps one leading system message and a finished think trace", () => {
   const collapsed = collapseLeadingSystemMessages([
     { role: "system", content: "persona" },

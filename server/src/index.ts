@@ -22,19 +22,10 @@ import { isPushConfigured } from "./push-notifications.js";
 import { checkDbConnection, initDb } from "./db.js";
 import { recoverInterruptedGenerations } from "./profile-factory/store.js";
 import { checkBucketConnection, isBucketConfigured } from "./storage.js";
-import { verifyXaiConnection } from "./xai.js";
+import { isXaiConfigured, verifyXaiConnection } from "./xai.js";
 import { insecureReplyEndpointWarning } from "./reply-client.js";
 
 function validateEnv(): void {
-  const key = process.env.XAI_API_KEY?.trim().replace(/^['"]|['"]$/g, "");
-  if (!key || key.includes("your_xai") || key === "test") {
-    console.error(
-      "\n❌  XAI_API_KEY missing or placeholder (set in server/.env or Railway variables)",
-      "\n    If your terminal has export XAI_API_KEY=test, run: unset XAI_API_KEY",
-      "\n    Then add your real key from https://console.x.ai/team/default/api-keys\n",
-    );
-    process.exit(1);
-  }
   if (!process.env.JWT_SECRET?.trim()) {
     console.error("\n❌  JWT_SECRET missing (set in server/.env or Railway variables)\n");
     process.exit(1);
@@ -154,11 +145,15 @@ async function main(): Promise<void> {
 
   app.listen(port, host, async () => {
     console.log(`Zara server listening on http://${host}:${port}`);
-    try {
-      await verifyXaiConnection();
-      console.log("✓ xAI API key verified");
-    } catch (e) {
-      console.error("✗ xAI API key check failed:", e);
+    if (!isXaiConfigured()) {
+      console.warn("⚠ XAI_API_KEY is not set. Live voice and companion pictures need it.");
+    } else {
+      try {
+        await verifyXaiConnection();
+        console.log("✓ xAI API key verified");
+      } catch (e) {
+        console.error("✗ xAI API key check failed:", e);
+      }
     }
   });
 }

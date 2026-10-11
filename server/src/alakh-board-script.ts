@@ -113,6 +113,296 @@ function boardFromPart(part: string): LessonBoard | null {
   return { diagram, lines, steps };
 }
 
+const UNICODE_MATH: Record<string, string> = {
+  "θ": "\\theta",
+  "α": "\\alpha",
+  "β": "\\beta",
+  "γ": "\\gamma",
+  "δ": "\\delta",
+  "Δ": "\\Delta",
+  "λ": "\\lambda",
+  "μ": "\\mu",
+  "π": "\\pi",
+  "ρ": "\\rho",
+  "σ": "\\sigma",
+  "τ": "\\tau",
+  "φ": "\\phi",
+  "ω": "\\omega",
+  "Ω": "\\Omega",
+  "×": "\\times",
+  "·": "\\cdot",
+  "÷": "/",
+  "°": "^\\circ",
+  "²": "^2",
+  "³": "^3",
+  "√": "\\sqrt",
+  "≈": "\\approx",
+  "→": "\\rightarrow",
+};
+
+/** Spacing, wrappers, and \frac become the same plain string the solution can be searched for. */
+export function normalizeMath(value: string): string {
+  let text = value.replace(/[θαβγδΔλμπρστφωΩ×·÷°²³√≈→]/g, (char) => UNICODE_MATH[char] ?? char);
+  text = text.replace(/\\left|\\right/g, "");
+  text = text.replace(/\\(?:text|mathrm|operatorname)\{([^{}]*)\}/g, "$1");
+  for (let guard = 0; guard < 20 && text.includes("\\frac"); guard += 1) {
+    const next = text.replace(/\\frac\{([^{}]*)\}\{([^{}]*)\}/g, (_match, numerator: string, denominator: string) => {
+      const wrap = (part: string) => (/[+\-=]/.test(part) ? `(${part})` : part);
+      return `${wrap(numerator)}/${wrap(denominator)}`;
+    });
+    if (next === text) break;
+    text = next;
+  }
+  return text
+    .replace(/\^\{([^{}]*)\}/g, "^$1")
+    .replace(/_\{([^{}]*)\}/g, "_$1")
+    .replace(/[{}]/g, "")
+    .replace(/\\[,;!: ]/g, "")
+    .replace(/\\/g, "")
+    .replace(/\$/g, "")
+    .replace(/\s+/g, "")
+    .replace(/−/g, "-")
+    .replace(/\((-?\d+(?:\.\d+)?)\)/g, "$1")
+    .toLowerCase();
+}
+
+function mathChunks(solution: string): string[] {
+  const chunks: string[] = [];
+  for (const match of solution.matchAll(/\$\$([\s\S]+?)\$\$|\$([^$\n]+)\$/g)) {
+    chunks.push(normalizeMath(match[1] ?? match[2] ?? ""));
+  }
+  for (const line of solution.split(/\n+/)) chunks.push(normalizeMath(line));
+  return chunks.filter((chunk) => chunk.length > 0);
+}
+
+function mathSpan(text: string): string {
+  const marks = [...text.matchAll(/[0-9A-Za-z\\^_.=+\-*/()θαβγδΔλμπρστφωΩ×·÷°²³√≈→]/g)];
+  const first = marks[0];
+  const last = marks[marks.length - 1];
+  if (!first || !last || first.index === undefined || last.index === undefined) return "";
+  return text.slice(first.index, last.index + last[0].length);
+}
+
+function splitClauses(body: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let index = 0; index < body.length; index += 1) {
+    const char = body[index];
+    if (char === "(" || char === "{") depth += 1;
+    else if (char === ")" || char === "}") depth = Math.max(0, depth - 1);
+    else if (char === "," && depth === 0) {
+      parts.push(body.slice(start, index));
+      start = index + 1;
+    }
+  }
+  parts.push(body.slice(start));
+  return parts.map((part) => part.trim()).filter((part) => part.includes("="));
+}
+
+/** Equations on one board line. A Hindi sentence is not an equation. */
+export function lineEquations(line: string): string[] {
+  const wrapped = [...line.matchAll(/\$\$([\s\S]+?)\$\$|\$([^$\n]+)\$/g)]
+    .map((match) => (match[1] ?? match[2] ?? "").trim())
+    .filter((value) => value.includes("=") || value.includes("\\frac"));
+  if (wrapped.length > 0) return wrapped;
+  if (!line.includes("=")) return [];
+  const colon = line.indexOf(":");
+  const body = colon >= 0 && !line.slice(0, colon).includes("=") ? line.slice(colon + 1) : line;
+  return splitClauses(body)
+    .map((clause) => mathSpan(clause))
+    .filter((clause) => clause.includes("="));
+}
+
+/** Every side of the equation is a whole side of one solution equation, in the same order. */
+function equationAppears(equation: string, solution: string): boolean {
+  const norm = normalizeMath(equation);
+  if (norm.length < 3) return true;
+  const sides = norm.split("=");
+  return mathChunks(solution).some((chunk) => {
+    const chain = chunk.split("=");
+    let at = 0;
+    for (const side of sides) {
+      while (at < chain.length && chain[at] !== side) at += 1;
+      if (at === chain.length) return false;
+      at += 1;
+    }
+    return true;
+  });
+}
+
+function numbersOf(value: string): string[] {
+  return [...value.matchAll(/(?<![\d.])\d+(?:\.\d+)?(?![\d.])/g)].map((match) => match[0]);
+}
+
+/** Equations and numbers on these lines that the solution never wrote. A rearrangement counts as invented. */
+export function equationsNotInSolution(lines: string[], solution: string): string[] {
+  const invented: string[] = [];
+  const present = new Set(numbersOf(solution));
+  for (const line of lines) {
+    for (const equation of lineEquations(line)) {
+      if (!equationAppears(equation, solution)) invented.push(equation);
+    }
+    for (const number of numbersOf(line)) {
+      if (!present.has(number)) invented.push(number);
+    }
+  }
+  return invented;
+}
+
+/** Corrected lines from the short rewrite. A Say, when present, belongs to the line before it. */
+export function parseFixedLines(raw: string): { line: string; say: string }[] {
+  const fixed: { line: string; say: string }[] = [];
+  for (const entry of entriesOf(stripFence(visibleReply(raw)))) {
+    if (entry.key === "line" && !blank(entry.value)) {
+      fixed.push({ line: entry.value.slice(0, 160), say: "" });
+      continue;
+    }
+    const last = fixed[fixed.length - 1];
+    if (entry.key === "say" && last && !last.say && !blank(entry.value)) last.say = entry.value.slice(0, 1200);
+  }
+  return fixed.slice(0, BOARD_LINE_LIMIT);
+}
+
+/** Faithful lines stay. Each invented line is replaced by the next corrected line, in place. */
+export function spliceFixedLines(
+  board: LessonBoard,
+  fixed: { line: string; say: string }[],
+  solution: string,
+): LessonBoard {
+  const lines: string[] = [];
+  const steps: BoardStep[] = [];
+  let cursor = 0;
+  const same = (left: string, right: string) => normalizeMath(left) === normalizeMath(right);
+  for (const step of board.steps) {
+    if (lines.length >= BOARD_LINE_LIMIT) break;
+    if (step.line === null) {
+      steps.push(step);
+      continue;
+    }
+    const original = board.lines[step.line] ?? "";
+    if (equationsNotInSolution([original], solution).length === 0) {
+      const current = fixed[cursor];
+      if (current && same(current.line, original)) cursor += 1;
+      steps.push({ ...step, line: lines.length });
+      lines.push(original);
+      continue;
+    }
+    while (fixed[cursor] && lines.some((line) => same(line, fixed[cursor]?.line ?? ""))) cursor += 1;
+    const replacement = fixed[cursor];
+    cursor += 1;
+    if (!replacement) continue;
+    steps.push({ narration: replacement.say || step.narration, line: lines.length });
+    lines.push(replacement.line);
+  }
+  return { ...board, lines, steps };
+}
+
+/** Drop lines whose equation is not in the solution, and the speech that introduced them. */
+export function dropInventedLines(board: LessonBoard, solution: string): LessonBoard {
+  const kept = board.lines.map((line) => equationsNotInSolution([line], solution).length === 0);
+  const lines = board.lines.filter((_line, index) => kept[index]);
+  const moved = new Map<number, number>();
+  let next = 0;
+  kept.forEach((ok, index) => {
+    if (!ok) return;
+    moved.set(index, next);
+    next += 1;
+  });
+  const steps = board.steps.flatMap((step) => {
+    if (step.line === null) return [step];
+    const line = moved.get(step.line);
+    return line === undefined ? [] : [{ ...step, line }];
+  });
+  return { ...board, lines, steps };
+}
+
+const VAGUE_DIAGRAM = [
+  /\b(?:same|identical)\b[^.]{0,40}\b(?:setup|diagram|picture|figure|incline|lens|circuit|as before)\b/i,
+  /\b(?:as before|previous (?:board|diagram|figure)|from before)\b/i,
+  /\b(?:summary|text|calculation|equation|formula|result)\s+(?:box|block|card|panel)\b/i,
+  /\b(?:box|block|card|panel)\s+(?:showing|with|containing)\s+(?:the\s+)?(?:substitution|calculation|equation|formula|result|text)\b/i,
+  /\bText:/,
+  /^\s*(?:the\s+|an?\s+)?(?:equation|formula|expression|calculation|result)\b/i,
+  /\b(?:equation|formula|expression|calculation)\b[^.]{0,60}\b(?:is|are)\s+(?:written|shown)\b/i,
+];
+
+const LATEX_LABEL: Record<string, string> = {
+  theta: "θ",
+  alpha: "α",
+  beta: "β",
+  gamma: "γ",
+  delta: "δ",
+  Delta: "Δ",
+  lambda: "λ",
+  mu: "μ",
+  pi: "π",
+  rho: "ρ",
+  sigma: "σ",
+  tau: "τ",
+  phi: "φ",
+  omega: "ω",
+  Omega: "Ω",
+  times: "×",
+  cdot: "·",
+  circ: "°",
+};
+
+/** Labels in a diagram are plain text. Dollar signs and LaTeX would be drawn literally. */
+export function plainDiagram(diagram: string): string {
+  return diagram
+    .replace(/\$\$?([^$]+)\$\$?/g, "$1")
+    .replace(/\^\\circ|\^\{\\circ\}/g, "°")
+    .replace(/\\(?:text|mathrm)\{([^{}]*)\}/g, "$1")
+    .replace(/\\frac\{([^{}]*)\}\{([^{}]*)\}/g, "$1/$2")
+    .replace(/\\[,;:! ]/g, " ")
+    .replace(/\\([A-Za-z]+)/g, (match, name: string) =>
+      LATEX_LABEL[name] ?? (/^(?:sin|cos|tan|log|ln)$/.test(name) ? ` ${name} ` : match),
+    )
+    .replace(/[{}\\]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** A diagram the image model cannot draw on its own: a reference to another board, or a box of text. */
+export function vagueDiagram(diagram: string): boolean {
+  return Boolean(diagram) && VAGUE_DIAGRAM.some((pattern) => pattern.test(diagram));
+}
+
+export const DIAGRAM_FIX_PROMPT = `An image model draws each whiteboard board alone. It never sees the other boards. Rewrite the Diagram of each board you are asked for, so it can be drawn by itself.
+
+Output only, for each board you were asked for:
+BOARD n
+Diagram: the whole picture
+
+Rules:
+- Describe the whole picture in two or three sentences. Never "same as before" or "same setup".
+- A physical picture: the setup, the object, the field, the ray, the circuit, the forces, the motion, or a graph. Never a box of text, a summary, or an equation block.
+- Put things where the solution's numbers put them, for example "object 30 cm left of the lens, between F (20 cm) and 2F (40 cm); image 60 cm right, beyond 2F, inverted and twice as tall".
+- Name every label and what it marks. A label is plain text: a symbol, or one or two English words. No dollar signs and no equations.
+- If nothing physical can be drawn for that board, write Diagram: -`;
+
+/** The rewrite request: the solution, every board for context, and which boards to rewrite. */
+export function diagramFixRequest(boards: LessonBoard[], wanted: number[], solution: string): string {
+  const listed = boards
+    .map((board, index) => `BOARD ${index}\nDiagram: ${board.diagram || "-"}\nLines: ${board.lines.join(" | ") || "-"}`)
+    .join("\n\n");
+  return `Solution:\n${solution.slice(0, 6000)}\n\nBoards:\n${listed}\n\nRewrite the Diagram of boards: ${wanted.join(", ")}`;
+}
+
+/** Rewritten diagrams by board index. A board marked "-" gets no diagram. */
+export function parseDiagramFix(raw: string): Map<number, string> {
+  const fixed = new Map<number, string>();
+  const text = stripFence(visibleReply(raw));
+  for (const part of text.split(/^\s*BOARD\s+(?=\d)/gim).slice(1)) {
+    const index = Number(part.match(/^\d+/)?.[0]);
+    if (!Number.isInteger(index)) continue;
+    const diagram = entriesOf(part).find((entry) => entry.key === "diagram")?.value ?? "";
+    fixed.set(index, blank(diagram) ? "" : diagram.slice(0, 400));
+  }
+  return fixed;
+}
+
 /** The talk comes first. Boards are cuts of that talk; each line is written while it is explained. */
 export function parseBoardScript(raw: string): { explain: string; boards: LessonBoard[] } {
   const text = stripFence(visibleReply(raw));

@@ -2,6 +2,8 @@ import type { DbMessage } from "./db.js";
 
 export const MAX_CONTEXT_SOURCE_MESSAGES = 80;
 export const MAX_RECENT_CONTEXT_MESSAGES = 24;
+/** Alakh replies stay inside the reply server's context window. */
+export const ALAKH_RECENT_CONTEXT_MESSAGES = 5;
 const MAX_OLDER_USER_EXCERPTS = 6;
 const MAX_CONTINUITY_CUES = 4;
 const MAX_EXCERPT_CHARS = 180;
@@ -84,10 +86,13 @@ export function selectVerbatimContinuityMessages(
 export function prepareConversationContext(
   history: DbMessage[],
   now = new Date(),
+  options?: { recentMessages?: number; continuity?: boolean },
 ): PreparedConversationContext {
+  const recentLimit = options?.recentMessages ?? MAX_RECENT_CONTEXT_MESSAGES;
   const boundedSource = history.slice(-MAX_CONTEXT_SOURCE_MESSAGES);
-  const recent = boundedSource.slice(-MAX_RECENT_CONTEXT_MESSAGES);
-  const older = boundedSource.slice(0, -MAX_RECENT_CONTEXT_MESSAGES);
+  const recent = boundedSource.slice(-recentLimit);
+  const older =
+    options?.continuity === false ? [] : boundedSource.slice(0, -recent.length);
   const omittedBeforeSource = Math.max(
     0,
     history.length - MAX_CONTEXT_SOURCE_MESSAGES,

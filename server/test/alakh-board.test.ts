@@ -3,6 +3,7 @@ import test from "node:test";
 import { Resvg } from "@resvg/resvg-js";
 import {
   boardImagePrompt,
+  checkBoard,
   findBoardLines,
   fitBoard,
   paperColour,
@@ -12,7 +13,19 @@ import {
   withoutDiagram,
   writtenBoard,
 } from "../src/alakh-board.ts";
-import { BOARD_LIMIT, BOARD_LINE_LIMIT, parseBoardScript } from "../src/alakh-board-script.ts";
+import {
+  BOARD_LIMIT,
+  BOARD_LINE_LIMIT,
+  diagramFixRequest,
+  dropInventedLines,
+  equationsNotInSolution,
+  parseBoardScript,
+  parseDiagramFix,
+  parseFixedLines,
+  plainDiagram,
+  spliceFixedLines,
+  vagueDiagram,
+} from "../src/alakh-board-script.ts";
 import { solutionVideoUsesBoards } from "../src/alakh-video.ts";
 
 const SCRIPT = `EXPLAIN
@@ -44,6 +57,119 @@ test("a board script keeps the picture, the lines, and what is said while each l
   );
   assert.equal(boards[1]?.diagram, "");
   assert.deepEqual(boards[1]?.steps.map((step) => step.line), [0]);
+});
+
+const SOLUTION = String.raw`**दिया है:** $f = +20\,\text{cm}$, $u = -30\,\text{cm}$
+
+$$\frac{1}{v} - \frac{1}{u} = \frac{1}{f}$$
+
+$$\frac{1}{v} = \frac{1}{20} + \frac{1}{-30} = \frac{3 - 2}{60} = \frac{1}{60}$$
+
+$$v = +60\,\text{cm}$$
+
+$$m = \frac{v}{u} = \frac{60}{-30} = -2$$`;
+
+test("a copied equation passes, and a rearrangement or a re-derived step does not", () => {
+  assert.deepEqual(
+    equationsNotInSolution(
+      ["$f = +20\\,\\text{cm}$", "1/v - 1/u = 1/f", "Given: f = +20 cm, u = -30 cm", "m = 60 / -30", "m = -2", "चुंबकीय अवमंदन"],
+      SOLUTION,
+    ),
+    [],
+  );
+  const invented = equationsNotInSolution(
+    ["1/v = 1/f + 1/u", String.raw`$\frac{1}{v} = \frac{1}{20} - \frac{1}{-30}$`],
+    SOLUTION,
+  );
+  assert.equal(invented.length, 2);
+  assert.deepEqual(equationsNotInSolution(["Real and Inverted", "Size is 0.4 times object"], SOLUTION), ["0.4"]);
+  assert.deepEqual(equationsNotInSolution(["m = v/u = -2", "1/v = 1/60"], SOLUTION), []);
+  assert.deepEqual(equationsNotInSolution(["v = 1/60"], SOLUTION), ["v = 1/60"]);
+  assert.deepEqual(equationsNotInSolution(["1/v = 1/6"], SOLUTION), ["1/v = 1/6", "6"]);
+
+  const incline = String.raw`$$ma = mg\sin\theta$$
+
+$$a = g\sin\theta = 10 \times \sin 30^\circ = 10 \times 0.5 = 5\,\text{m/s}^2$$`;
+  assert.deepEqual(
+    equationsNotInSolution(["ma = mg sin θ", "a = g sin θ", "a = 10 × sin 30°", "a = 5 m/s²"], incline),
+    [],
+  );
+  assert.deepEqual(equationsNotInSolution(["a = g cos θ"], incline), ["a = g cos θ"]);
+});
+
+test("an invented line is replaced where it stood, and dropped when the fix is not in the solution", () => {
+  const board = parseBoardScript(`BOARD
+Diagram: a lens
+Say: Look at the lens.
+Line: $f = +20\\,\\text{cm}$
+Say: Focal length is twenty.
+Line: $1/v = 1/f + 1/u$
+Say: Rearranged.
+Line: $m = -2$
+Say: Magnification is minus two.`).boards[0];
+  assert.ok(board);
+  const fixed = parseFixedLines(`Line: $f = +20\\,\\text{cm}$
+Line: $\\frac{1}{v} - \\frac{1}{u} = \\frac{1}{f}$
+Say: The lens formula.
+Line: $m = -2$`);
+  const spliced = spliceFixedLines(board, fixed, SOLUTION);
+  assert.equal(spliced.lines.length, 3);
+  assert.match(spliced.lines[1] ?? "", /\\frac\{1\}\{v\}/);
+  assert.equal(spliced.steps.find((step) => step.line === 1)?.narration, "The lens formula.");
+  assert.equal(spliced.steps.find((step) => step.line === 0)?.narration, "Focal length is twenty.");
+  assert.equal(spliced.steps.find((step) => step.line === 2)?.narration, "Magnification is minus two.");
+
+  const dropped = dropInventedLines(board, SOLUTION);
+  assert.deepEqual(dropped.lines, ["$f = +20\\,\\text{cm}$", "$m = -2$"]);
+  assert.deepEqual(
+    dropped.steps.map((step) => step.line),
+    [null, 0, 1],
+  );
+});
+
+test("diagrams that point at another board or are boxes of text are rewritten", () => {
+  for (const vague of [
+    "Same lens setup as before. A ray passes through F2.",
+    "Same incline and block. An arrow points down the slope.",
+    'Summary box. Text: "Image Distance: 60 cm"',
+    "A simple equation block.",
+    "A calculation block showing the substitution.",
+    "The equation ma = mg sin θ is written clearly. An arrow shows m cancelling.",
+  ]) {
+    assert.equal(vagueDiagram(vague), true, vague);
+  }
+  for (const drawable of [
+    "A convex lens at the centre of a horizontal axis; object 30 cm left, between F (20 cm) and 2F (40 cm).",
+    "A square block on a 30 degree frictionless incline, mg straight down, N perpendicular to the slope.",
+    "",
+  ]) {
+    assert.equal(vagueDiagram(drawable), false, drawable);
+  }
+
+  const boards = parseBoardScript(`BOARD
+Diagram: a lens with the object 30 cm left
+Line: $f = +20\\,\\text{cm}$
+Say: Twenty.
+BOARD
+Diagram: Same lens setup.
+Line: $v = +60\\,\\text{cm}$
+Say: Sixty.`).boards;
+  assert.match(diagramFixRequest(boards, [1], SOLUTION), /BOARD 1\nDiagram: Same lens setup\.\nLines: \$v = \+60/);
+  assert.match(diagramFixRequest(boards, [1], SOLUTION), /Rewrite the Diagram of boards: 1$/);
+
+  const fixed = parseDiagramFix(`BOARD 1
+Diagram: A convex lens, image 60 cm right, beyond 2F, inverted.
+BOARD 3
+Diagram: -`);
+  assert.equal(fixed.get(1), "A convex lens, image 60 cm right, beyond 2F, inverted.");
+  assert.equal(fixed.get(3), "");
+});
+
+test("diagram labels lose their dollar signs and LaTeX", () => {
+  assert.equal(
+    plainDiagram(String.raw`Incline at angle $\theta = 30^\circ$; arrows $mg\sin\theta$ and $N$, mass $2\,\text{kg}$.`),
+    "Incline at angle θ = 30°; arrows mg sin θ and N, mass 2 kg.",
+  );
 });
 
 test("a board keeps at most five lines and a lesson keeps at most eight boards with the last one", () => {
@@ -194,6 +320,39 @@ test("a board that cannot be trusted is written without a diagram, one band per 
   assert.equal(prepared.bands.length, 2);
   assert.ok((prepared.bands[0]?.bottom ?? 0) < (prepared.bands[1]?.top ?? 0));
   assert.ok((prepared.bands[0]?.left ?? 0) < 120);
+});
+
+test("a board check asks Qwen with thinking off", async () => {
+  const previousKey = process.env.REPLY_API_KEY;
+  process.env.REPLY_API_KEY = "test-key";
+  const originalFetch = globalThis.fetch;
+  let body: {
+    max_tokens?: number;
+    chat_template_kwargs?: { enable_thinking?: boolean };
+    messages?: Array<{ role?: string; content?: string | Array<{ type?: string }> }>;
+  } = {};
+  globalThis.fetch = (async (_url, init) => {
+    body = JSON.parse(String(init?.body));
+    return new Response(
+      JSON.stringify({ choices: [{ message: { content: '{"ok": false, "lines_ok": true, "problems": ["ray misses"]}' } }] }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  }) as typeof fetch;
+  try {
+    const board = { diagram: "a lens", lines: ["$v = 60$"], steps: [] };
+    const check = await checkBoard(board, Buffer.from("not-a-png"), "v = 60 cm");
+    assert.equal(check.ok, false);
+    assert.equal(check.linesOk, true);
+    assert.deepEqual(check.problems, ["ray misses"]);
+    assert.equal(body.chat_template_kwargs?.enable_thinking, false);
+    assert.equal(body.max_tokens, 1024);
+    const user = body.messages?.find((message) => message.role === "user");
+    assert.equal(Array.isArray(user?.content), true);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (previousKey == null) delete process.env.REPLY_API_KEY;
+    else process.env.REPLY_API_KEY = previousKey;
+  }
 });
 
 test("boards run only when the flag is 1", () => {

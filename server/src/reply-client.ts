@@ -48,7 +48,14 @@ function isTimeoutError(err: Error): boolean {
   return err.name === "TimeoutError" || err.name === "AbortError";
 }
 
-export type ReplyChatMessage = { role: string; content: string };
+export type ReplyContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
+
+export type ReplyChatMessage = {
+  role: string;
+  content: string | ReplyContentPart[];
+};
 
 export type ReplyChatOptions = {
   timeoutMs?: number;
@@ -97,7 +104,7 @@ export function collapseLeadingSystemMessages(
   if (end <= 1) return messages;
   const content = messages
     .slice(0, end)
-    .map((message) => message.content.trim())
+    .map((message) => (typeof message.content === "string" ? message.content.trim() : ""))
     .filter((part) => part.length > 0)
     .join("\n\n");
   return [{ role: "system", content }, ...messages.slice(end)];

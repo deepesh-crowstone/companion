@@ -22,8 +22,11 @@ import {
 } from "./platform-behavior.js";
 import { ALAKH_TURN_OUTPUT_FORMAT, parseAlakhTurn, type AlakhTurn } from "./alakh-solution.js";
 import { replyChatCompletion } from "./reply-client.js";
-import { xaiChatCompletion } from "./xai-client.js";
-import { prepareConversationContext } from "./conversation-context.js";
+import { visionImageUrl } from "./vision-image.js";
+import {
+  ALAKH_RECENT_CONTEXT_MESSAGES,
+  prepareConversationContext,
+} from "./conversation-context.js";
 import type { CompanionProfile } from "./profiles/types.js";
 import {
   addressGuidance,
@@ -188,18 +191,24 @@ function latestUserLanguageInstruction(history: DbMessage[]): string {
 - ${address}`;
 }
 
-function apiKey(): string {
+function readXaiKey(): string | null {
   const raw = process.env.XAI_API_KEY;
-  if (!raw?.trim()) {
+  if (!raw?.trim()) return null;
+  const key = raw.trim().replace(/^['"]|['"]$/g, "");
+  if (key.length < 20 || key.includes("your_xai") || key === "test") return null;
+  return key;
+}
+
+/** Live voice and companion pictures still call xAI. The study bot does not. */
+export function isXaiConfigured(): boolean {
+  return readXaiKey() !== null;
+}
+
+function apiKey(): string {
+  const key = readXaiKey();
+  if (!key) {
     throw new Error(
       "XAI_API_KEY is not set. Copy server/.env.example to server/.env and add your key from https://console.x.ai/",
-    );
-  }
-  // Strip whitespace and accidental surrounding quotes from .env
-  const key = raw.trim().replace(/^['"]|['"]$/g, "");
-  if (key.length < 20 || key.includes("your_xai") || key === "test") {
-    throw new Error(
-      "XAI_API_KEY looks invalid. Use a real key from https://console.x.ai/team/default/api-keys",
     );
   }
   return key;
@@ -595,7 +604,13 @@ ${
       ? ALAKH_TURN_OUTPUT_FORMAT
       : textReplyOutputFormat(profile)
 }`;
-  const context = prepareConversationContext(history);
+  const context = prepareConversationContext(
+    history,
+    new Date(),
+    profileSlug === "alakh"
+      ? { recentMessages: ALAKH_RECENT_CONTEXT_MESSAGES, continuity: false }
+      : undefined,
+  );
 
   const messages: { role: string; content: string }[] = [
     { role: "system", content: systemPrompt },
@@ -645,14 +660,8 @@ export async function chatWithAlakhText(
 
 const IMAGE_MIME = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 
-/**
- * grok-4.7 reasons before it answers, and a printed numerical with a diagram
- * needs the high setting. The default client timeout is 40s and the previous
- * photo timeout was 90s, so the request was aborted while the solution was
- * still being worked out.
- */
+/** A printed numerical can be long. Thinking stays off so the budget is the answer. */
 export const ALAKH_IMAGE_TIMEOUT_MS = 240_000;
-export const ALAKH_IMAGE_REASONING_EFFORT = "high";
 
 /** Alakh Sir looks at a student's photo and answers in the text-chat voice. */
 export async function chatWithAlakhImage(input: {
@@ -668,7 +677,10 @@ export async function chatWithAlakhImage(input: {
     : "The student sent this photo and did not add a caption.";
   const profileSlug = "alakh";
   const profile = profileForSlug(profileSlug);
-  const context = prepareConversationContext(input.history);
+  const context = prepareConversationContext(input.history, new Date(), {
+    recentMessages: ALAKH_RECENT_CONTEXT_MESSAGES,
+    continuity: false,
+  });
   const systemPrompt = `${buildTextSystemPrompt(profileSlug)}
 
 ${moodPromptForMood("friendly", profile)}
@@ -691,31 +703,26 @@ the student attached a photo:
 
 ${ALAKH_TURN_OUTPUT_FORMAT}`;
 
-  const reply = await xaiChatCompletion(
+  const reply = await replyChatCompletion(
+    [
+      { role: "system", content: systemPrompt },
+      { role: "system", content: context.contextNote },
+      ...context.recentMessages,
+      {
+        role: "user",
+        content: [
+          { type: "text", text: note },
+          { type: "image_url", image_url: { url: visionImageUrl(input.image, mime) } },
+        ],
+      },
+    ],
     {
-      model: process.env.XAI_CHAT_MODEL?.trim() || "grok-4.7",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "system", content: context.contextNote },
-        ...context.recentMessages,
-        {
-          role: "user",
-          content: [
-            { type: "text", text: note },
-            {
-              type: "image_url",
-              image_url: {
-                url: `data:${mime};base64,${input.image.toString("base64")}`,
-                detail: "high",
-              },
-            },
-          ],
-        },
-      ],
+      timeoutMs: ALAKH_IMAGE_TIMEOUT_MS,
+      maxTokens: 8192,
       temperature: 0.4,
-      reasoning_effort: ALAKH_IMAGE_REASONING_EFFORT,
+      thinking: false,
+      label: "Image",
     },
-    { timeoutMs: ALAKH_IMAGE_TIMEOUT_MS, label: "Image" },
   );
 
   return parseAlakhTurn(reply);
