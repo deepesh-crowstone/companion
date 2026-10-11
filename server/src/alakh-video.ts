@@ -123,6 +123,7 @@ export type VideoDirection = {
 
 /** How far the camera pushes in over one board. */
 export const CAMERA_PUSH = 0.06;
+const BOARD_WRITE_SECONDS = 4.5;
 
 /** Where each step starts within its board, and how long its board lasts. */
 export function cameraTimes(holds: number[], boards: number[]): { start: number; length: number }[] {
@@ -190,7 +191,7 @@ export async function assembleSolutionVideo(
     }
     const hold = holds[index] ?? 0.4;
     const pad = Math.max(0.05, hold - durations[index]);
-    const draw = Math.min(motionDrawSeconds(hold), hold);
+    const draw = Math.min(motionDrawSeconds(hold), hold, direction ? BOARD_WRITE_SECONDS : hold);
     const fps = frames.length / draw;
     const stop = Math.max(0, Math.ceil((hold - draw) * fps - 1e-3));
     const clip = join(workDir, `clip-${index}.mp4`);
@@ -431,8 +432,8 @@ async function requestLessonScript(
   ];
   try {
     return await replyChatCompletion(messages, {
-      timeoutMs: 180_000,
-      maxTokens: thinking ? 12288 : 8192,
+      timeoutMs: 300_000,
+      maxTokens: thinking ? 32768 : 16384,
       temperature: 0.3,
       retries: 0,
       thinking,
@@ -444,8 +445,8 @@ async function requestLessonScript(
       error instanceof Error ? error.message : error,
     );
     return replyChatCompletion(messages, {
-      timeoutMs: 180_000,
-      maxTokens: 8192,
+      timeoutMs: 240_000,
+      maxTokens: 16384,
       temperature: 0.3,
       retries: 0,
       thinking: false,
