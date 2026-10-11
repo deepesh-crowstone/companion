@@ -34,6 +34,8 @@ export type BoardCheck = {
   /** Every written line is right; only the diagram may be wrong. */
   linesOk: boolean;
   problems: string[];
+  /** The checker gave no readable verdict. */
+  unknown?: boolean;
 };
 
 type Pixels = { pixels: Buffer; width: number; height: number };
@@ -79,22 +81,26 @@ Not ok when:
 - the diagram contradicts its description, the solution's numbers, or the physics: a label marks the wrong part, an arrow points the wrong way, rays do not meet where the image forms, an object or image sits at the wrong point, a described part is missing
 - the writing overlaps the diagram
 
+This board shows only the lines in its script. The rest of the solution is on other boards. Never report a solution step that this script does not list.
+
 Handwriting style, colour and exact position do not matter. Each problem is one short sentence that says what to fix.`;
 
-const TRUSTED: BoardCheck = { ok: true, linesOk: true, problems: [] };
+/** No readable verdict. The drawing is not trusted. */
+const UNKNOWN: BoardCheck = { ok: false, linesOk: false, problems: [], unknown: true };
 
 export function parseBoardCheck(raw: string): BoardCheck {
   const json = raw.match(/\{[\s\S]*\}/)?.[0];
-  if (!json) return TRUSTED;
+  if (!json) return UNKNOWN;
   try {
     const value = JSON.parse(json) as { ok?: unknown; lines_ok?: unknown; problems?: unknown };
+    if (typeof value.ok !== "boolean") return UNKNOWN;
     const problems = Array.isArray(value.problems)
       ? value.problems.filter((item): item is string => typeof item === "string" && item.trim() !== "")
       : [];
-    const ok = value.ok !== false;
+    const ok = value.ok;
     return { ok, linesOk: ok || value.lines_ok === true, problems: problems.slice(0, 6) };
   } catch {
-    return TRUSTED;
+    return UNKNOWN;
   }
 }
 
@@ -105,7 +111,10 @@ function boardScript(board: LessonBoard, solution: string): string {
 
 const BOARD_CHECK_EDGE = 1536;
 
-/** Qwen reads the board back. A failed check call keeps the drawing. */
+/**
+ * Qwen reads the board back, thinking first, then directly if that gives no verdict.
+ * Two reads without a verdict mean the drawing is not trusted.
+ */
 export async function checkBoard(board: LessonBoard, image: Buffer, solution: string): Promise<BoardCheck> {
   const messages = [
     { role: "system" as const, content: CHECK_PROMPT },
@@ -122,14 +131,16 @@ export async function checkBoard(board: LessonBoard, image: Buffer, solution: st
   ];
   try {
     const reply = await replyChatCompletion(messages, {
-      timeoutMs: 120_000,
-      maxTokens: 4096,
+      timeoutMs: 150_000,
+      maxTokens: 8192,
       temperature: 0,
       retries: 0,
       thinking: true,
       label: "Board check",
     });
-    return parseBoardCheck(reply);
+    const check = parseBoardCheck(reply);
+    if (!check.unknown) return check;
+    console.error("Board check had no verdict, reading it again without a thinking trace");
   } catch (error) {
     console.error(
       "Board check retrying without a thinking trace:",
@@ -147,8 +158,8 @@ export async function checkBoard(board: LessonBoard, image: Buffer, solution: st
     });
     return parseBoardCheck(reply);
   } catch (error) {
-    console.error("Board check skipped:", error instanceof Error ? error.message : error);
-    return TRUSTED;
+    console.error("Board check failed:", error instanceof Error ? error.message : error);
+    return UNKNOWN;
   }
 }
 
@@ -403,13 +414,15 @@ export async function prepareBoard(
   try {
     let image = await drawBoard(board);
     let check = await checkBoard(board, image, solution);
-    if (!check.ok && !check.linesOk) {
+    if (!check.ok && !check.linesOk && !check.unknown) {
       console.error(`Board ${index} line corrected:`, check.problems.join(" | "));
       image = await correctBoard(board, image, check.problems);
       check = await checkBoard(board, image, solution);
     }
     const keepWriting = !check.ok && check.linesOk && Boolean(board.diagram);
-    if (check.ok || keepWriting) {
+    if (check.unknown) {
+      console.error(`Board ${index} has no check verdict, writing it instead`);
+    } else if (check.ok || keepWriting) {
       const fitted = fitBoard(image);
       const bands = findBoardLines(fitted, board.lines.length, Boolean(board.diagram));
       const paper = paperColour(fitted);

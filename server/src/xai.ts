@@ -20,7 +20,13 @@ import {
   MENTOR_SPOKEN_REPLY_OUTPUT_FORMAT,
   textReplyOutputFormat,
 } from "./platform-behavior.js";
-import { ALAKH_TURN_OUTPUT_FORMAT, parseAlakhTurn, type AlakhTurn } from "./alakh-solution.js";
+import {
+  ALAKH_TURN_OUTPUT_FORMAT,
+  SOLUTION_CHECK_PROMPT,
+  parseAlakhTurn,
+  parseSolutionCheck,
+  type AlakhTurn,
+} from "./alakh-solution.js";
 import { replyChatCompletion } from "./reply-client.js";
 import { visionImageUrl } from "./vision-image.js";
 import {
@@ -645,6 +651,31 @@ export async function chatWithMiaText(
   return spokenSegments;
 }
 
+/**
+ * A second, thinking pass works the solution through before it is sent.
+ * The video copies this document, so a wrong step here is taught on the board.
+ * A failed or unclear check keeps the original.
+ */
+export async function checkedSolutionTurn(turn: AlakhTurn): Promise<AlakhTurn> {
+  if (turn.kind !== "solution") return turn;
+  try {
+    const raw = await replyChatCompletion(
+      [
+        { role: "system", content: SOLUTION_CHECK_PROMPT },
+        { role: "user", content: turn.markdown },
+      ],
+      { timeoutMs: 150_000, maxTokens: 8192, temperature: 0.2, retries: 0, label: "Solution check" },
+    );
+    const checked = parseSolutionCheck(raw, turn.markdown);
+    if (!checked.problem) return turn;
+    console.error("Solution corrected before sending:", checked.problem);
+    return { kind: "solution", markdown: checked.markdown };
+  } catch (error) {
+    console.error("Solution check skipped:", error instanceof Error ? error.message : error);
+    return turn;
+  }
+}
+
 /** Typed Alakh Sir turn: a doubt is one LaTeX solution, anything else stays chat. */
 export async function chatWithAlakhText(
   history: DbMessage[],
@@ -655,7 +686,7 @@ export async function chatWithAlakhText(
     profileSlug: "alakh",
     solutionTurn: true,
   });
-  return parseAlakhTurn(reply);
+  return checkedSolutionTurn(parseAlakhTurn(reply));
 }
 
 const IMAGE_MIME = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
@@ -725,7 +756,7 @@ ${ALAKH_TURN_OUTPUT_FORMAT}`;
     },
   );
 
-  return parseAlakhTurn(reply);
+  return checkedSolutionTurn(parseAlakhTurn(reply));
 }
 
 export async function chatWithMiaTextAsVoice(

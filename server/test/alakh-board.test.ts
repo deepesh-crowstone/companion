@@ -14,16 +14,17 @@ import {
   writtenBoard,
 } from "../src/alakh-board.ts";
 import {
+  applyScriptReview,
   BOARD_LIMIT,
   BOARD_LINE_LIMIT,
   diagramFixRequest,
-  dropInventedLines,
   equationsNotInSolution,
   parseBoardScript,
   parseDiagramFix,
-  parseFixedLines,
+  parseScriptReview,
   plainDiagram,
-  spliceFixedLines,
+  SCRIPT_REVIEW_PROMPT,
+  scriptReviewRequest,
   vagueDiagram,
 } from "../src/alakh-board-script.ts";
 import { solutionVideoUsesBoards } from "../src/alakh-video.ts";
@@ -97,8 +98,29 @@ $$a = g\sin\theta = 10 \times \sin 30^\circ = 10 \times 0.5 = 5\,\text{m/s}^2$$`
   assert.deepEqual(equationsNotInSolution(["a = g cos θ"], incline), ["a = g cos θ"]);
 });
 
-test("an invented line is replaced where it stood, and dropped when the fix is not in the solution", () => {
-  const board = parseBoardScript(`BOARD
+test("percent, inequality, and set signs count as the same step in either notation", () => {
+  const sets = String.raw`$n(A) = 63\%$, $n(B) = 76\%$, $n(A \cap B) = x$
+
+$$n(A \cup B) = n(A) + n(B) - n(A \cap B) = 139 - x$$
+
+$$39 \leq x \leq 63$$`;
+  assert.deepEqual(
+    equationsNotInSolution(
+      [
+        "n(A) = 63",
+        "n(A intersect B) = x",
+        "n(A U B) = n(A) + n(B) - n(A intersect B)",
+        "n(A union B) = 139 - x",
+        "39 <= x <= 63",
+        "x ≤ 63",
+      ],
+      sets,
+    ),
+    [],
+  );
+});
+
+const REVIEW_SCRIPT = `BOARD
 Diagram: a lens
 Say: Look at the lens.
 Line: $f = +20\\,\\text{cm}$
@@ -106,25 +128,78 @@ Say: Focal length is twenty.
 Line: $1/v = 1/f + 1/u$
 Say: Rearranged.
 Line: $m = -2$
-Say: Magnification is minus two.`).boards[0];
-  assert.ok(board);
-  const fixed = parseFixedLines(`Line: $f = +20\\,\\text{cm}$
+Say: Magnification is minus two.
+BOARD
+Diagram: -
+Line: $v = +60\\,\\text{cm}$
+Say: Image sixty centimetres away.`;
+
+test("the script review lists every board and flags lines only as hints", () => {
+  const { boards } = parseBoardScript(REVIEW_SCRIPT);
+  const request = scriptReviewRequest(boards, SOLUTION, ["1/v = 1/f + 1/u", "1/v = 1/f + 1/u"]);
+  assert.match(request, /BOARD 1\nDiagram: a lens\nSay: Look at the lens\.\n1\. Line: \$f = \+20/);
+  assert.match(request, /2\. Line: \$1\/v = 1\/f \+ 1\/u\$\n {3}Say: Rearranged\./);
+  assert.match(request, /BOARD 2\nDiagram: -\n1\. Line: \$v = \+60/);
+  assert.match(request, /may be a different notation of a right step, or wrong:\n1\/v = 1\/f \+ 1\/u$/);
+  assert.match(SCRIPT_REVIEW_PROMPT, /63 and 63%/);
+});
+
+test("an OK review keeps the script, and a fix, drop or add lands where it was asked", () => {
+  const { boards } = parseBoardScript(REVIEW_SCRIPT);
+  assert.deepEqual(parseScriptReview("OK"), []);
+  assert.deepEqual(parseScriptReview("<think>checking</think>\nOK"), []);
+  assert.deepEqual(applyScriptReview(boards, []), boards);
+
+  const changes = parseScriptReview(`FIX 1.2
 Line: $\\frac{1}{v} - \\frac{1}{u} = \\frac{1}{f}$
 Say: The lens formula.
-Line: $m = -2$`);
-  const spliced = spliceFixedLines(board, fixed, SOLUTION);
-  assert.equal(spliced.lines.length, 3);
-  assert.match(spliced.lines[1] ?? "", /\\frac\{1\}\{v\}/);
-  assert.equal(spliced.steps.find((step) => step.line === 1)?.narration, "The lens formula.");
-  assert.equal(spliced.steps.find((step) => step.line === 0)?.narration, "Focal length is twenty.");
-  assert.equal(spliced.steps.find((step) => step.line === 2)?.narration, "Magnification is minus two.");
 
-  const dropped = dropInventedLines(board, SOLUTION);
-  assert.deepEqual(dropped.lines, ["$f = +20\\,\\text{cm}$", "$m = -2$"]);
+DROP 1.3
+
+ADD 2.1
+Line: $m = \\frac{v}{u} = -2$
+Say: Magnification is minus two.
+
+ADD 2.0
+Line: Image distance`);
   assert.deepEqual(
-    dropped.steps.map((step) => step.line),
-    [null, 0, 1],
+    changes.map((change) => [change.action, change.board, change.line]),
+    [
+      ["fix", 0, 1],
+      ["drop", 0, 2],
+      ["add", 1, 0],
+      ["add", 1, -1],
+    ],
   );
+  const applied = applyScriptReview(boards, changes);
+  assert.equal(applied.length, 2);
+  assert.deepEqual(applied[0]?.lines, ["$f = +20\\,\\text{cm}$", "$\\frac{1}{v} - \\frac{1}{u} = \\frac{1}{f}$"]);
+  assert.deepEqual(
+    applied[0]?.steps.map((step) => [step.line, step.narration]),
+    [
+      [null, "Look at the lens."],
+      [0, "Focal length is twenty."],
+      [1, "The lens formula."],
+    ],
+  );
+  assert.deepEqual(applied[1]?.lines, ["Image distance", "$v = +60\\,\\text{cm}$", "$m = \\frac{v}{u} = -2$"]);
+  assert.equal(applied[1]?.steps[0]?.narration, "Image distance");
+});
+
+test("a fix to the speech keeps the line, and a board past five lines continues on the next", () => {
+  const { boards } = parseBoardScript(REVIEW_SCRIPT);
+  const spoken = applyScriptReview(boards, parseScriptReview("FIX 1.3\nSay: Magnification is minus two, so the image is inverted."));
+  assert.equal(spoken[0]?.lines[2], "$m = -2$");
+  assert.equal(spoken[0]?.steps[3]?.narration, "Magnification is minus two, so the image is inverted.");
+
+  const adds = Array.from({ length: 4 }, (_, index) => `ADD 1.3\nLine: step ${index}\nSay: said ${index}`).join("\n");
+  const grown = applyScriptReview(boards, parseScriptReview(adds));
+  assert.equal(grown.length, 3);
+  assert.equal(grown[0]?.lines.length, BOARD_LINE_LIMIT);
+  assert.equal(grown[1]?.diagram, "a lens");
+  assert.deepEqual(grown[1]?.lines, ["step 2", "step 3"]);
+  assert.deepEqual(grown[1]?.steps.map((step) => step.line), [0, 1]);
+  assert.deepEqual(grown[2]?.lines, ["$v = +60\\,\\text{cm}$"]);
 });
 
 test("diagrams that point at another board or are boxes of text are rewritten", () => {
@@ -197,14 +272,42 @@ test("the image prompt asks for exactly the scripted lines and keeps the diagram
   assert.match(prompt, /Write nothing else/);
 });
 
-test("the board check reads the vision reply and keeps the drawing when the reply is unreadable", () => {
+test("the board check reads the vision reply, and an unreadable reply is not a pass", () => {
   assert.deepEqual(parseBoardCheck('{"ok": true}'), { ok: true, linesOk: true, problems: [] });
   assert.deepEqual(
     parseBoardCheck('Here: {"ok": false, "lines_ok": true, "problems": ["l marks the thickness, not the length"]}'),
     { ok: false, linesOk: true, problems: ["l marks the thickness, not the length"] },
   );
   assert.equal(parseBoardCheck('{"ok": false, "problems": ["line 2 has the wrong sign"]}').linesOk, false);
-  assert.equal(parseBoardCheck("looks fine").ok, true);
+  for (const unreadable of ["looks fine", "", '{"problems": []}', "{ok: true"]) {
+    const check = parseBoardCheck(unreadable);
+    assert.equal(check.ok, false, unreadable);
+    assert.equal(check.unknown, true, unreadable);
+  }
+});
+
+test("a board check with no verdict on either read is not trusted", async () => {
+  const previousKey = process.env.REPLY_API_KEY;
+  process.env.REPLY_API_KEY = "test-key";
+  const originalFetch = globalThis.fetch;
+  const thinking: boolean[] = [];
+  globalThis.fetch = (async (_url, init) => {
+    const body = JSON.parse(String(init?.body)) as { chat_template_kwargs?: { enable_thinking?: boolean } };
+    thinking.push(body.chat_template_kwargs?.enable_thinking === true);
+    return new Response(JSON.stringify({ choices: [{ message: { content: "The board looks fine to me." } }] }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }) as typeof fetch;
+  try {
+    const check = await checkBoard({ diagram: "", lines: ["$v = 60$"], steps: [] }, Buffer.from("x"), "v = 60");
+    assert.equal(check.unknown, true);
+    assert.deepEqual(thinking, [true, false]);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (previousKey == null) delete process.env.REPLY_API_KEY;
+    else process.env.REPLY_API_KEY = previousKey;
+  }
 });
 
 function boardPng(): Buffer {
@@ -345,7 +448,9 @@ test("a board check asks Qwen to think before it accepts the drawing", async () 
     assert.equal(check.linesOk, true);
     assert.deepEqual(check.problems, ["ray misses"]);
     assert.equal(body.chat_template_kwargs?.enable_thinking, true);
-    assert.equal(body.max_tokens, 4096);
+    assert.equal(body.max_tokens, 8192);
+    const system = body.messages?.find((message) => message.role === "system");
+    assert.match(String(system?.content), /Never report a solution step that this script does not list/);
     const user = body.messages?.find((message) => message.role === "user");
     assert.equal(Array.isArray(user?.content), true);
   } finally {

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { parseSolutionCheck } from "../src/alakh-solution.ts";
 import { ALAKH_IMAGE_TIMEOUT_MS, chatWithAlakhImage, isXaiConfigured } from "../src/xai.ts";
 
 test("a student photo is solved by Qwen with thinking off", async () => {
@@ -18,22 +19,24 @@ test("a student photo is solved by Qwen with thinking off", async () => {
     }>;
   } = {};
 
+  let calls = 0;
+  let checkBody: typeof body = {};
   globalThis.fetch = (async (_url, init) => {
-    sawTimeoutSignal = init?.signal instanceof AbortSignal;
-    body = JSON.parse(String(init?.body));
-    return new Response(
-      JSON.stringify({
-        choices: [
-          {
-            message: {
-              content:
-                "SOLUTION\n## Answer\n$$\nN \\approx 5000\n$$\nThe amplitude, not the energy, falls by a factor of e.",
-            },
-          },
-        ],
-      }),
-      { status: 200, headers: { "Content-Type": "application/json" } },
-    );
+    calls += 1;
+    if (calls === 1) {
+      sawTimeoutSignal = init?.signal instanceof AbortSignal;
+      body = JSON.parse(String(init?.body));
+    } else {
+      checkBody = JSON.parse(String(init?.body));
+    }
+    const content =
+      calls === 1
+        ? "SOLUTION\n## Answer\n$$\nN \\approx 5000\n$$\nThe amplitude, not the energy, falls by a factor of e."
+        : "OK";
+    return new Response(JSON.stringify({ choices: [{ message: { content } }] }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
   }) as typeof fetch;
 
   try {
@@ -65,11 +68,32 @@ test("a student photo is solved by Qwen with thinking off", async () => {
     assert.match(String(system[0]?.content), /one message/);
     assert.doesNotMatch(String(system[0]?.content), /cannot render LaTeX/);
     assert.equal(sawTimeoutSignal, true);
+    assert.equal(calls, 2);
+    assert.equal(checkBody.chat_template_kwargs?.enable_thinking, true);
+    assert.match(String(checkBody.messages?.[0]?.content), /Work through it yourself/);
   } finally {
     globalThis.fetch = originalFetch;
     if (previousKey == null) delete process.env.REPLY_API_KEY;
     else process.env.REPLY_API_KEY = previousKey;
   }
+});
+
+test("a checked solution replaces the original only for a definite error with a full rewrite", () => {
+  const original = "## Working\n$$\nv = u + at = 0 + 4 \\times 3 = 12\\,\\text{m/s}\n$$\nSamjhe?";
+  assert.deepEqual(parseSolutionCheck("OK", original), { markdown: original, problem: null });
+  assert.deepEqual(parseSolutionCheck("<think>4 times 3 is 12</think>\nOK", original), {
+    markdown: original,
+    problem: null,
+  });
+  const fixed = parseSolutionCheck(
+    "WRONG: a is 8/2 = 4, so v = 12, but the unit was missing.\nSOLUTION\n## Working\n$$\nv = u + at = 0 + 4 \\times 3 = 12\\,\\text{m/s}\n$$\nAb samjhe?",
+    original,
+  );
+  assert.equal(fixed.problem, "a is 8/2 = 4, so v = 12, but the unit was missing.");
+  assert.match(fixed.markdown, /Ab samjhe\?/);
+  assert.doesNotMatch(fixed.markdown, /^SOLUTION/);
+  assert.equal(parseSolutionCheck("WRONG: bad\nSOLUTION\nv = 12", original).problem, null);
+  assert.equal(parseSolutionCheck("The answer looks off somewhere.", original).problem, null);
 });
 
 test("a missing or placeholder xAI key does not count as configured", () => {

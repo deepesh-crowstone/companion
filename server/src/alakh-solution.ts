@@ -172,6 +172,36 @@ export function parseAlakhTurn(raw: string): AlakhTurn {
   return { kind: "chat", messages };
 }
 
+export const SOLUTION_CHECK_PROMPT = String.raw`You check a worked solution before it is sent to a student and taught in a video. Work through it yourself.
+
+If it is right, output only: OK
+
+If it has a definite error, output only:
+WRONG: one sentence naming the error
+SOLUTION
+the corrected document
+
+A definite error is a wrong formula, a wrong sign, an arithmetic slip, a wrong or missing unit, a step that does not follow from the line before, or a final answer that does not follow from the working. A different method, notation, or style is not an error.
+
+The corrected document is the same document with only the errors fixed, and whatever depends on them. Keep its language, headings, LaTeX, length, and closing question. Do not shorten it.`;
+
+/** The corrected solution, or the original when the check found nothing or its rewrite cannot be trusted. */
+export function parseSolutionCheck(
+  raw: string,
+  original: string,
+): { markdown: string; problem: string | null } {
+  const unchanged = { markdown: original, problem: null };
+  const text = stripFence(visibleReply(raw));
+  if (/^OK\b/i.test(text)) return unchanged;
+  const problem = text.match(/^WRONG:\s*(.+)$/im)?.[1]?.trim();
+  const at = text.search(/^SOLUTION[ \t]*$/im);
+  if (!problem || at === -1) return unchanged;
+  const turn = parseAlakhTurn(text.slice(at));
+  if (turn.kind !== "solution") return unchanged;
+  if (turn.markdown.length < original.length * 0.6) return unchanged;
+  return { markdown: turn.markdown, problem };
+}
+
 export function alakhRichMessage(
   chatId: number,
   markdown: string,

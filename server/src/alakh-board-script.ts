@@ -142,7 +142,14 @@ const UNICODE_MATH: Record<string, string> = {
 
 /** Spacing, wrappers, and \frac become the same plain string the solution can be searched for. */
 export function normalizeMath(value: string): string {
-  let text = value.replace(/[θαβγδΔλμπρστφωΩ×·÷°²³√≈→]/g, (char) => UNICODE_MATH[char] ?? char);
+  let text = value
+    .replace(/<=|\\leqslant|\\leq|\\le(?![A-Za-z])/g, "≤")
+    .replace(/>=|\\geqslant|\\geq|\\ge(?![A-Za-z])/g, "≥")
+    .replace(/\\cap(?![A-Za-z])|\bintersect(?:ion)?\b/gi, "∩")
+    .replace(/\\cup(?![A-Za-z])|\bunion\b/gi, "∪")
+    .replace(/([A-Za-z)])\s+U\s+(?=[A-Za-z(])/g, "$1∪")
+    .replace(/\\%|%/g, "");
+  text = text.replace(/[θαβγδΔλμπρστφωΩ×·÷°²³√≈→]/g, (char) => UNICODE_MATH[char] ?? char);
   text = text.replace(/\\left|\\right/g, "");
   text = text.replace(/\\(?:text|mathrm|operatorname)\{([^{}]*)\}/g, "$1");
   for (let guard = 0; guard < 20 && text.includes("\\frac"); guard += 1) {
@@ -200,24 +207,27 @@ function splitClauses(body: string): string[] {
   return parts.map((part) => part.trim()).filter((part) => part.includes("="));
 }
 
-/** Equations on one board line. A Hindi sentence is not an equation. */
+/** An equals sign that is not part of <=, >= or != */
+const EQUALS = /(?<![<>!])=/;
+
+/** Equations on one board line. A Hindi sentence or an inequality is not an equation. */
 export function lineEquations(line: string): string[] {
   const wrapped = [...line.matchAll(/\$\$([\s\S]+?)\$\$|\$([^$\n]+)\$/g)]
     .map((match) => (match[1] ?? match[2] ?? "").trim())
-    .filter((value) => value.includes("=") || value.includes("\\frac"));
+    .filter((value) => EQUALS.test(value) || value.includes("\\frac"));
   if (wrapped.length > 0) return wrapped;
-  if (!line.includes("=")) return [];
+  if (!EQUALS.test(line)) return [];
   const colon = line.indexOf(":");
   const body = colon >= 0 && !line.slice(0, colon).includes("=") ? line.slice(colon + 1) : line;
   return splitClauses(body)
     .map((clause) => mathSpan(clause))
-    .filter((clause) => clause.includes("="));
+    .filter((clause) => EQUALS.test(clause));
 }
 
 /** Every side of the equation is a whole side of one solution equation, in the same order. */
 function equationAppears(equation: string, solution: string): boolean {
   const norm = normalizeMath(equation);
-  if (norm.length < 3) return true;
+  if (norm.length < 3 || !norm.includes("=")) return true;
   const sides = norm.split("=");
   return mathChunks(solution).some((chunk) => {
     const chain = chunk.split("=");
@@ -235,7 +245,10 @@ function numbersOf(value: string): string[] {
   return [...value.matchAll(/(?<![\d.])\d+(?:\.\d+)?(?![\d.])/g)].map((match) => match[0]);
 }
 
-/** Equations and numbers on these lines that the solution never wrote. A rearrangement counts as invented. */
+/**
+ * Equations and numbers on these lines that the solution never wrote, as text.
+ * A hint for the script review only: a different notation of a right step can land here.
+ */
 export function equationsNotInSolution(lines: string[], solution: string): string[] {
   const invented: string[] = [];
   const present = new Set(numbersOf(solution));
@@ -250,71 +263,142 @@ export function equationsNotInSolution(lines: string[], solution: string): strin
   return invented;
 }
 
-/** Corrected lines from the short rewrite. A Say, when present, belongs to the line before it. */
-export function parseFixedLines(raw: string): { line: string; say: string }[] {
-  const fixed: { line: string; say: string }[] = [];
-  for (const entry of entriesOf(stripFence(visibleReply(raw)))) {
-    if (entry.key === "line" && !blank(entry.value)) {
-      fixed.push({ line: entry.value.slice(0, 160), say: "" });
-      continue;
-    }
-    const last = fixed[fixed.length - 1];
-    if (entry.key === "say" && last && !last.say && !blank(entry.value)) last.say = entry.value.slice(0, 1200);
-  }
-  return fixed.slice(0, BOARD_LINE_LIMIT);
+export const SCRIPT_REVIEW_PROMPT = `You check a whiteboard lesson script against the worked solution it teaches. Every board is drawn and spoken exactly as written, so a wrong value here is taught to the student.
+
+If every line is right and the boards cover the solution's working and its result, output only: OK
+
+Otherwise output only changes, one block each:
+
+FIX b.l
+Line: the corrected line
+Say: what he says while it is written
+
+DROP b.l
+
+ADD b.l
+Line: the new line
+Say: what he says while it is written
+
+b is the board number and l the line number, as listed. ADD b.l puts the new line after line l of board b. ADD b.0 puts it first on that board.
+
+Rules:
+- Change a line only when it is wrong: a value, sign, symbol, unit or equation that disagrees with the solution, or a result the solution does not reach.
+- A different notation of the same thing is right: 63 and 63%, <= and \\leq and ≤, ∩ and intersect, a fraction written inline or with \\frac.
+- Add a line only when a step of the solution's working, or its final result, is on no board. Put it where it belongs in the order of the working.
+- A line is a phrase of at most six words, or one equation in LaTeX inside $...$, copied from the solution.
+- A Say that states a wrong number or result is fixed with FIX on its line. Keep the line as it is when the line is right.
+- Keep each Say's language: Hindi words in Devanagari, an English lesson stays English. No LaTeX in Say.
+- Every number in a Say is written in digits, exactly as in the solution, for example 39. Never spell a number as a word.
+- Do not restyle, reword, or reorder lines that are right.`;
+
+/** The solution, every board numbered from 1, and the lines whose text the solution does not contain. */
+export function scriptReviewRequest(boards: LessonBoard[], solution: string, flagged: string[]): string {
+  const listed = boards
+    .map((board, index) => {
+      const rows = [`BOARD ${index + 1}`, `Diagram: ${board.diagram || "-"}`];
+      for (const step of board.steps) {
+        if (step.line === null) rows.push(`Say: ${step.narration}`);
+        else rows.push(`${step.line + 1}. Line: ${board.lines[step.line] ?? ""}`, `   Say: ${step.narration}`);
+      }
+      return rows.join("\n");
+    })
+    .join("\n\n");
+  const unique = [...new Set(flagged)];
+  const hint = unique.length
+    ? `\n\nThe text of these does not appear in the solution exactly. Each may be a different notation of a right step, or wrong:\n${unique.join("\n")}`
+    : "";
+  return `Solution:\n${solution.slice(0, 6000)}\n\nScript:\n${listed}${hint}`;
 }
 
-/** Faithful lines stay. Each invented line is replaced by the next corrected line, in place. */
-export function spliceFixedLines(
-  board: LessonBoard,
-  fixed: { line: string; say: string }[],
-  solution: string,
-): LessonBoard {
-  const lines: string[] = [];
-  const steps: BoardStep[] = [];
-  let cursor = 0;
-  const same = (left: string, right: string) => normalizeMath(left) === normalizeMath(right);
-  for (const step of board.steps) {
-    if (lines.length >= BOARD_LINE_LIMIT) break;
-    if (step.line === null) {
-      steps.push(step);
-      continue;
+export type ScriptChange = {
+  action: "fix" | "drop" | "add";
+  /** Zero-based board index. */
+  board: number;
+  /** Zero-based line index. An add at -1 goes before the first line. */
+  line: number;
+  text: string;
+  say: string;
+};
+
+/** Changes from the review. OK, or a reply with no readable change, is an empty list. */
+export function parseScriptReview(raw: string): ScriptChange[] {
+  const changes: ScriptChange[] = [];
+  const text = stripFence(visibleReply(raw));
+  for (const part of text.split(/^(?=\s*(?:FIX|DROP|ADD)\s+\d+\s*\.\s*\d+)/gim)) {
+    const head = part.match(/^\s*(FIX|DROP|ADD)\s+(\d+)\s*\.\s*(\d+)[^\n]*/i);
+    if (!head) continue;
+    const action = (head[1] ?? "").toLowerCase() as ScriptChange["action"];
+    const board = Number(head[2]) - 1;
+    const line = Number(head[3]) - 1;
+    const entries = entriesOf(part.slice(head[0].length));
+    const value = entries.find((entry) => entry.key === "line")?.value ?? "";
+    const say = entries.find((entry) => entry.key === "say")?.value ?? "";
+    if (board < 0) continue;
+    const lineText = blank(value) ? "" : value.slice(0, 160);
+    const spoken = blank(say) ? "" : say.slice(0, 1200);
+    if (action === "drop" && line >= 0) changes.push({ action, board, line, text: "", say: "" });
+    if (action === "fix" && line >= 0 && (lineText || spoken)) {
+      changes.push({ action, board, line, text: lineText, say: spoken });
     }
-    const original = board.lines[step.line] ?? "";
-    if (equationsNotInSolution([original], solution).length === 0) {
-      const current = fixed[cursor];
-      if (current && same(current.line, original)) cursor += 1;
-      steps.push({ ...step, line: lines.length });
-      lines.push(original);
-      continue;
-    }
-    while (fixed[cursor] && lines.some((line) => same(line, fixed[cursor]?.line ?? ""))) cursor += 1;
-    const replacement = fixed[cursor];
-    cursor += 1;
-    if (!replacement) continue;
-    steps.push({ narration: replacement.say || step.narration, line: lines.length });
-    lines.push(replacement.line);
+    if (action === "add" && line >= -1 && lineText) changes.push({ action, board, line, text: lineText, say: spoken });
   }
-  return { ...board, lines, steps };
+  return changes.slice(0, 24);
 }
 
-/** Drop lines whose equation is not in the solution, and the speech that introduced them. */
-export function dropInventedLines(board: LessonBoard, solution: string): LessonBoard {
-  const kept = board.lines.map((line) => equationsNotInSolution([line], solution).length === 0);
-  const lines = board.lines.filter((_line, index) => kept[index]);
-  const moved = new Map<number, number>();
-  let next = 0;
-  kept.forEach((ok, index) => {
-    if (!ok) return;
-    moved.set(index, next);
-    next += 1;
+/**
+ * Applies the review in place. A board that grows past five lines continues
+ * on a new board with the same diagram, so no step is lost.
+ */
+export function applyScriptReview(boards: LessonBoard[], changes: ScriptChange[]): LessonBoard[] {
+  return boards.flatMap((board, index) => {
+    const mine = changes.filter((change) => change.board === index);
+    if (mine.length === 0) return [board];
+    type Item = { line: string | null; narration: string };
+    const items: Item[] = [];
+    const added = (after: number): Item[] =>
+      mine
+        .filter((change) => change.action === "add" && change.line === after)
+        .map((change) => ({ line: change.text, narration: change.say || change.text }));
+    let openingAdded = false;
+    const addOpening = () => {
+      if (openingAdded) return;
+      items.push(...added(-1));
+      openingAdded = true;
+    };
+    for (const step of board.steps) {
+      if (step.line === null) {
+        items.push({ line: null, narration: step.narration });
+        continue;
+      }
+      addOpening();
+      const at = step.line;
+      const dropped = mine.some((change) => change.action === "drop" && change.line === at);
+      const fix = mine.find((change) => change.action === "fix" && change.line === at);
+      if (!dropped) {
+        items.push({ line: fix?.text || board.lines[at] || "", narration: fix?.say || step.narration });
+      }
+      items.push(...added(at));
+    }
+    addOpening();
+
+    const parts: LessonBoard[] = [];
+    let current: LessonBoard = { diagram: board.diagram, lines: [], steps: [] };
+    for (const item of items) {
+      if (item.line === null) {
+        current.steps.push({ narration: item.narration, line: null });
+        continue;
+      }
+      if (!item.line) continue;
+      if (current.lines.length >= BOARD_LINE_LIMIT) {
+        parts.push(current);
+        current = { diagram: board.diagram, lines: [], steps: [] };
+      }
+      current.lines.push(item.line);
+      current.steps.push({ narration: item.narration, line: current.lines.length - 1 });
+    }
+    parts.push(current);
+    return parts.filter((part) => part.steps.length > 0 && (part.lines.length > 0 || Boolean(part.diagram)));
   });
-  const steps = board.steps.flatMap((step) => {
-    if (step.line === null) return [step];
-    const line = moved.get(step.line);
-    return line === undefined ? [] : [{ ...step, line }];
-  });
-  return { ...board, lines, steps };
 }
 
 const VAGUE_DIAGRAM = [

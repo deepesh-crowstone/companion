@@ -10,18 +10,20 @@ import {
 } from "./alakh-tts.js";
 import { prepareBoards, renderBoardMotion } from "./alakh-board.js";
 import {
+  applyScriptReview,
   BOARD_SCRIPT_PROMPT,
   DIAGRAM_FIX_PROMPT,
   diagramFixRequest,
-  dropInventedLines,
   equationsNotInSolution,
-  parseDiagramFix,
-  parseFixedLines,
   parseBoardScript,
+  parseDiagramFix,
+  parseScriptReview,
   plainDiagram,
-  spliceFixedLines,
+  SCRIPT_REVIEW_PROMPT,
+  scriptReviewRequest,
   vagueDiagram,
   type LessonBoard,
+  type ScriptChange,
 } from "./alakh-board-script.js";
 import { generateLessonPictures, motionDrawSeconds, openRouterKey } from "./alakh-motion.js";
 import { renderSolutionFrames, renderSolutionMotion } from "./alakh-scene.js";
@@ -387,44 +389,56 @@ async function requestLessonScript(
   }
 }
 
-const LINE_FIX_PROMPT = `Some lines on a whiteboard use an equation the solution does not contain. Output only corrected lines, in order:
-
-Line: one phrase or one equation copied from the solution
-Say: one spoken sentence for that line
-
-Copy equations exactly. Do not rearrange them or add a step. Keep a line that is already in the solution. Drop a line you cannot fix. No diagram and no explanation.`;
-
-/** One short rewrite when a line invents an equation. Lines that are still invented are dropped. */
-async function repairBoardLines(board: LessonBoard, solution: string): Promise<LessonBoard> {
-  const invented = equationsNotInSolution(board.lines, solution);
-  if (invented.length === 0) return board;
-  console.error("Board equation not in the solution:", invented.join(" | "));
+/**
+ * One thinking review of the whole script against the solution. Text that does
+ * not match the solution is only a hint; the review decides what is wrong.
+ * A failed review keeps the script as written.
+ */
+async function reviewBoardScript(boards: LessonBoard[], solution: string): Promise<ScriptChange[]> {
+  const flagged = boards.flatMap((board) => equationsNotInSolution(board.lines, solution));
+  const messages = [
+    { role: "system", content: SCRIPT_REVIEW_PROMPT },
+    { role: "user", content: scriptReviewRequest(boards, solution, flagged) },
+  ];
+  let raw: string;
   try {
-    const raw = await replyChatCompletion(
-      [
-        { role: "system", content: LINE_FIX_PROMPT },
-        {
-          role: "user",
-          content: `Solution:\n${solution.slice(0, 6000)}\n\nLines:\n${board.lines.join("\n")}\n\nNot in the solution:\n${invented.join("\n")}`,
-        },
-      ],
-      {
-        timeoutMs: 60_000,
-        maxTokens: 2048,
+    raw = await replyChatCompletion(messages, {
+      timeoutMs: 180_000,
+      maxTokens: 8192,
+      temperature: 0.2,
+      retries: 0,
+      label: "Board script review",
+    });
+  } catch (error) {
+    console.error(
+      "Board script review retrying without a thinking trace:",
+      error instanceof Error ? error.message : error,
+    );
+    try {
+      raw = await replyChatCompletion(messages, {
+        timeoutMs: 90_000,
+        maxTokens: 4096,
         temperature: 0.2,
         retries: 0,
         thinking: false,
-        label: "Board line fix",
-      },
-    );
-    const fixed = parseFixedLines(raw).filter(
-      (item) => equationsNotInSolution([item.line], solution).length === 0,
-    );
-    if (fixed.length > 0) return spliceFixedLines(board, fixed, solution);
-  } catch (error) {
-    console.error("Board line fix failed:", error instanceof Error ? error.message : error);
+        label: "Board script review",
+      });
+    } catch (retryError) {
+      console.error(
+        "Board script review skipped:",
+        retryError instanceof Error ? retryError.message : retryError,
+      );
+      return [];
+    }
   }
-  return dropInventedLines(board, solution);
+  const changes = parseScriptReview(raw);
+  if (changes.length > 0) {
+    console.error(
+      "Board script reviewed:",
+      changes.map((change) => `${change.action} ${change.board + 1}.${change.line + 1}`).join(", "),
+    );
+  }
+  return changes;
 }
 
 /** One short rewrite for diagrams that point at another board or are boxes of text. Still vague means no diagram. */
@@ -480,13 +494,16 @@ async function spokenNarration(text: string): Promise<string> {
 async function scriptBoards(markdown: string): Promise<LessonBoard[]> {
   const raw = await requestLessonScript(BOARD_SCRIPT_PROMPT, markdown, "Board script", true);
   const parsed = parseBoardScript(raw);
-  const [checked, diagrams] = await Promise.all([
-    Promise.all(parsed.boards.map((board) => repairBoardLines(board, markdown))),
+  const [diagrams, changes] = await Promise.all([
     boardDiagrams(parsed.boards, markdown),
+    reviewBoardScript(parsed.boards, markdown),
   ]);
+  const checked = applyScriptReview(
+    parsed.boards.map((board, index) => ({ ...board, diagram: diagrams[index] ?? board.diagram })),
+    changes,
+  );
   const boards = await Promise.all(
-    checked.map(async (board, index) => {
-      board = { ...board, diagram: diagrams[index] ?? board.diagram };
+    checked.map(async (board) => {
       const steps = await Promise.all(
         board.steps.map(async (step) => ({ ...step, narration: await spokenNarration(step.narration) })),
       );
