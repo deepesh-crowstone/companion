@@ -348,6 +348,14 @@ test("plain mathematics is handwritten and the rest is typeset", () => {
   assert.equal(handwrittenMath("\\theta = 30^\\circ"), null);
   assert.equal(handSpacing("दूसरी तरफ, सभी लोग"), "दूसरी  तरफ, सभी  लोग");
   assert.equal(handSpacing("lens के पास"), "lens के पास");
+  assert.deepEqual(lineTokens("\\text{Total Time} = 5 \\text{ hours } 20"), [
+    { kind: "text", text: "Total Time = 5 hours 20" },
+  ]);
+  assert.deepEqual(lineTokens("\\frac{16}{3} hours"), [
+    { kind: "math", tex: "\\frac{16}{3}" },
+    { kind: "text", text: " hours" },
+  ]);
+  assert.equal(lineTokens("Total Time = 5 hours").some((token) => token.kind === "text" && token.text.includes("\\")), false);
   assert.deepEqual(lineTokens("Lower bound: $x \\ge 39$"), [{ kind: "text", text: "Lower bound: x ≥ 39" }]);
   assert.deepEqual(lineTokens("So $\\frac{1}{v} = \\frac{1}{60}$ hai"), [
     { kind: "text", text: "So " },

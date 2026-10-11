@@ -115,6 +115,56 @@ export function handwrittenMath(tex: string): string | null {
 
 type Token = { kind: "text"; text: string } | { kind: "math"; tex: string };
 
+/** `\text{Total Time}` is words, wherever the script put it. A backslash is never drawn. */
+function unwrapTexWords(value: string): string {
+  let text = value;
+  for (let guard = 0; guard < 6; guard += 1) {
+    const next = text.replace(
+      /\\(?:text|mathrm|textrm|textit|textbf|mbox|operatorname|hbox)\{([^{}]*)\}/g,
+      "$1",
+    );
+    if (next === text) return text;
+    text = next;
+  }
+  return text;
+}
+
+/** How far a bare LaTeX command runs, including its groups and powers. */
+function bareLatexEnd(text: string, start: number): number {
+  let at = start;
+  while (at < text.length && text[at] === "\\") {
+    at += 1;
+    while (at < text.length && /[A-Za-z]/.test(text[at] ?? "")) at += 1;
+    while (text[at] === "{") {
+      let depth = 1;
+      at += 1;
+      while (at < text.length && depth > 0) {
+        if (text[at] === "{") depth += 1;
+        else if (text[at] === "}") depth -= 1;
+        at += 1;
+      }
+    }
+    const after = at;
+    while (text[at] === " ") at += 1;
+    if (text[at] === "^" || text[at] === "_") {
+      at += 1;
+      if (text[at] === "{") {
+        let depth = 1;
+        at += 1;
+        while (at < text.length && depth > 0) {
+          if (text[at] === "{") depth += 1;
+          else if (text[at] === "}") depth -= 1;
+          at += 1;
+        }
+      } else if (at < text.length) at += 1;
+      continue;
+    }
+    if (text[at] === "\\") continue;
+    return after;
+  }
+  return at;
+}
+
 /** Text and $...$ pieces of a line. Plain mathematics joins the text around it. */
 export function lineTokens(line: string): Token[] {
   const tokens: Token[] = [];
@@ -123,16 +173,32 @@ export function lineTokens(line: string): Token[] {
     if (last?.kind === "text") last.text += text;
     else if (text) tokens.push({ kind: "text", text });
   };
+  const pushPlain = (raw: string) => {
+    const text = unwrapTexWords(raw).replace(/ {2,}/g, " ");
+    let at = 0;
+    for (let index = 0; index < text.length; index += 1) {
+      if (text[index] !== "\\") continue;
+      pushText(text.slice(at, index));
+      const end = Math.max(bareLatexEnd(text, index), index + 1);
+      const tex = text.slice(index, end).trim();
+      const hand = handwrittenMath(tex);
+      if (hand !== null) pushText(hand);
+      else if (tex) tokens.push({ kind: "math", tex });
+      at = end;
+      index = end - 1;
+    }
+    pushText(text.slice(at).replace(/\\/g, ""));
+  };
   let at = 0;
   for (const match of line.matchAll(/\$\$?([^$]+?)\$\$?/g)) {
-    pushText(line.slice(at, match.index));
+    pushPlain(line.slice(at, match.index));
     const tex = (match[1] ?? "").trim();
     const hand = handwrittenMath(tex);
     if (hand !== null) pushText(hand);
     else if (tex) tokens.push({ kind: "math", tex });
     at = (match.index ?? 0) + match[0].length;
   }
-  pushText(line.slice(at).replace(/\$/g, ""));
+  pushPlain(line.slice(at).replace(/\$/g, ""));
   return tokens;
 }
 
