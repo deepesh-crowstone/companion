@@ -4,35 +4,12 @@ import {
   QWEN_REPLY_MODEL,
   insecureReplyEndpointWarning,
   replyChatCompletion,
-  rivaModelAskReply,
 } from "../src/reply-client.ts";
 
 function restoreEnv(name: string, previous: string | undefined): void {
   if (previous == null) delete process.env[name];
   else process.env[name] = previous;
 }
-
-test("a direct model question names the Qwen model Riva will call", () => {
-  const previous = process.env.REPLY_MODEL;
-  delete process.env.REPLY_MODEL;
-  try {
-    assert.equal(
-      rivaModelAskReply("what model are you using?"),
-      `i'm on ${QWEN_REPLY_MODEL}`,
-    );
-    assert.equal(
-      rivaModelAskReply("tum kaunsa model use kar rahi ho"),
-      `i'm on ${QWEN_REPLY_MODEL}`,
-    );
-    assert.equal(rivaModelAskReply("are you qwen?"), `i'm on ${QWEN_REPLY_MODEL}`);
-    assert.equal(rivaModelAskReply("hey what's up"), null);
-    assert.equal(rivaModelAskReply("you're my role model"), null);
-    process.env.REPLY_MODEL = "custom/model";
-    assert.equal(rivaModelAskReply("which llm is this"), "i'm on custom/model");
-  } finally {
-    restoreEnv("REPLY_MODEL", previous);
-  }
-});
 
 test("non-local HTTP reply endpoint produces a key-free warning", () => {
   const previous = process.env.REPLY_API_BASE_URL;

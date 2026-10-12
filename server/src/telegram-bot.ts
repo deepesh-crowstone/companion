@@ -24,7 +24,6 @@ import {
   type TelegramBotConfig,
   type TelegramBotId,
 } from "./telegram-inbound.js";
-import { rivaModelAskReply } from "./reply-client.js";
 import { readTelegramSttConfig, transcribeVoiceNote } from "./telegram-stt.js";
 import {
   LatencyAccount,
@@ -482,16 +481,6 @@ async function replyInChat(
   }, 4000);
   try {
     await account.time("typing", () => sendChatAction(token, chatId, action));
-    // TEMPORARY. Remove once Riva's Qwen wiring is confirmed.
-    if (bot.id === "riva") {
-      const modelLine = rivaModelAskReply(text);
-      if (modelLine) {
-        await account.time("send", () =>
-          sendText(token, chatId, modelLine, account),
-        );
-        return;
-      }
-    }
     const userId = await account.time("identity", () =>
       userIdForTelegram(telegramUserId),
     );
