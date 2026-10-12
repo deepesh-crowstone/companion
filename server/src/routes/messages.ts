@@ -46,6 +46,7 @@ import {
   selectOpeningGreeting,
 } from "../opening-greeting.js";
 import { userHasShownLanguage } from "../text-response.js";
+import type { ReplyProvider } from "../reply-client.js";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -254,6 +255,7 @@ async function buildTextReply(
   profileSlug: string,
   stage?: Stage,
   spoken = false,
+  replyProvider?: ReplyProvider,
 ): Promise<BuiltReply> {
   const userId = userMsgs[0].user_id;
   const profileName =
@@ -338,6 +340,7 @@ async function buildTextReply(
       privatePhotosAvailable: canAttachPrivatePhoto,
       profileSlug,
       spoken,
+      replyProvider,
     }),
   );
   const assistantMsgs = await runStage(stage, "save_reply", () =>
@@ -443,6 +446,8 @@ export async function replyToProfileText(input: {
   stage?: Stage;
   /** Speak the reply: Hindi words are stored in Devanagari. */
   spoken?: boolean;
+  /** Riva on Telegram uses Qwen. The app and Alakh leave this unset. */
+  replyProvider?: ReplyProvider;
 }): Promise<ProfileTextDelivery> {
   const profileSlug = parseProfileSlug(input.profileSlug);
   const trimmed = input.text.trim();
@@ -462,6 +467,7 @@ export async function replyToProfileText(input: {
     profileSlug,
     input.stage,
     input.spoken ?? false,
+    input.replyProvider,
   );
   return deliveryFromMessages(built.messages, built.richMarkdown);
 }

@@ -27,7 +27,7 @@ import {
   parseSolutionCheck,
   type AlakhTurn,
 } from "./alakh-solution.js";
-import { replyChatCompletion } from "./reply-client.js";
+import { replyChatCompletion, type ReplyProvider } from "./reply-client.js";
 import { visionImageUrl } from "./vision-image.js";
 import {
   ALAKH_RECENT_CONTEXT_MESSAGES,
@@ -565,6 +565,8 @@ type ProfileTextOptions = {
   spoken?: boolean;
   /** Alakh Sir may answer a doubt as one LaTeX solution instead of chat bubbles. */
   solutionTurn?: boolean;
+  /** Riva on Telegram uses Qwen. Every other chat stays on xAI. */
+  replyProvider?: ReplyProvider;
 };
 
 async function completeProfileText(
@@ -625,12 +627,12 @@ ${
 
   messages.push(...context.recentMessages);
 
-  return replyChatCompletion(
-    messages,
-    solutionTurn
+  return replyChatCompletion(messages, {
+    provider: options?.replyProvider,
+    ...(solutionTurn
       ? { timeoutMs: 120_000, maxTokens: 8192, label: "Solution" }
-      : undefined,
-  );
+      : {}),
+  });
 }
 
 export async function chatWithMiaText(

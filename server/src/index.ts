@@ -23,6 +23,10 @@ import { checkDbConnection, initDb } from "./db.js";
 import { recoverInterruptedGenerations } from "./profile-factory/store.js";
 import { checkBucketConnection, isBucketConfigured } from "./storage.js";
 import { isXaiConfigured, verifyXaiConnection } from "./xai.js";
+import {
+  insecureReplyEndpointWarning,
+  isQwenReplyConfigured,
+} from "./reply-client.js";
 
 function validateEnv(): void {
   if (!process.env.JWT_SECRET?.trim()) {
@@ -110,6 +114,13 @@ app.get("/admin", (_req, res) => {
 });
 
 async function main(): Promise<void> {
+  const replyEndpointWarning = insecureReplyEndpointWarning();
+  if (replyEndpointWarning) {
+    console.warn(`⚠ ${replyEndpointWarning}`);
+  }
+  if (!isQwenReplyConfigured()) {
+    console.warn("⚠ REPLY_API_KEY is not set. Riva Telegram replies need it.");
+  }
   await initDb();
   console.log("✓ PostgreSQL schema ready");
   for (const botId of ["riva", "alakh"] as const satisfies readonly TelegramBotId[]) {

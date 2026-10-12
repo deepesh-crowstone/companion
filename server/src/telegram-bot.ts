@@ -491,6 +491,7 @@ async function replyInChat(
       mood: "friendly",
       privateMode: false,
       spoken: speak,
+      replyProvider: bot.id === "riva" ? "qwen" : undefined,
       stage: (name, work) => account.time(name, work),
     });
     account.note("bubbles", delivery.richMarkdown ? 1 : delivery.texts.length);
