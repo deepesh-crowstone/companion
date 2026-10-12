@@ -35,7 +35,7 @@ import {
   profileSupportsPrivatePhotos,
 } from "../zara-photos.js";
 import { notifyUserOfAssistantMessages } from "../push-notifications.js";
-import { getProfileBySlug, resolveProfileSlug } from "../profiles/catalog.js";
+import { getProfileBySlug, isRivaProfile, resolveProfileSlug } from "../profiles/catalog.js";
 import { displayNameForSlug } from "../profiles/display-name.js";
 import { MAX_CONTEXT_SOURCE_MESSAGES } from "../conversation-context.js";
 import {
@@ -261,7 +261,8 @@ async function buildTextReply(
   const profileName =
     getProfileBySlug(profileSlug)?.name ?? displayNameForSlug(profileSlug);
   const lastUserText = userMsgs[userMsgs.length - 1]?.content ?? "";
-  const allowPrivate = !isMentorProfile(profileSlug) && privateMode;
+  const allowPrivate =
+    !isMentorProfile(profileSlug) && !isRivaProfile(profileSlug) && privateMode;
   if (
     !allowPrivate &&
     history.length === 0 &&

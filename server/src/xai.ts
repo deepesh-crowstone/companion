@@ -6,7 +6,7 @@ import {
   buildTextSystemPrompt,
   buildVoiceSystemPrompt,
 } from "./mia.js";
-import { getProfileBySlug, resolveProfileSlug } from "./profiles/catalog.js";
+import { getProfileBySlug, isRivaProfile, resolveProfileSlug } from "./profiles/catalog.js";
 import { ZARA_DISPLAY_NAME } from "./profiles/display-name.js";
 import {
   buildElevenLabsVoiceTtsInstructions,
@@ -492,7 +492,9 @@ export async function chatWithMia(
 
   const profileSlug = resolveChatProfileSlug(history, options);
   const profile = profileForSlug(profileSlug);
-  const mood = options?.mood ?? "friendly";
+  const requestedMood = options?.mood ?? "friendly";
+  const mood =
+    isRivaProfile(profileSlug) && requestedMood === "bold" ? "friendly" : requestedMood;
   const moodLine = moodPromptForMood(mood, profile);
   const voicePrompt = buildVoiceSystemPrompt(profileSlug);
   const systemPrompt = `${
@@ -583,8 +585,14 @@ async function completeProfileText(
   const mentor = profile.role === "mentor";
   const spoken = mentor && options?.spoken === true;
   const solutionTurn = mentor && !spoken && options?.solutionTurn === true;
-  const privateMode = mentor ? false : (options?.privateMode ?? false);
-  const mood = privateMode ? "bold" : (options?.mood ?? "friendly");
+  const privateMode =
+    mentor || isRivaProfile(profileSlug) ? false : (options?.privateMode ?? false);
+  const requestedMood = options?.mood ?? "friendly";
+  const mood = privateMode
+    ? "bold"
+    : isRivaProfile(profileSlug) && requestedMood === "bold"
+      ? "friendly"
+      : requestedMood;
   const privateLine = privateMode
     ? `\n\n${privateModeRomanticPrompt(profileName, profile.gender)}`
     : mentor

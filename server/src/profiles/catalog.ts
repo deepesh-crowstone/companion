@@ -43,6 +43,11 @@ export function getProfileBySlug(slug: string): CompanionProfile | null {
   return bySlug.get(slug.trim().toLowerCase()) ?? null;
 }
 
+/** Riva is the educational spoken-English companion. The stored slug is zara. */
+export function isRivaProfile(slug: string | null | undefined): boolean {
+  return slug?.trim().toLowerCase() === "zara";
+}
+
 export function resolveProfileSlug(slug: string | null | undefined): string {
   const normalized = slug?.trim().toLowerCase();
   if (normalized === "meera" || normalized === "mira") return "aryan";
