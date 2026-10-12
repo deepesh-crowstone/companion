@@ -38,6 +38,31 @@ export function isQwenReplyConfigured(): boolean {
   return Boolean(envValue("REPLY_API_KEY"));
 }
 
+/** Model id sent on a Riva Telegram reply. */
+export function qwenReplyModel(): string {
+  return envValue("REPLY_MODEL") ?? QWEN_REPLY_MODEL;
+}
+
+/**
+ * TEMPORARY. Remove once Riva's Qwen wiring is confirmed.
+ * A direct "which model" question gets the model this server will call,
+ * instead of letting the persona answer.
+ */
+const RIVA_MODEL_ASK_PATTERNS = [
+  /\b(?:what|which|kaunsa|konsa|kaun sa|kon sa|kis)\b[\s\S]{0,48}\b(?:llm|model)\b/i,
+  /\b(?:llm|model)\b[\s\S]{0,40}\b(?:using|use|powered|running|chal(?:a|ati|a rahi)?)\b/i,
+  /\b(?:are you|tum|tu)\b[\s\S]{0,32}\b(?:qwen|grok|gpt|chatgpt|claude|gemini)\b/i,
+  /\b(?:qwen|grok)\b[\s\S]{0,24}\b(?:use|using|ho|hai|pe|par)\b/i,
+];
+
+export function rivaModelAskReply(text: string): string | null {
+  const asked = text.trim();
+  if (!asked || !RIVA_MODEL_ASK_PATTERNS.some((pattern) => pattern.test(asked))) {
+    return null;
+  }
+  return `i'm on ${qwenReplyModel()}`;
+}
+
 /** Warns when the Riva reply server is plain HTTP on a public host. */
 export function insecureReplyEndpointWarning(): string | null {
   const base = replyApiBase();
@@ -149,7 +174,7 @@ export async function replyChatCompletion(
   const body =
     provider === "qwen"
       ? {
-          model: envValue("REPLY_MODEL") ?? QWEN_REPLY_MODEL,
+          model: qwenReplyModel(),
           messages: collapsed,
           stream: false,
           max_tokens: options.maxTokens ?? REPLY_MAX_TOKENS,
